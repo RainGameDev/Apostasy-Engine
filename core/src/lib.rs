@@ -33,6 +33,7 @@ use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::model_renderer::ModelRenderer;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::states::ShouldExit;
 use crate::ui::ui_context::EguiContext;
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
@@ -53,6 +54,7 @@ pub mod objects;
 pub mod packages;
 pub mod physics;
 pub mod rendering;
+pub mod states;
 pub mod ui;
 pub mod utils;
 pub mod voxels;
@@ -128,6 +130,11 @@ impl Core {
                 WindowEvent::RedrawRequested => {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
+
+                    if world.get_resource::<ShouldExit>().is_ok() {
+                        log!("Recieved ShouldExit resource, closing");
+                        event_loop.exit();
+                    }
 
                     let context = Arc::new(rendering_info.context.clone());
                     let push_constants = rendering_info.push_constants.clone();

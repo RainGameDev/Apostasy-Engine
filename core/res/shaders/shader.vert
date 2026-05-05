@@ -15,7 +15,6 @@ layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
 
 
-
 vec3 applyQuaternion(vec4 q, vec3 v) {
     vec3 qv = vec3(q.x, q.y, q.z);
     return v + 2.0 * cross(qv, cross(qv, v) + q.w * v);

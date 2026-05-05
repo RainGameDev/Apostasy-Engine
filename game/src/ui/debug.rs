@@ -1,16 +1,23 @@
-use anyhow::Result;
 use apostasy_macros::update;
-use cgmath::Vector3;
 
-use crate::{
+use apostasy_core::{
+    anyhow::Result,
+    cgmath::Vector3,
+    egui,
     objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     rendering::shared::frustrum::ObjectsDrawing,
     ui::ui_context::EguiContext,
     voxels::{VoxelTransform, biome::BiomeRegistry, chunk::Chunk},
 };
 
+use crate::states::HasInitGeneration;
+
 #[update]
 pub fn hud(world: &mut World) -> Result<()> {
+    if !world.get_resource::<HasInitGeneration>().is_ok() {
+        return Ok(());
+    }
+
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 
     let transform = world

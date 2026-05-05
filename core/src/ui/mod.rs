@@ -10,7 +10,6 @@ use crate::rendering::vulkan::{
     rendering_context::VulkanRenderingContext, swapchain::VulkanSwapchain,
 };
 
-pub mod debug_ui;
 pub mod ui_context;
 
 pub struct UIRenderer {

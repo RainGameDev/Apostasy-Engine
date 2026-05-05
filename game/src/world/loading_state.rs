@@ -1,5 +1,12 @@
-use apostasy_core::cgmath::Vector3;
+use apostasy_core::{
+    anyhow::Result,
+    cgmath::Vector3,
+    objects::{tags::Player, world::World},
+    update,
+};
 use apostasy_macros::Resource;
+
+use crate::entities::loading_gate::LoadingGate;
 
 /// Tracks the state of initial chunk loading
 #[derive(Resource, Clone)]
@@ -51,4 +58,35 @@ impl Default for LoadingState {
             total_chunks_expected: 0,
         }
     }
+}
+
+#[update]
+pub fn check_loading_complete(world: &mut World) -> Result<()> {
+    // Check if loading is complete and update state
+    let should_mark_complete = {
+        let loading_state = world.get_resource::<LoadingState>()?;
+        !loading_state.is_complete && loading_state.is_progress_sufficient()
+    };
+
+    if should_mark_complete {
+        world.get_resource_mut::<LoadingState>()?.is_complete = true;
+    }
+
+    // Remove loading gate from player if loading is complete
+    let is_complete = world.get_resource::<LoadingState>()?.is_complete;
+    if is_complete {
+        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
+            if player.has_tag::<LoadingGate>() {
+                player.remove_tag::<LoadingGate>();
+            }
+        }
+    } else {
+        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
+            if !player.has_tag::<LoadingGate>() {
+                player.add_tag(LoadingGate);
+            }
+        }
+    }
+
+    Ok(())
 }

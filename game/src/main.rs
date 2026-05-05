@@ -18,6 +18,8 @@ use apostasy_core::{
 use crate::world::chunk_loader::ChunkLoader;
 use crate::world::loading_state::LoadingState;
 pub mod entities;
+pub mod states;
+pub mod ui;
 pub mod world;
 
 fn main() {

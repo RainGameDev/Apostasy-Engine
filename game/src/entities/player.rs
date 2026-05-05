@@ -31,6 +31,7 @@ use apostasy_core::{
 
 use crate::{
     entities::{loading_gate::LoadingGate, spawn_point::NeedsSpawnPoint},
+    states::{HasInitGeneration, IsPaused},
     world::{VoxelOutline, loading_state::LoadingState},
 };
 
@@ -100,27 +101,14 @@ pub fn player_init(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-#[start]
-pub fn player_start(world: &mut World) -> Result<()> {
-    {
-        let cursor_manager = world.get_resource_mut::<CursorManager>()?;
-
-        cursor_manager.set_mode(
-            apostasy_core::objects::resources::cursor_manager::CursorLockMode::LockedHidden,
-        );
-    }
-
-    {
-        let cursor_manager = world.get_resource::<CursorManager>()?.clone();
-        let window_manager = world.get_resource_mut::<WindowManager>()?;
-        cursor_manager.update_cursor(window_manager);
-    }
-
-    Ok(())
-}
-
 #[update]
 pub fn update(world: &mut World) -> Result<()> {
+    if world.get_resource::<IsPaused>().is_ok()
+        && !world.get_resource::<HasInitGeneration>().is_ok()
+    {
+        return Ok(());
+    }
+
     let player = world.get_object_with_tag::<Player>()?;
 
     // Block movement if player is still loading
@@ -284,6 +272,10 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
 pub fn hud(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 
+    if !world.get_resource::<HasInitGeneration>().is_ok() {
+        return Ok(());
+    }
+
     if !world.get_resource::<LoadingState>()?.is_complete {
         return Ok(());
     }
@@ -305,37 +297,6 @@ pub fn hud(world: &mut World) -> Result<()> {
                     }
                 }
             });
-    }
-
-    Ok(())
-}
-
-#[update]
-pub fn check_loading_complete(world: &mut World) -> Result<()> {
-    // Check if loading is complete and update state
-    let should_mark_complete = {
-        let loading_state = world.get_resource::<LoadingState>()?;
-        !loading_state.is_complete && loading_state.is_progress_sufficient()
-    };
-
-    if should_mark_complete {
-        world.get_resource_mut::<LoadingState>()?.is_complete = true;
-    }
-
-    // Remove loading gate from player if loading is complete
-    let is_complete = world.get_resource::<LoadingState>()?.is_complete;
-    if is_complete {
-        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
-            if player.has_tag::<LoadingGate>() {
-                player.remove_tag::<LoadingGate>();
-            }
-        }
-    } else {
-        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
-            if !player.has_tag::<LoadingGate>() {
-                player.add_tag(LoadingGate);
-            }
-        }
     }
 
     Ok(())

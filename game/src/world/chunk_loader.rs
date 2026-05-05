@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use apostasy_core::objects::components::transform::FORWARD;
+use apostasy_core::rand::{RngExt, rng};
 use apostasy_core::voxels::chunk::{ChunkGenQueue, GeneratedChunkData};
 use apostasy_core::{
     anyhow::Result,
@@ -16,6 +17,7 @@ use apostasy_core::{
 };
 use apostasy_macros::{Resource, fixed_update, start};
 
+use crate::states::{GetNewSeed, HasInitGeneration};
 use crate::world::{generation::generate_chunk_data, loading_state::LoadingState};
 
 #[derive(Resource, Clone)]
@@ -24,6 +26,7 @@ pub struct ChunkLoader {
     pub load_radius: i32,
     pub chunk_lod_distances: Vec<u32>,
     pub frame_counter: u32,
+    pub seed: u32,
 }
 
 impl Default for ChunkLoader {
@@ -33,6 +36,7 @@ impl Default for ChunkLoader {
             load_radius: 8,
             chunk_lod_distances: vec![8, 12, 14, 16],
             frame_counter: 0,
+            seed: 1,
         }
     }
 }
@@ -78,6 +82,18 @@ pub fn update_chunks_init(world: &mut World) -> Result<()> {
 
 #[fixed_update]
 pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
+    if !world.get_resource::<HasInitGeneration>().is_ok() {
+        return Ok(());
+    }
+    if world.get_resource::<GetNewSeed>().is_ok() {
+        let mut seed = rng();
+        let seed = seed.random::<u32>();
+
+        world.get_resource_mut::<ChunkLoader>()?.seed = seed;
+        world.remove_resource::<GetNewSeed>();
+        return Ok(());
+    }
+
     let player = world.get_object_with_tag::<Player>()?;
     let player_transform = player.get_component::<Transform>()?;
     let player_velocity = player.get_component::<Velocity>()?;
@@ -93,7 +109,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
     let vel = player_velocity.linear_velocity;
 
     let (last_chunk_pos, load_radius, lod_distances, frame_counter) = {
-        let mut loader = world.get_resource_mut::<ChunkLoader>()?;
+        let loader = world.get_resource_mut::<ChunkLoader>()?;
         loader.frame_counter += 1;
         (
             loader.last_chunk_position,
@@ -244,8 +260,9 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
             .in_flight
             .insert(pos);
 
+        let seed = world.get_resource_mut::<ChunkLoader>()?.seed;
         pool.spawn(move || {
-            let data = generate_chunk_data(pos, &reg, &biome_reg, 12311231u32, lod);
+            let data = generate_chunk_data(pos, &reg, &biome_reg, seed, lod);
             let _ = sender.send(data);
         });
 

@@ -1,0 +1,42 @@
+use apostasy_core::{
+    anyhow::Result,
+    objects::{
+        resources::{
+            cursor_manager::{CursorLockMode, CursorManager},
+            window_manager::WindowManager,
+        },
+        world::World,
+    },
+    update,
+};
+use apostasy_macros::Resource;
+
+#[derive(Resource, Clone)]
+pub struct HasInitGeneration;
+#[derive(Resource, Clone)]
+pub struct GetNewSeed;
+
+#[derive(Resource, Clone)]
+pub struct IsPaused;
+
+#[update]
+pub fn paused_update(world: &mut World) -> Result<()> {
+    let is_paused = world.get_resource::<IsPaused>().is_ok();
+    {
+        let cursor_manager = world.get_resource_mut::<CursorManager>()?;
+
+        if !is_paused {
+            cursor_manager.set_mode(CursorLockMode::LockedHidden);
+        } else {
+            cursor_manager.set_mode(CursorLockMode::NoneVisible);
+        }
+    }
+
+    {
+        let cursor_manager = world.get_resource::<CursorManager>()?.clone();
+        let window_manager = world.get_resource_mut::<WindowManager>()?;
+        cursor_manager.update_cursor(window_manager);
+    }
+
+    Ok(())
+}
