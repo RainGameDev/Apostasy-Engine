@@ -6,12 +6,40 @@ use crate::{
     objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     rendering::shared::frustrum::ObjectsDrawing,
     ui::ui_context::EguiContext,
-    voxels::chunk::Chunk,
+    voxels::{VoxelTransform, biome::BiomeRegistry, chunk::Chunk},
 };
 
 #[update]
 pub fn hud(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+
+    let transform = world
+        .get_object_with_tag::<Player>()
+        .unwrap()
+        .get_component::<Transform>()
+        .unwrap()
+        .global_position;
+
+    let chunk_transform = Vector3::new(
+        transform.x as i32 / 32,
+        transform.y as i32 / 32,
+        transform.z as i32 / 32,
+    );
+
+    let chunks = world.get_objects_with_component::<Chunk>();
+    let mut biome = "None".to_string();
+    let registry = world.get_resource::<BiomeRegistry>()?;
+    for chunk in chunks {
+        let position = chunk.get_component::<VoxelTransform>()?.position;
+
+        if position == chunk_transform {
+            biome = registry
+                .id_to_name
+                .get(&chunk.get_component::<Chunk>()?.biome)
+                .unwrap()
+                .to_string();
+        }
+    }
 
     egui::Area::new(egui::Id::new("crosshair"))
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -41,6 +69,8 @@ pub fn hud(world: &mut World) -> Result<()> {
                 "Chunks: {}",
                 world.get_objects_with_component::<Chunk>().len()
             ));
+
+            ui.label(format!("Biome: {}", biome));
 
             ui.separator();
             ui.label(format!(

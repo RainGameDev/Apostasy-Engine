@@ -1,9 +1,10 @@
 use apostasy_core::{
     Component,
     anyhow::Result,
-    cgmath::Vector3,
+    cgmath::{Vector3, Zero},
     egui, fixed_update,
     items::container::Container,
+    log,
     objects::{
         Object,
         components::transform::Transform,
@@ -28,7 +29,10 @@ use apostasy_core::{
     },
 };
 
-use crate::{entities::spawn_point::NeedsSpawnPoint, world::VoxelOutline};
+use crate::{
+    entities::{loading_gate::LoadingGate, spawn_point::NeedsSpawnPoint},
+    world::{VoxelOutline, loading_state::LoadingState},
+};
 
 #[derive(Component, Clone, Debug)]
 pub struct PlayerData {
@@ -78,6 +82,7 @@ pub fn player_init(world: &mut World) -> Result<()> {
         .add_component(Collider::player())
         .add_component(PlayerData::default())
         .add_tag(Player)
+        .add_tag(LoadingGate)
         .add_tag(NeedsSpawnPoint);
 
     let mut model_renderer = ModelRenderer::from_path("model.glb");
@@ -116,6 +121,29 @@ pub fn player_start(world: &mut World) -> Result<()> {
 
 #[update]
 pub fn update(world: &mut World) -> Result<()> {
+    let player = world.get_object_with_tag::<Player>()?;
+
+    // Block movement if player is still loading
+    let has_loading_gate = player.has_tag::<LoadingGate>();
+    if has_loading_gate {
+        let player = world.get_object_with_tag_mut::<Player>()?;
+        let velocity = player.get_component_mut::<Velocity>()?;
+        velocity.linear_velocity.x = 0.0;
+        velocity.linear_velocity.y = 0.0;
+        velocity.linear_velocity.z = 0.0;
+
+        let player = world.get_object_with_tag_mut::<Player>()?;
+        let transform = player.get_component_mut::<Transform>()?;
+        transform.local_position.y = 400.0;
+
+        transform.local_euler_angles = Vector3::zero();
+        let camera = world.get_object_with_tag_mut::<GameCamera>()?;
+        let transform = camera.get_component_mut::<Transform>()?;
+        transform.local_euler_angles = Vector3::new(-90.0, 0.0, 0.0);
+
+        return Ok(());
+    }
+
     let inputs = world.get_resource::<InputManager>()?;
 
     let mouse_delta = inputs.mouse_delta;
@@ -138,8 +166,8 @@ pub fn update(world: &mut World) -> Result<()> {
     let velocity = player.get_component_mut::<Velocity>()?;
 
     let wish_dir = rotation * Vector3::new(direction.x, 0.0, direction.y);
-    velocity.linear_velocity.x = wish_dir.x * 5.0;
-    velocity.linear_velocity.z = wish_dir.z * 5.0;
+    velocity.linear_velocity.x = wish_dir.x * 2.0;
+    velocity.linear_velocity.z = wish_dir.z * 2.0;
 
     if should_jump && velocity.is_grounded {
         velocity.linear_velocity.y = 5.0;
@@ -161,27 +189,24 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .unwrap()
         .0
         .clone();
-    let new_pos;
+    let mut new_pos = Vector3::zero();
 
     if let Ok(hit) = voxel_raycast_camera(world, 4.0) {
-        new_pos = Some(Vector3::new(
+        new_pos = Vector3::new(
             hit.voxel_pos.x as f32 + 0.5,
             hit.voxel_pos.y as f32 + 0.5,
             hit.voxel_pos.z as f32 + 0.5,
-        ));
+        );
     } else {
-        new_pos = Some(Vector3::new(0.0 + 0.5, -6000.0 + 0.5, 0.0 + 0.5));
+        new_pos = Vector3::new(0.0 + 0.5, -6000.0 + 0.5, 0.0 + 0.5);
     }
 
     let outline_transform = world
         .get_object_mut(outline)
         .unwrap()
         .get_component_mut::<Transform>()?;
-
-    if let Some(pos) = new_pos {
-        outline_transform.local_position = pos;
-        outline_transform.global_position = pos;
-    }
+    outline_transform.local_position = new_pos;
+    outline_transform.global_position = new_pos;
 
     {
         let player_id = world
@@ -258,6 +283,11 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
 #[update]
 pub fn hud(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+
+    if !world.get_resource::<LoadingState>()?.is_complete {
+        return Ok(());
+    }
+
     if let Some(player) = world.get_objects_with_tag_with_ids::<Player>().first() {
         let player = player.1;
         let inventory = player.get_component::<Container>()?.clone();
@@ -275,6 +305,37 @@ pub fn hud(world: &mut World) -> Result<()> {
                     }
                 }
             });
+    }
+
+    Ok(())
+}
+
+#[update]
+pub fn check_loading_complete(world: &mut World) -> Result<()> {
+    // Check if loading is complete and update state
+    let should_mark_complete = {
+        let loading_state = world.get_resource::<LoadingState>()?;
+        !loading_state.is_complete && loading_state.is_progress_sufficient()
+    };
+
+    if should_mark_complete {
+        world.get_resource_mut::<LoadingState>()?.is_complete = true;
+    }
+
+    // Remove loading gate from player if loading is complete
+    let is_complete = world.get_resource::<LoadingState>()?.is_complete;
+    if is_complete {
+        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
+            if player.has_tag::<LoadingGate>() {
+                player.remove_tag::<LoadingGate>();
+            }
+        }
+    } else {
+        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
+            if !player.has_tag::<LoadingGate>() {
+                player.add_tag(LoadingGate);
+            }
+        }
     }
 
     Ok(())

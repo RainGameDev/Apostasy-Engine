@@ -24,20 +24,8 @@ use crate::voxels::voxel_components::is_transparent::IsTransparent;
 pub struct VoxelVertex(MeshVertex);
 
 impl VoxelVertex {
-    pub fn pack(
-        x: u8,
-        y: u8,
-        z: u8,
-        face: u8,
-        u: u8,
-        v: u8,
-        texture_id: u16,
-        quad_w: u8,
-        quad_h: u8,
-    ) -> Self {
-        Self(MeshVertex::pack(
-            x, y, z, face, u, v, texture_id, quad_w, quad_h,
-        ))
+    pub fn pack(x: u8, y: u8, z: u8, face: u8, u: u8, v: u8, texture_id: u16, ao: u8) -> Self {
+        Self(MeshVertex::pack(x, y, z, face, u, v, texture_id, ao))
     }
 
     pub fn data_lo(&self) -> u32 {
@@ -389,6 +377,84 @@ pub fn generate_mesh(
         registry.defs[id as usize].has_component::<IsTransparent>()
     };
 
+    let vertex_ao = |face: usize,
+                     gx: usize,
+                     gy: usize,
+                     gz: usize,
+                     corner_u: u8,
+                     corner_v: u8|
+     -> u8 {
+        let solid = |dx: i32, dy: i32, dz: i32| -> bool {
+            let nx = gx as i32 + dx;
+            let ny = gy as i32 + dy;
+            let nz = gz as i32 + dz;
+
+            let id = if nx >= 0
+                && nx < grid_size as i32
+                && ny >= 0
+                && ny < grid_size as i32
+                && nz >= 0
+                && nz < grid_size as i32
+            {
+                grid[nz as usize * grid_size * grid_size + ny as usize * grid_size + nx as usize]
+            } else if nx < 0 && ny >= 0 && ny < grid_size as i32 && nz >= 0 && nz < grid_size as i32
+            {
+                border_nx[nz as usize * grid_size + ny as usize]
+            } else if nx >= grid_size as i32
+                && ny >= 0
+                && ny < grid_size as i32
+                && nz >= 0
+                && nz < grid_size as i32
+            {
+                border_px[nz as usize * grid_size + ny as usize]
+            } else if ny < 0 && nx >= 0 && nx < grid_size as i32 && nz >= 0 && nz < grid_size as i32
+            {
+                border_ny[nz as usize * grid_size + nx as usize]
+            } else if ny >= grid_size as i32
+                && nx >= 0
+                && nx < grid_size as i32
+                && nz >= 0
+                && nz < grid_size as i32
+            {
+                border_py[nz as usize * grid_size + nx as usize]
+            } else if nz < 0 && nx >= 0 && nx < grid_size as i32 && ny >= 0 && ny < grid_size as i32
+            {
+                border_nz[ny as usize * grid_size + nx as usize]
+            } else if nz >= grid_size as i32
+                && nx >= 0
+                && nx < grid_size as i32
+                && ny >= 0
+                && ny < grid_size as i32
+            {
+                border_pz[ny as usize * grid_size + nx as usize]
+            } else {
+                0
+            };
+
+            id != 0 && !is_transparent_voxel(id)
+        };
+
+        let su = if corner_u == 0 { -1i32 } else { 1 };
+        let sv = if corner_v == 0 { -1i32 } else { 1 };
+
+        // For each face: normal axis is fixed, tangent axes are (u_axis, v_axis)
+        // s1 = neighbour along u, s2 = neighbour along v, c = diagonal
+        let (s1, s2, c) = match face {
+            0 => (solid(1, su, 0), solid(1, 0, sv), solid(1, su, sv)), // +X: u=Y, v=Z
+            1 => (solid(-1, su, 0), solid(-1, 0, sv), solid(-1, su, sv)), // -X: u=Y, v=Z
+            2 => (solid(su, 1, 0), solid(0, 1, sv), solid(su, 1, sv)), // +Y: u=X, v=Z
+            3 => (solid(su, -1, 0), solid(0, -1, sv), solid(su, -1, sv)), // -Y: u=X, v=Z
+            4 => (solid(su, 0, 1), solid(0, sv, 1), solid(su, sv, 1)), // +Z: u=X, v=Y
+            _ => (solid(su, 0, -1), solid(0, sv, -1), solid(su, sv, -1)), // -Z: u=X, v=Y
+        };
+
+        if s1 && s2 {
+            0
+        } else {
+            3 - (s1 as u8 + s2 as u8 + c as u8)
+        }
+    };
+
     // get if the neighbour of the current voxel is solid (and not transparent)
     let neighbour_solid = |face: usize, gx: usize, gy: usize, gz: usize| -> bool {
         let neighbor_id = match face {
@@ -501,6 +567,50 @@ pub fn generate_mesh(
 
                     let base = vertices.len() as u32;
 
+                    let (ao0, ao1, ao2, ao3) = match face {
+                        0 => (
+                            // +X: u=Y, v=Z. corners: (y=0,z=0),(y=1,z=0),(y=1,z=1),(y=0,z=1)
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                        ),
+                        1 => (
+                            // -X: u=Y, v=Z. corners: (y=0,z=1),(y=1,z=1),(y=1,z=0),(y=0,z=0)
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                        ),
+                        2 => (
+                            // +Y: u=X, v=Z. corners: (x=0,z=1),(x=1,z=1),(x=1,z=0),(x=0,z=0)
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                        ),
+                        3 => (
+                            // -Y: u=X, v=Z. corners: (x=0,z=0),(x=1,z=0),(x=1,z=1),(x=0,z=1)
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                        ),
+                        4 => (
+                            // +Z: u=X, v=Y. corners: (x=1,y=0),(x=1,y=1),(x=0,y=1),(x=0,y=0)
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                        ),
+                        _ => (
+                            // -Z: u=X, v=Y. corners: (x=0,y=0),(x=0,y=1),(x=1,y=1),(x=1,y=0)
+                            vertex_ao(face, gx, gy, gz, 0, 0),
+                            vertex_ao(face, gx, gy, gz, 0, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 1),
+                            vertex_ao(face, gx, gy, gz, 1, 0),
+                        ),
+                    };
                     // push to the buffers
                     vertices.push(MeshVertex::pack(
                         corners[0][0],
@@ -510,8 +620,7 @@ pub fn generate_mesh(
                         0,
                         0,
                         texture_id as u16,
-                        1,
-                        1,
+                        ao0,
                     ));
                     vertices.push(MeshVertex::pack(
                         corners[1][0],
@@ -521,8 +630,7 @@ pub fn generate_mesh(
                         1,
                         0,
                         texture_id as u16,
-                        1,
-                        1,
+                        ao1,
                     ));
                     vertices.push(MeshVertex::pack(
                         corners[2][0],
@@ -532,8 +640,7 @@ pub fn generate_mesh(
                         1,
                         1,
                         texture_id as u16,
-                        1,
-                        1,
+                        ao2,
                     ));
                     vertices.push(MeshVertex::pack(
                         corners[3][0],
@@ -543,18 +650,31 @@ pub fn generate_mesh(
                         0,
                         1,
                         texture_id as u16,
-                        1,
-                        1,
+                        ao3,
                     ));
 
-                    indices.extend_from_slice(&[
-                        base,
-                        base + 1,
-                        base + 3,
-                        base + 1,
-                        base + 2,
-                        base + 3,
-                    ]);
+                    // fixes diagonal artefacting on darker/occluded corners
+                    if ao0 + ao2 > ao1 + ao3 {
+                        // flip
+                        indices.extend_from_slice(&[
+                            base,
+                            base + 1,
+                            base + 2,
+                            base,
+                            base + 2,
+                            base + 3,
+                        ]);
+                    } else {
+                        // standard
+                        indices.extend_from_slice(&[
+                            base,
+                            base + 1,
+                            base + 3,
+                            base + 1,
+                            base + 2,
+                            base + 3,
+                        ]);
+                    }
                 }
             }
         }

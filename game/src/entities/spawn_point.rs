@@ -7,6 +7,8 @@ use apostasy_core::{
 };
 use apostasy_macros::Tag;
 
+use crate::entities::loading_gate::LoadingGate;
+
 #[derive(Tag, Clone)]
 pub struct NeedsSpawnPoint;
 
@@ -15,6 +17,12 @@ pub fn find_spawn_point(world: &mut World) -> Result<()> {
     let object_ids: Vec<_> = world
         .get_objects_with_tag_with_ids::<NeedsSpawnPoint>()
         .into_iter()
+        .filter(|(id, _)| {
+            // Only process spawn points for entities that don't have the loading gate
+            world.get_object(id.clone())
+                .map(|obj| !obj.has_tag::<LoadingGate>())
+                .unwrap_or(false)
+        })
         .map(|(id, _)| id)
         .collect();
 

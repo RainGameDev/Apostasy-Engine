@@ -16,7 +16,7 @@ use apostasy_core::{
 };
 use apostasy_macros::{Resource, fixed_update, start};
 
-use crate::world::generation::generate_chunk_data;
+use crate::world::{generation::generate_chunk_data, loading_state::LoadingState};
 
 #[derive(Resource, Clone)]
 pub struct ChunkLoader {
@@ -125,6 +125,12 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
 
     log!("Entered new chunk at {:?}", player_chunk_pos);
     world.get_resource_mut::<ChunkLoader>()?.last_chunk_position = player_chunk_pos;
+
+    // Initialize loading state on initial load
+    if is_initial_load {
+        let loading_state = LoadingState::new(player_chunk_pos, load_radius);
+        world.insert_resource(loading_state);
+    }
 
     let (position_to_id, position_to_lod) = build_chunk_maps(world);
 
@@ -272,8 +278,8 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
     Ok(())
 }
 
-const MAX_CHUNKS_PER_FRAME: usize = 6;
-const MAX_GEN_JOBS_PER_FRAME: usize = 10;
+const MAX_CHUNKS_PER_FRAME: usize = 512;
+const MAX_GEN_JOBS_PER_FRAME: usize = 512;
 #[fixed_update]
 pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
     let completed: Vec<GeneratedChunkData> = {
@@ -343,6 +349,16 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
     for id in remesh_ids {
         if let Some(obj) = world.get_object_mut(id) {
             obj.add_tag(NeedsRemeshing);
+        }
+    }
+
+    // Update loading state with current chunk count
+    {
+        let chunk_count = world.get_objects_with_component::<Chunk>().len();
+        if let Ok(mut loading_state) = world.get_resource_mut::<LoadingState>() {
+            if !loading_state.is_complete {
+                loading_state.chunks_loaded = chunk_count;
+            }
         }
     }
 

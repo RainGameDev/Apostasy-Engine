@@ -16,6 +16,7 @@ use crate::entities::spawn_point::NeedsSpawnPoint;
 
 pub mod player;
 pub mod spawn_point;
+pub mod loading_gate;
 
 #[derive(Component, Debug, Clone)]
 pub struct PassiveAI {

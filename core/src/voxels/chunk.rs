@@ -83,24 +83,14 @@ pub struct MeshVertex {
 }
 
 impl MeshVertex {
-    pub fn pack(
-        x: u8,
-        y: u8,
-        z: u8,
-        face: u8,
-        u: u8,
-        v: u8,
-        texture_id: u16,
-        quad_w: u8,
-        quad_h: u8,
-    ) -> Self {
+    pub fn pack(x: u8, y: u8, z: u8, face: u8, u: u8, v: u8, texture_id: u16, ao: u8) -> Self {
         let data_lo: u32 = (x as u32)
             | ((y as u32) << 6)
             | ((z as u32) << 12)
             | ((face as u32) << 18)
             | ((u as u32) << 21)
             | ((v as u32) << 27);
-        let data_hi: u32 = (texture_id as u32) | ((quad_w as u32) << 16) | ((quad_h as u32) << 24);
+        let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
         Self { data_lo, data_hi }
     }
 }
