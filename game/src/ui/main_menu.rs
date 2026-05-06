@@ -109,7 +109,7 @@ pub fn hud(world: &mut World) -> Result<()> {
                 // Subtitle splash text
                 if !world.get_resource::<SelectedSplash>().is_ok() {
                     let mut rand = rng();
-                    let rand_splash = SPLASH_TEXTS[rand.random_range(0..=SPLASH_TEXTS.len())];
+                    let rand_splash = SPLASH_TEXTS[rand.random_range(0..SPLASH_TEXTS.len())];
                     world.insert_resource(SelectedSplash(rand_splash.to_string()));
                 } else {
                     let splash_text = world
