@@ -1,4 +1,4 @@
-use apostasy_macros::update;
+use apostasy_macros::{Resource, update};
 
 use apostasy_core::{
     anyhow::Result,
@@ -6,11 +6,34 @@ use apostasy_core::{
     egui,
     objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     rendering::shared::frustrum::ObjectsDrawing,
+    start,
     ui::ui_context::EguiContext,
     voxels::{VoxelTransform, biome::BiomeRegistry, chunk::Chunk},
 };
 
 use crate::states::HasInitGeneration;
+
+#[derive(Resource, Debug, Clone)]
+pub struct FpsTracker {
+    pub samples: Vec<f32>,
+    pub max_samples: usize,
+}
+
+impl Default for FpsTracker {
+    fn default() -> Self {
+        Self {
+            samples: Vec::new(),
+            max_samples: 1000,
+        }
+    }
+}
+
+#[start]
+
+pub fn hud_start(world: &mut World) -> Result<()> {
+    world.insert_resource(FpsTracker::default());
+    Ok(())
+}
 
 #[update]
 pub fn hud(world: &mut World) -> Result<()> {
@@ -47,64 +70,87 @@ pub fn hud(world: &mut World) -> Result<()> {
                 .to_string();
         }
     }
+    let dt = world.get_resource::<DeltaTime>()?;
+    let fps = 1.0 / dt.0;
+    let fps = 1.0 / dt.0;
 
-    egui::Area::new(egui::Id::new("crosshair"))
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(&ctx, |ui| {
-            ui.label(
-                egui::RichText::new("+")
-                    .size(24.0)
-                    .color(egui::Color32::WHITE),
-            );
-        });
+    if fps < 1.0 || fps > 5000.0 || !fps.is_finite() {
+        return Ok(());
+    } else {
+        let tracker = world.get_resource_mut::<FpsTracker>()?;
+        tracker.samples.push(fps);
+        if tracker.samples.len() > tracker.max_samples {
+            tracker.samples.remove(0);
+        }
 
-    egui::Window::new("Debug")
-        .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
-        .show(&ctx, |ui| {
-            if let Ok(dt) = world.get_resource::<DeltaTime>() {
-                ui.label(format!("FPS: {:.0}", 1.0 / dt.0));
-            }
-            ui.label(format!("Objects: {}", world.object_count()));
-            ui.label(format!(
-                "Objects  Drawing: {}",
-                world.get_resource::<ObjectsDrawing>().unwrap().0
-            ));
+        let samples = tracker.samples.clone();
+        let avg = samples.iter().sum::<f32>() / samples.len() as f32;
 
-            ui.separator();
+        let mut sorted = samples.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            ui.label(format!(
-                "Chunks: {}",
-                world.get_objects_with_component::<Chunk>().len()
-            ));
+        let one_percent_idx = (sorted.len() as f32 * 0.01).ceil() as usize;
+        let point_one_idx = (sorted.len() as f32 * 0.001).ceil() as usize;
 
-            ui.label(format!("Biome: {}", biome));
+        let one_percent_low =
+            sorted[..one_percent_idx.max(1)].iter().sum::<f32>() / one_percent_idx.max(1) as f32;
+        let point_one_low =
+            sorted[..point_one_idx.max(1)].iter().sum::<f32>() / point_one_idx.max(1) as f32;
 
-            ui.separator();
-            ui.label(format!(
-                "Player position: {:?}",
-                world
+        egui::Window::new("Debug")
+            .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
+            .show(&ctx, |ui| {
+                ui.separator();
+
+                ui.label(format!("FPS: {:.0}", fps));
+                ui.label(format!("Avg FPS: {:.0}", avg));
+                ui.label(format!("1% low: {:.0}", one_percent_low));
+                ui.label(format!("0.1% low: {:.0}", point_one_low));
+
+                ui.separator();
+
+                ui.label(format!("Objects: {}", world.object_count()));
+                ui.label(format!(
+                    "Objects  Drawing: {}",
+                    world.get_resource::<ObjectsDrawing>().unwrap().0
+                ));
+
+                ui.separator();
+
+                ui.label(format!(
+                    "Chunks: {}",
+                    world.get_objects_with_component::<Chunk>().len()
+                ));
+
+                ui.label(format!("Biome: {}", biome));
+
+                ui.separator();
+                ui.label(format!(
+                    "Player position: {:?}",
+                    world
+                        .get_object_with_tag::<Player>()
+                        .unwrap()
+                        .get_component::<Transform>()
+                        .unwrap()
+                        .global_position
+                ));
+
+                let transform = world
                     .get_object_with_tag::<Player>()
                     .unwrap()
                     .get_component::<Transform>()
                     .unwrap()
-                    .global_position
-            ));
+                    .global_position;
 
-            let transform = world
-                .get_object_with_tag::<Player>()
-                .unwrap()
-                .get_component::<Transform>()
-                .unwrap()
-                .global_position;
+                let chunk_transform = Vector3::new(
+                    (transform.x / 32.0).floor(),
+                    (transform.y / 32.0).floor(),
+                    (transform.z / 32.0).floor(),
+                );
 
-            let chunk_transform = Vector3::new(
-                (transform.x / 32.0).floor(),
-                (transform.y / 32.0).floor(),
-                (transform.z / 32.0).floor(),
-            );
+                ui.label(format!("Player chunk position: {:?}", chunk_transform));
+            });
 
-            ui.label(format!("Player chunk position: {:?}", chunk_transform));
-        });
-
-    Ok(())
+        Ok(())
+    }
 }
