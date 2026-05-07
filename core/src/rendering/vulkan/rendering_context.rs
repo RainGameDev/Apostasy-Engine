@@ -638,7 +638,7 @@ impl VulkanRenderingContext {
                                 .depth_clamp_enable(false)
                                 .rasterizer_discard_enable(false)
                                 .polygon_mode(PolygonMode::LINE)
-                                .cull_mode(CullModeFlags::BACK)
+                                .cull_mode(CullModeFlags::NONE)
                                 .front_face(FrontFace::COUNTER_CLOCKWISE)
                                 .depth_bias_enable(false)
                                 .line_width(15.0),
@@ -917,18 +917,21 @@ impl VulkanRenderingContext {
 
             let buffer = &[cmd_buf];
             let submit_info = SubmitInfo::default().command_buffers(buffer);
-            if let Err(e) = self.device.queue_submit(queue, &[submit_info], Fence::null()) {
+            if let Err(e) = self
+                .device
+                .queue_submit(queue, &[submit_info], Fence::null())
+            {
                 eprintln!("Failed to submit queue: {}", e);
                 self.device.free_command_buffers(command_pool, &[cmd_buf]);
                 return;
             }
-            
+
             if let Err(e) = self.device.queue_wait_idle(queue) {
                 eprintln!("Failed to wait for queue idle: {}", e);
                 self.device.free_command_buffers(command_pool, &[cmd_buf]);
                 return;
             }
-            
+
             self.device.free_command_buffers(command_pool, &[cmd_buf]);
         }
     }

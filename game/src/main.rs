@@ -89,6 +89,11 @@ pub fn input_init(world: &mut World) -> Result<()> {
         KeyAction::Press,
         "SaveStructure",
     ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::F6),
+        KeyAction::Press,
+        "ToggleStructureSelection",
+    ));
 
     inputs.register_mousebind(MouseBind::new(MouseButton::Left, KeyAction::Hold, "Break"));
     inputs.register_mousebind(MouseBind::new(MouseButton::Right, KeyAction::Hold, "Place"));

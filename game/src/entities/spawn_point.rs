@@ -28,8 +28,8 @@ pub fn find_spawn_point(world: &mut World) -> Result<()> {
         .collect();
 
     let transform = Transform {
-        local_position: Vector3::new(0.0, 256.0, 0.0),
-        global_position: Vector3::new(0.0, 256.0, 0.0),
+        local_position: Vector3::new(0.0, 500.0, 0.0),
+        global_position: Vector3::new(0.0, 500.0, 0.0),
         ..Default::default()
     };
 

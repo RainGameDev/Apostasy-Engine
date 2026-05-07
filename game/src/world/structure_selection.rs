@@ -5,16 +5,18 @@ use apostasy_core::{
     cgmath::{Vector3, Zero},
     log, log_warn,
     objects::{
-        components::transform::Transform, resources::input_manager::InputManager, tags::Player,
-        world::World,
+        Object, components::transform::Transform, resources::input_manager::InputManager,
+        tags::Player, world::World,
     },
+    rendering::components::{camera::GameCamera, model_renderer::ModelRenderer},
     serde_yaml, update,
     voxels::{
         structure::{StructureAsset, StructureBlock},
         voxel::VoxelRegistry,
+        voxel_raycast::{Direction, voxel_raycast},
     },
 };
-use apostasy_macros::Resource;
+use apostasy_macros::{Resource, Tag};
 
 use crate::states::HasInitGeneration;
 #[derive(Resource, Debug, Clone)]
@@ -22,6 +24,8 @@ pub struct StructureSelection {
     pub start: Vector3<i32>,
     pub end: Vector3<i32>,
 }
+#[derive(Resource, Debug, Clone)]
+pub struct StructureSelectionMode;
 
 impl Default for StructureSelection {
     fn default() -> Self {
@@ -32,6 +36,9 @@ impl Default for StructureSelection {
     }
 }
 
+#[derive(Tag, Clone)]
+pub struct StructureSelectionArea;
+
 #[update]
 pub fn structure_selection(world: &mut World) -> Result<()> {
     if !world.get_resource::<HasInitGeneration>().is_ok() {
@@ -40,8 +47,16 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
 
     let inputs = world.get_resource::<InputManager>()?;
     let registry = world.get_resource::<VoxelRegistry>()?.clone();
+    let camera = world
+        .get_object_with_tag::<GameCamera>()?
+        .get_component::<Transform>()
+        .unwrap()
+        .clone();
 
     let save = inputs.is_keybind_active("SaveStructure");
+    let toggle_selection = inputs.is_keybind_active("ToggleStructureSelection");
+    let left_mouse = inputs.is_mousebind_active("Break");
+    let right_mouse = inputs.is_mousebind_active("Place");
     let set_start = inputs.is_keybind_active("SetStructureStart");
     let set_end = inputs.is_keybind_active("SetStructureEnd");
 
@@ -50,6 +65,35 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
         .get_component::<Transform>()
         .unwrap()
         .global_position;
+
+    if toggle_selection {
+        if world.get_resource::<StructureSelectionMode>().is_ok() {
+            world.remove_resource::<StructureSelectionMode>();
+        } else {
+            world.insert_resource(StructureSelectionMode);
+        }
+    }
+
+    if world.get_resource::<StructureSelectionMode>().is_ok() {
+        if left_mouse {
+            let raycast = voxel_raycast(world, &camera, 32.0, Direction::Forward);
+
+            if let Ok(structure_selection) = world.get_resource_mut::<StructureSelection>() {
+                if let Ok(raycast) = raycast {
+                    structure_selection.start = raycast.voxel_pos;
+                }
+            }
+        }
+        if right_mouse {
+            let raycast = voxel_raycast(world, &camera, 32.0, Direction::Forward);
+
+            if let Ok(structure_selection) = world.get_resource_mut::<StructureSelection>() {
+                if let Ok(raycast) = raycast {
+                    structure_selection.end = raycast.voxel_pos;
+                }
+            }
+        }
+    }
 
     if let Ok(structure_selection) = world.get_resource_mut::<StructureSelection>() {
         if set_start {
@@ -64,13 +108,19 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
             log!("Setting structure end: {:?}", structure_selection.end);
         }
 
+        let min = structure_selection.start;
+        let max = structure_selection.end;
+        let size = Vector3::new(
+            (max.x - min.x).abs(),
+            (max.y - min.y).abs(),
+            (max.z - min.z).abs(),
+        );
         if save {
-            let min = structure_selection.start;
-            let max = structure_selection.end;
             let padding = Vector3::new(2, 2, 2);
-            let size = (max + padding) - (min - padding);
+            let padded_size = (max + padding) - (min - padding);
             let mut blocks: Vec<StructureBlock> = Vec::new();
 
+            // Voxels
             for x in min.x..max.x {
                 for y in min.y..max.y {
                     for z in min.z..max.z {
@@ -101,7 +151,7 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
                 namespace: "Apostasy".to_string(),
                 class: "Structure".to_string(),
                 origin: [0, 0, 0],
-                size: Some([size.x, size.y, size.z]),
+                size: Some([padded_size.x, padded_size.y, padded_size.z]),
                 blocks,
                 metadata: HashMap::new(),
             };
@@ -130,6 +180,24 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
             fs::write(&filepath, contents)?;
 
             println!("Created: {}", filepath.display());
+        }
+
+        if let Ok(selection_area) = world.get_object_with_tag_mut::<StructureSelectionArea>() {
+            let transform = selection_area.get_component_mut::<Transform>().unwrap();
+            transform.local_scale = Vector3::new(size.x as f32, size.y as f32, size.z as f32);
+            transform.local_position = Vector3::new(
+                (min.x + max.x) as f32 / 2.0,
+                (min.y + max.y) as f32 / 2.0,
+                (min.z + max.z) as f32 / 2.0,
+            );
+        } else {
+            let mut model_renderer = ModelRenderer::from_path("centered_cube.glb");
+            model_renderer.is_wireframe = true;
+            let object = Object::new()
+                .add_component(Transform::default())
+                .add_component(model_renderer)
+                .add_tag(StructureSelectionArea);
+            world.add_object(object);
         }
     } else {
         world.insert_resource(StructureSelection::default());
