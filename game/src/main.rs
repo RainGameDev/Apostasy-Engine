@@ -74,6 +74,22 @@ pub fn input_init(world: &mut World) -> Result<()> {
         "Downwards",
     ));
 
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::KeyY),
+        KeyAction::Press,
+        "SetStructureEnd",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::KeyT),
+        KeyAction::Press,
+        "SetStructureStart",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::KeyH),
+        KeyAction::Press,
+        "SaveStructure",
+    ));
+
     inputs.register_mousebind(MouseBind::new(MouseButton::Left, KeyAction::Hold, "Break"));
     inputs.register_mousebind(MouseBind::new(MouseButton::Right, KeyAction::Hold, "Place"));
 

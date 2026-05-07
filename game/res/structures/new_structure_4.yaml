@@ -1,0 +1,13 @@
+name: Structure
+namespace: Apostasy
+class: Structure
+origin:
+- 0
+- 0
+- 0
+size:
+- 4
+- 6
+- 4
+blocks: []
+metadata: {}
