@@ -29,7 +29,7 @@ structures:
       max_height: 12
       canopy_radius: 2
   - type: boulder
-    density: 4.0
+    density: 1.0
     voxels:
       boulder: "Apostasy:Voxel:Stone"
     parameters:

@@ -13,6 +13,7 @@ use crate::{
     utils::flatten::flatten,
     voxels::{
         biome::BiomeId,
+        meshes::VoxelVertex,
         voxel::{Voxel, VoxelDefinition, VoxelId, VoxelRegistry},
     },
 };
@@ -76,28 +77,9 @@ pub struct GeneratedChunkData {
     pub biome: u16,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct MeshVertex {
-    pub data_lo: u32,
-    pub data_hi: u32,
-}
-
-impl MeshVertex {
-    pub fn pack(x: u8, y: u8, z: u8, face: u8, u: u8, v: u8, texture_id: u16, ao: u8) -> Self {
-        let data_lo: u32 = (x as u32)
-            | ((y as u32) << 6)
-            | ((z as u32) << 12)
-            | ((face as u32) << 18)
-            | ((u as u32) << 21)
-            | ((v as u32) << 27);
-        let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
-        Self { data_lo, data_hi }
-    }
-}
-
 pub struct GeneratedMeshData {
     pub position: Vector3<i32>,
-    pub vertices: Vec<MeshVertex>,
+    pub vertices: Vec<VoxelVertex>,
     pub indices: Vec<u32>,
 }
 

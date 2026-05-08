@@ -1,14 +1,14 @@
 # Class
-name: Desert
+name: Dunes
 namespace: Apostasy
 class: Biome
 #Generation
-amplitude: 1.0
+amplitude: 6.0
 frequency: 0.02
 octaves: 5
 #Generation Location
-humidity: 0.2
-temperature: 0.95
+humidity: 0.225
+temperature: 0.9
 # Voxels
 voxel:
   surface:
@@ -19,22 +19,6 @@ voxel:
     - "Apostasy:Voxel:Sandstone"
 # Structures
 structures:
-  - type: tree
-    density: 0.02
-    voxels:
-      trunk: "Apostasy:Voxel:Log"
-      canopy: "Apostasy:Voxel:Leaves"
-    parameters:
-      min_height: 4
-      max_height: 7
-      canopy_radius: 1
-  - type: boulder
-    density: 0.5
-    voxels:
-      boulder: "Apostasy:Voxel:Sandstone"
-    parameters:
-      min_radius: 2
-      max_radius: 4
 # Weather and Seasons
 default_weather:
   - name: "Apostasy:Weather:Sunny"

@@ -5,7 +5,8 @@ use apostasy_core::{
     voxels::{
         biome::{
             BiomeDefinition, BiomeRegistry, ClimateCache, NOISE, StructureDefinition,
-            sample_biome_weights, sample_biome_weights_at_climate,
+            sample_biome_weights, sample_biome_weights_at_climate, TEMPERATURE_NOISE,
+            HUMIDITY_NOISE, CONTINENTAL_NOISE,
         },
         chunk::GeneratedChunkData,
         structure::StructureRegistry,
@@ -127,27 +128,47 @@ fn sample_height_and_biome(
     lod: u8,
     seed: u32,
 ) -> (i32, u16) {
-    let weights =
-        sample_biome_weights(world_x, world_z, biome_registry, seed, BIOME_BLEND_DISTANCE);
+    let temp_noise = TEMPERATURE_NOISE.get_or_init(|| Perlin::new(seed));
+    let humid_noise = HUMIDITY_NOISE.get_or_init(|| Perlin::new(seed.wrapping_add(1)));
+    let continental_noise =
+        CONTINENTAL_NOISE.get_or_init(|| Perlin::new(seed.wrapping_add(2)));
+
+    let temperature = (temp_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
+    let humidity = (humid_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
+    let continental = (continental_noise.get([world_x * 0.00035, world_z * 0.00035]) + 1.0) * 0.5;
+
+    let climate_temp = (temperature * 0.7 + continental * 0.25 + 0.05).clamp(0.0, 1.0);
+    let climate_humid = (humidity * 0.6 + (1.0 - continental) * 0.3 + 0.05).clamp(0.0, 1.0);
+
+    let weights = sample_biome_weights_at_climate(
+        climate_temp,
+        climate_humid,
+        biome_registry,
+        BIOME_BLEND_DISTANCE,
+    );
 
     let mut weighted_amplitude = 0.0f64;
-
     let mut dominant_biome = 0u16;
     let mut dominant_weight = 0.0f64;
-    let mut dominant_detail = 0.0f64;
+    let mut weighted_detail = 0.0f64;
 
     for &(biome_id, weight) in &weights {
         let biome = &biome_registry.defs[biome_id as usize];
         weighted_amplitude += biome.amplitude * weight;
 
+        let detail = compute_terrain_detail(&noise, world_x, world_z, biome, continental, lod);
+        weighted_detail += detail * weight;
+
         if weight > dominant_weight {
             dominant_weight = weight;
             dominant_biome = biome_id;
-            dominant_detail = compute_terrain_detail(&noise, world_x, world_z, biome, 0.0, lod);
         }
     }
 
-    let blended_height = 64.0 + weighted_amplitude * 0.4 + dominant_detail;
+    let blended_height = 64.0
+        + weighted_amplitude * 0.35
+        + weighted_detail * 0.6
+        + (continental - 0.5) * 45.0;
     (blended_height as i32, dominant_biome)
 }
 

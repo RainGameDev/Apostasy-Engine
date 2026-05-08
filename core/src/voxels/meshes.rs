@@ -15,25 +15,35 @@ use crate::rendering::shared::vertex::VertexDefinition;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::utils::flatten::flatten;
 use crate::voxels::VoxelTransform;
-use crate::voxels::chunk::{Chunk, ChunkGenQueue, GeneratedMeshData, MeshVertex};
+use crate::voxels::chunk::{Chunk, ChunkGenQueue, GeneratedMeshData};
 use crate::voxels::voxel::VoxelRegistry;
 use crate::voxels::voxel_components::is_transparent::IsTransparent;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct VoxelVertex(MeshVertex);
+pub struct VoxelVertex {
+    pub data_lo: u32,
+    pub data_hi: u32,
+}
 
 impl VoxelVertex {
     pub fn pack(x: u8, y: u8, z: u8, face: u8, u: u8, v: u8, texture_id: u16, ao: u8) -> Self {
-        Self(MeshVertex::pack(x, y, z, face, u, v, texture_id, ao))
+        let data_lo: u32 = (x as u32)
+            | ((y as u32) << 6)
+            | ((z as u32) << 12)
+            | ((face as u32) << 18)
+            | ((u as u32) << 21)
+            | ((v as u32) << 27);
+        let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
+        Self { data_lo, data_hi }
     }
 
     pub fn data_lo(&self) -> u32 {
-        self.0.data_lo
+        self.data_lo
     }
 
     pub fn data_hi(&self) -> u32 {
-        self.0.data_hi
+        self.data_hi
     }
 }
 
@@ -251,13 +261,8 @@ pub fn receive_meshes(
             continue;
         }
 
-        // Convert MeshVertex to VoxelVertex
-        let vertices: Vec<VoxelVertex> = mesh_data
-            .vertices
-            .into_iter()
-            .map(|mv| VoxelVertex(mv))
-            .collect();
-
+        // Convert VoxelVertex to VoxelVertex
+        let vertices: Vec<VoxelVertex> = mesh_data.vertices;
         if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
             if mesh.vertex_buffer != vk::Buffer::null() {
                 unsafe {
@@ -293,7 +298,7 @@ pub fn generate_mesh(
     chunk: &Chunk,
     registry: &VoxelRegistry,
     neighbours: &ChunkNeighbours,
-) -> (Vec<MeshVertex>, Vec<u32>) {
+) -> (Vec<VoxelVertex>, Vec<u32>) {
     let lod = chunk.lod as usize;
     let grid_size = 32 / lod;
 
@@ -367,7 +372,7 @@ pub fn generate_mesh(
     }
 
     let max_faces = grid_size * grid_size * grid_size * 6;
-    let mut vertices: Vec<MeshVertex> = Vec::with_capacity(max_faces * 4);
+    let mut vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
 
     let is_transparent_voxel = |id: u16| -> bool {
@@ -612,7 +617,7 @@ pub fn generate_mesh(
                         ),
                     };
                     // push to the buffers
-                    vertices.push(MeshVertex::pack(
+                    vertices.push(VoxelVertex::pack(
                         corners[0][0],
                         corners[0][1],
                         corners[0][2],
@@ -622,7 +627,7 @@ pub fn generate_mesh(
                         texture_id as u16,
                         ao0,
                     ));
-                    vertices.push(MeshVertex::pack(
+                    vertices.push(VoxelVertex::pack(
                         corners[1][0],
                         corners[1][1],
                         corners[1][2],
@@ -632,7 +637,7 @@ pub fn generate_mesh(
                         texture_id as u16,
                         ao1,
                     ));
-                    vertices.push(MeshVertex::pack(
+                    vertices.push(VoxelVertex::pack(
                         corners[2][0],
                         corners[2][1],
                         corners[2][2],
@@ -642,7 +647,7 @@ pub fn generate_mesh(
                         texture_id as u16,
                         ao2,
                     ));
-                    vertices.push(MeshVertex::pack(
+                    vertices.push(VoxelVertex::pack(
                         corners[3][0],
                         corners[3][1],
                         corners[3][2],
