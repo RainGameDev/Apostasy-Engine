@@ -83,7 +83,7 @@ impl AssetLoader for BiomeLoader {
         let temperature = raw["temperature"]
             .as_f64()
             .ok_or_else(|| anyhow::anyhow!("Missing 'temperature'"))?;
-        
+
         // Parse structures
         let mut structures: Vec<StructureDefinition> = Vec::new();
         if let Some(structures_seq) = raw["structures"].as_sequence() {
@@ -97,9 +97,7 @@ impl AssetLoader for BiomeLoader {
                     .as_f64()
                     .ok_or_else(|| anyhow::anyhow!("Structure missing 'density'"))?;
 
-                let asset = struct_yaml["asset"]
-                    .as_str()
-                    .map(|s| s.to_string());
+                let asset = struct_yaml["asset"].as_str().map(|s| s.to_string());
 
                 // Parse voxel mappings
                 let mut voxels: HashMap<String, String> = HashMap::new();
@@ -130,7 +128,11 @@ impl AssetLoader for BiomeLoader {
                 });
             }
         }
-        
+
+        // Parse colors with sensible defaults
+        let water_color = parse_color(&raw["ambient_graphics"]["water_color"], (0, 0, 0))?;
+        let foliage_color = parse_color(&raw["ambient_graphics"]["foliage_color"], (100, 0, 0))?;
+
         let def = BiomeDefinition {
             name: name.clone(),
             namespace: namespace.clone(),
@@ -147,6 +149,8 @@ impl AssetLoader for BiomeLoader {
             humidity,
             temperature,
             structures,
+            water_color,
+            foliage_color,
         };
 
         let mut registry = self.registry.write().unwrap();
@@ -170,4 +174,31 @@ impl AssetLoader for BiomeLoader {
         registry.id_to_name.insert(id, full_name);
         Ok(())
     }
+}
+
+fn parse_color(value: &serde_yaml::Value, default: (u8, u8, u8)) -> Result<(u8, u8, u8)> {
+    if let Some(seq) = value.as_sequence() {
+        if seq.len() >= 3 {
+            let r = seq[0].as_u64().unwrap_or(0) as u8;
+            let g = seq[1].as_u64().unwrap_or(0) as u8;
+            let b = seq[2].as_u64().unwrap_or(0) as u8;
+            return Ok((r, g, b));
+        }
+    }
+    if let Some(map) = value.as_mapping() {
+        let r = map
+            .get(&serde_yaml::Value::String("r".to_string()))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+        let g = map
+            .get(&serde_yaml::Value::String("g".to_string()))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+        let b = map
+            .get(&serde_yaml::Value::String("b".to_string()))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+        return Ok((r, g, b));
+    }
+    Ok(default)
 }

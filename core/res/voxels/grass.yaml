@@ -12,3 +12,4 @@ components:
   IsSolid: true
   BreakTicks: 10
   Drops: Apostasy:Item:Dirt
+  HasTint: 0

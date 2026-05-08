@@ -1,31 +1,59 @@
 use anyhow::{Context, Result};
-use naga::back::spv::{write_vec, Options as SpvOptions, PipelineOptions};
+use naga::back::spv::{Options as SpvOptions, PipelineOptions, write_vec};
 use naga::front::glsl::{Frontend, Options as GlslOptions};
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use naga::{ResourceBinding, ShaderStage};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const SHADER_DIRECTORIES: &[&str] = &[
-    "res/shaders",
-    "../core/res/shaders",
-    "core/res/shaders",
-];
+const SHADER_DIRECTORIES: &[&str] = &["res/shaders", "../core/res/shaders", "core/res/shaders"];
 
 pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
-    let path = resolve_shader_path(name)
-        .with_context(|| format!("Shader '{}' was not found in app or core shader directories", name))?;
+    let requested = Path::new(name);
+    let source_path = resolve_shader_path(name);
+    let spv_path = if requested.extension().and_then(|e| e.to_str()) == Some("spv") {
+        source_path.clone()
+    } else {
+        resolve_shader_path(&format!("{}.spv", name))
+    };
 
-    eprintln!("Loading shader: {}", path.display());
-
-    if path.extension().and_then(|e| e.to_str()) == Some("spv") {
-        return fs::read(&path)
-            .with_context(|| format!("Failed to read SPIR-V shader file {}", path.display()));
+    if let Some(spv) = &spv_path {
+        if source_path.is_none() || source_is_older_than_spv(source_path.as_deref(), spv) {
+            eprintln!("Loading shader SPIR-V: {}", spv.display());
+            return fs::read(spv)
+                .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()));
+        }
     }
 
-    let source = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read shader source file {}", path.display()))?;
-    compile_shader(&path, &source)
+    let source_path = source_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Shader '{}' was not found in app or core shader directories",
+            name
+        )
+    })?;
+
+    eprintln!("Loading shader source: {}", source_path.display());
+    let source = fs::read_to_string(&source_path).with_context(|| {
+        format!(
+            "Failed to read shader source file {}",
+            source_path.display()
+        )
+    })?;
+
+    match compile_shader(&source_path, &source) {
+        Ok(bytes) => Ok(bytes),
+        Err(err) if spv_path.is_some() => {
+            let spv = spv_path.unwrap();
+            eprintln!(
+                "WARNING: GLSL compile failed, falling back to SPIR-V {}: {}",
+                spv.display(),
+                err
+            );
+            fs::read(&spv)
+                .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn resolve_shader_path(name: &str) -> Option<PathBuf> {
@@ -33,7 +61,7 @@ fn resolve_shader_path(name: &str) -> Option<PathBuf> {
     let shader_paths = if requested.extension().and_then(|e| e.to_str()) == Some("spv") {
         vec![name.to_string()]
     } else {
-        vec![format!("{}.spv", name), name.to_string()]
+        vec![name.to_string(), format!("{}.spv", name)]
     };
 
     for dir in SHADER_DIRECTORIES {
@@ -46,6 +74,17 @@ fn resolve_shader_path(name: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn source_is_older_than_spv(source: Option<&Path>, spv: &Path) -> bool {
+    if let Some(source) = source {
+        if let (Ok(source_meta), Ok(spv_meta)) = (fs::metadata(source), fs::metadata(spv)) {
+            if let (Ok(source_time), Ok(spv_time)) = (source_meta.modified(), spv_meta.modified()) {
+                return source_time <= spv_time;
+            }
+        }
+    }
+    false
 }
 
 fn compile_shader(path: &Path, source: &str) -> Result<Vec<u8>> {
@@ -71,10 +110,18 @@ fn compile_shader(path: &Path, source: &str) -> Result<Vec<u8>> {
         entry_point: "main".into(),
     };
 
-    let words = write_vec(&module, &module_info, &writer_options, Some(&pipeline_options))
-        .with_context(|| format!("Failed to write SPIR-V for shader {}", path.display()))?;
+    let words = write_vec(
+        &module,
+        &module_info,
+        &writer_options,
+        Some(&pipeline_options),
+    )
+    .with_context(|| format!("Failed to write SPIR-V for shader {}", path.display()))?;
 
-    Ok(words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<u8>>())
+    Ok(words
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<u8>>())
 }
 
 fn preprocess_shader_source(source: &str) -> String {
@@ -164,7 +211,7 @@ fn parse_uniform_name(line: &str) -> Option<&str> {
     if name_part.ends_with('{') || name_part.ends_with(';') {
         Some(name_part.trim_end_matches(|c| c == '{' || c == ';'))
     } else {
-        // For "type name;" 
+        // For "type name;"
         Some(name_part)
     }
 }
@@ -173,7 +220,10 @@ fn shader_kind_from_path(path: &Path) -> Result<ShaderStage> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("vert") => Ok(ShaderStage::Vertex),
         Some("frag") => Ok(ShaderStage::Fragment),
-        Some(ext) => anyhow::bail!("Unsupported shader extension '{}', expected .vert or .frag", ext),
+        Some(ext) => anyhow::bail!(
+            "Unsupported shader extension '{}', expected .vert or .frag",
+            ext
+        ),
         None => anyhow::bail!("Shader path {} has no extension", path.display()),
     }
 }

@@ -95,6 +95,12 @@ pub fn input_init(world: &mut World) -> Result<()> {
         "ToggleStructureSelection",
     ));
 
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::F1),
+        KeyAction::Press,
+        "ReloadShaders",
+    ));
+
     inputs.register_mousebind(MouseBind::new(MouseButton::Left, KeyAction::Hold, "Break"));
     inputs.register_mousebind(MouseBind::new(MouseButton::Right, KeyAction::Hold, "Place"));
 

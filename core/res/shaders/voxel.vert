@@ -1,12 +1,14 @@
 #version 450
 layout(location = 0) in uint data_lo;
 layout(location = 1) in uint data_hi;
+layout(location = 2) in uint tint;
 
 layout(location = 0) out vec2 fragUV;
-layout(location = 1) out flat uint fragTexId;
-layout(location = 2) out flat uint fragAtlasTiles;
-layout(location = 3) out flat uint fragFace;
+layout(location = 1) out uint fragTexId;
+layout(location = 2) out uint fragAtlasTiles;
+layout(location = 3) out uint fragFace;
 layout(location = 4) out float fragAO;
+layout(location = 5) out vec3 fragTint;
 
 layout(push_constant) uniform Push {
   mat4 proj_view;
@@ -29,6 +31,10 @@ void main() {
   uint tex = data_hi & 0xFFFFu;
   uint ao  = (data_hi >> 16u) & 0x3u;
 
+  float r = float((tint >> 0u) & 0xFu) / 15.0;
+  float g = float((tint >> 4u) & 0xFu) / 15.0;
+  float b = float((tint >> 8u) & 0xFu) / 15.0;
+  fragTint = (tint == 0u) ? vec3(1.0) : vec3(r, g, b);
   fragUV = vec2(float(u), float(v));
   fragTexId = tex;
   fragAtlasTiles = pc.atlas_tiles;

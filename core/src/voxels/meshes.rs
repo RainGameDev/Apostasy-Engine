@@ -1,3 +1,4 @@
+use std::num::NonZeroU16;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -7,7 +8,6 @@ use ash::vk::{self, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::log;
 use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
 use crate::rendering::shared::model::GpuMesh;
@@ -15,19 +15,34 @@ use crate::rendering::shared::vertex::VertexDefinition;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::utils::flatten::flatten;
 use crate::voxels::VoxelTransform;
+use crate::voxels::biome::BiomeRegistry;
 use crate::voxels::chunk::{Chunk, ChunkGenQueue, GeneratedMeshData};
 use crate::voxels::voxel::VoxelRegistry;
 use crate::voxels::voxel_components::is_transparent::IsTransparent;
+use crate::voxels::voxel_components::tints::{HasTint, TintType};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct VoxelVertex {
     pub data_lo: u32,
     pub data_hi: u32,
+    pub tint: Option<NonZeroU16>,
 }
 
 impl VoxelVertex {
-    pub fn pack(x: u8, y: u8, z: u8, face: u8, u: u8, v: u8, texture_id: u16, ao: u8) -> Self {
+    pub fn pack(
+        x: u8,
+        y: u8,
+        z: u8,
+        face: u8,
+        u: u8,
+        v: u8,
+        texture_id: u16,
+        ao: u8,
+        r: u8,
+        g: u8,
+        b: u8,
+    ) -> Self {
         let data_lo: u32 = (x as u32)
             | ((y as u32) << 6)
             | ((z as u32) << 12)
@@ -35,7 +50,16 @@ impl VoxelVertex {
             | ((u as u32) << 21)
             | ((v as u32) << 27);
         let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
-        Self { data_lo, data_hi }
+        let packed: u16 = (((r as u16) >> 4) & 0xFu16)
+            | ((((g as u16) >> 4) & 0xFu16) << 4)
+            | ((((b as u16) >> 4) & 0xFu16) << 8);
+
+        let tint = NonZeroU16::new(packed);
+        Self {
+            data_lo,
+            data_hi,
+            tint: tint,
+        }
     }
 
     pub fn data_lo(&self) -> u32 {
@@ -67,6 +91,11 @@ impl VertexDefinition for VoxelVertex {
                 .location(1)
                 .format(vk::Format::R32_UINT)
                 .offset(4),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(2)
+                .format(vk::Format::R16_UINT)
+                .offset(8),
         ]
     }
 }
@@ -133,6 +162,12 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             .clone(),
     );
 
+    let biome_registry = Arc::new(
+        world
+            .get_resource::<BiomeRegistry>()
+            .expect("No BiomeRegistry resource")
+            .clone(),
+    );
     // build a map from chunk positions to their object ids
     let mut chunk_positions: HashMap<(i32, i32, i32), ObjectId> = HashMap::new();
     for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
@@ -165,6 +200,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     // for each chunk that needs remeshing, spawn a job
     for (id, pos) in needs_remesh {
         let registry = registry.clone();
+        let biome_registry = biome_registry.clone();
         let mesh_sender = mesh_sender.clone();
 
         let chunk = if let Some(&chunk_id) = chunk_positions.get(&(pos.x, pos.y, pos.z)) {
@@ -201,7 +237,8 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
         // spawn the job
         pool.spawn(move || {
-            let (vertices, indices) = generate_mesh(&chunk, &registry, &neighbours);
+            let (vertices, indices) =
+                generate_mesh(&chunk, &registry, &neighbours, &biome_registry);
             let mesh_data = crate::voxels::chunk::GeneratedMeshData {
                 position: pos,
                 vertices,
@@ -298,6 +335,7 @@ pub fn generate_mesh(
     chunk: &Chunk,
     registry: &VoxelRegistry,
     neighbours: &ChunkNeighbours,
+    biome_registry: &BiomeRegistry,
 ) -> (Vec<VoxelVertex>, Vec<u32>) {
     let lod = chunk.lod as usize;
     let grid_size = 32 / lod;
@@ -616,6 +654,20 @@ pub fn generate_mesh(
                             vertex_ao(face, gx, gy, gz, 1, 0),
                         ),
                     };
+
+                    let tint_type = voxel_def.get_component::<HasTint>();
+
+                    let mut tint = (0, 0, 0);
+                    if let Ok(tint_type) = tint_type {
+                        let biome = biome_registry.get_def(chunk.biome).unwrap();
+                        if tint_type.0 == TintType::Water {
+                            tint = biome.water_color;
+                        }
+
+                        if tint_type.0 == TintType::Foliage {
+                            tint = biome.foliage_color;
+                        }
+                    }
                     // push to the buffers
                     vertices.push(VoxelVertex::pack(
                         corners[0][0],
@@ -626,6 +678,9 @@ pub fn generate_mesh(
                         0,
                         texture_id as u16,
                         ao0,
+                        tint.0,
+                        tint.1,
+                        tint.2,
                     ));
                     vertices.push(VoxelVertex::pack(
                         corners[1][0],
@@ -636,6 +691,9 @@ pub fn generate_mesh(
                         0,
                         texture_id as u16,
                         ao1,
+                        tint.0,
+                        tint.1,
+                        tint.2,
                     ));
                     vertices.push(VoxelVertex::pack(
                         corners[2][0],
@@ -646,6 +704,9 @@ pub fn generate_mesh(
                         1,
                         texture_id as u16,
                         ao2,
+                        tint.0,
+                        tint.1,
+                        tint.2,
                     ));
                     vertices.push(VoxelVertex::pack(
                         corners[3][0],
@@ -656,6 +717,9 @@ pub fn generate_mesh(
                         1,
                         texture_id as u16,
                         ao3,
+                        tint.0,
+                        tint.1,
+                        tint.2,
                     ));
 
                     // fixes diagonal artefacting on darker/occluded corners

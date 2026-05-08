@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 
+use anyhow::{Error, Result};
 use apostasy_macros::Resource;
 use hashbrown::HashMap;
 use noise::{NoiseFn, Perlin};
@@ -15,6 +16,13 @@ pub struct BiomeRegistry {
     pub defs: Vec<BiomeDefinition>,
     pub name_to_id: HashMap<String, BiomeId>,
     pub id_to_name: HashMap<BiomeId, String>,
+}
+
+impl BiomeRegistry {
+    pub fn get_def(&self, id: BiomeId) -> Result<&BiomeDefinition> {
+        let msg = format!("Biome {} not found", id);
+        self.defs.get(id as usize).ok_or(Error::msg(msg))
+    }
 }
 
 pub static NOISE: OnceLock<Perlin> = OnceLock::new();
@@ -70,6 +78,11 @@ pub struct BiomeDefinition {
     pub humidity: f64,
     /// Structures or feature definitions that spawn in this biome.
     pub structures: Vec<StructureDefinition>,
+
+    /// RGB color for water tinting (default: standard water blue)
+    pub water_color: (u8, u8, u8),
+    /// RGB color for foliage tinting (default: standard green)
+    pub foliage_color: (u8, u8, u8),
 }
 
 pub struct ClimateCache {
@@ -98,7 +111,8 @@ impl ClimateCache {
                 let sz = world_z + (cz * climate_scale) as f64;
                 temp[cz][cx] = (temp_noise.get([sx * 0.001, sz * 0.001]) + 1.0) * 0.5;
                 humid[cz][cx] = (humid_noise.get([sx * 0.001, sz * 0.001]) + 1.0) * 0.5;
-                continentalness[cz][cx] = (continental_noise.get([sx * 0.00035, sz * 0.00035]) + 1.0) * 0.5;
+                continentalness[cz][cx] =
+                    (continental_noise.get([sx * 0.00035, sz * 0.00035]) + 1.0) * 0.5;
             }
         }
 
@@ -148,10 +162,10 @@ fn biome_climate_weights(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                let dist_a = (a.temperature - temperature).powi(2)
-                    + (a.humidity - humidity).powi(2);
-                let dist_b = (b.temperature - temperature).powi(2)
-                    + (b.humidity - humidity).powi(2);
+                let dist_a =
+                    (a.temperature - temperature).powi(2) + (a.humidity - humidity).powi(2);
+                let dist_b =
+                    (b.temperature - temperature).powi(2) + (b.humidity - humidity).powi(2);
                 dist_a.partial_cmp(&dist_b).unwrap()
             })
             .map(|(i, _)| i as BiomeId)
@@ -167,8 +181,8 @@ fn biome_climate_weights(
         .iter()
         .enumerate()
         .map(|(i, def)| {
-            let dist_sq = (def.temperature - temperature).powi(2)
-                + (def.humidity - humidity).powi(2);
+            let dist_sq =
+                (def.temperature - temperature).powi(2) + (def.humidity - humidity).powi(2);
             let weight = (-dist_sq / two_sigma_sq).exp();
             (i as BiomeId, weight)
         })
