@@ -1,77 +1,71 @@
 # Class
-name: Forest
+name: Alpine
 namespace: Apostasy
 class: Biome
 #Generation
-amplitude: 6.5
-frequency: 0.03
+amplitude: 110.0
+frequency: 0.004
 octaves: 6
 #Generation Location
-humidity: 0.6
-temperature: 0.32
+humidity: 0.35
+temperature: 0.25
 # Voxels
 voxel:
   surface:
-    - "Apostasy:Voxel:Grass"
+    - "Apostasy:Voxel:Stone"
   subsurface:
     - "Apostasy:Voxel:Dirt"
   underground:
-    - "Apostasy:Voxel:Dirt"
+    - "Apostasy:Voxel:Stone"
 # Structures
 structures:
   - type: tree
-    density: 12.0
+    density: 0.5
     voxels:
       trunk: "Apostasy:Voxel:Log"
       canopy: "Apostasy:Voxel:Leaves"
     parameters:
-      min_height: 6
-      max_height: 10
+      min_height: 5
+      max_height: 9
       canopy_radius: 2
   - type: boulder
-    density: 0.05
+    density: 5.0
     voxels:
       boulder: "Apostasy:Voxel:Stone"
     parameters:
-      min_radius: 1
-      max_radius: 2
+      min_radius: 3
+      max_radius: 6
 # Weather and Seasons
 default_weather:
-  - name: "Apostasy:Weather:Sunny"
+  - name: "Apostasy:Weather:Cloudy"
 seasons:
   - name: "Apostasy:Seasons:Spring"
-    temperature: [5.0, 15.0]
-    available_weather:
-      - name: "Apostasy:Weather:Rain"
-        chance: 0.05
-      - name: "Apostasy:Weather:HeavyRain"
-        chance: 0.02
-      - name: "Apostasy:Weather:Thunder"
-        chance: 0.01
-      - name: "Apostasy:Weather:Cloudy"
-        chance: 0.25
-  - name: "Apostasy:Seasons:Summer"
-    temperature: [15.0, 25.0]
-    available_weather:
-      - name: "Apostasy:Weather:Rain"
-        chance: 0.05
-  - name: "Apostasy:Seasons:Autumn"
-    temperature: [5.0, 10.0]
-    available_weather:
-      - name: "Apostasy:Weather:Rain"
-        chance: 0.1
-      - name: "Apostasy:Weather:Snow"
-        chance: 0.05
-  - name: "Apostasy:Seasons:Winter"
     temperature: [-5.0, 5.0]
     available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
       - name: "Apostasy:Weather:Rain"
-        chance: 0.05
+        chance: 0.15
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [0.0, 12.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [-5.0, 5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.2
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-20.0, -2.0]
+    available_weather:
       - name: "Apostasy:Weather:Snow"
-        chance: 0.1
+        chance: 0.6
 # Graphics
 ambient_graphics:
   water_color:
-    rgb: [255, 255, 255]
+    rgb: [220, 220, 230]
   foliage_color:
-    rgb: [255, 255, 255]
+    rgb: [190, 190, 210]

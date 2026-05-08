@@ -154,11 +154,11 @@ pub fn update(world: &mut World) -> Result<()> {
     let velocity = player.get_component_mut::<Velocity>()?;
 
     let wish_dir = rotation * Vector3::new(direction.x, 0.0, direction.y);
-    velocity.linear_velocity.x = wish_dir.x * 2.0;
-    velocity.linear_velocity.z = wish_dir.z * 2.0;
+    velocity.linear_velocity.x = wish_dir.x * 20.0;
+    velocity.linear_velocity.z = wish_dir.z * 20.0;
 
     if should_jump && velocity.is_grounded {
-        velocity.linear_velocity.y = 5.0;
+        velocity.linear_velocity.y = 50.0;
     }
 
     Ok(())

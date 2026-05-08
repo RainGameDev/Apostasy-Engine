@@ -4,8 +4,8 @@ use apostasy_core::{
     utils::flatten::flatten,
     voxels::{
         biome::{
-            BiomeRegistry, ClimateCache, StructureDefinition, HUMIDITY_NOISE, NOISE, 
-            TEMPERATURE_NOISE, sample_biome_weights_at_climate,
+            BiomeDefinition, BiomeRegistry, ClimateCache, NOISE, StructureDefinition,
+            sample_biome_weights, sample_biome_weights_at_climate,
         },
         chunk::GeneratedChunkData,
         structure::StructureRegistry,
@@ -36,12 +36,51 @@ fn fractal_brownian_motion(
     value / max_value // normalized to [-1, 1]
 }
 
-fn smooth_weight(w: f64) -> f64 {
-    w * w * (3.0 - 2.0 * w)
+fn ridged_fbm(noise: &Perlin, x: f64, z: f64, octaves: u32, lacunarity: f64, gain: f64) -> f64 {
+    let mut value = 0.0;
+    let mut amplitude = 0.5;
+    let mut frequency = 1.0;
+    let mut weight = 1.0;
+    let mut max_value = 0.0;
+
+    for _ in 0..octaves {
+        let signal = 1.0 - noise.get([x * frequency, z * frequency]).abs();
+        value += signal * amplitude * weight;
+        max_value += amplitude * weight;
+        weight = (signal * 2.0).clamp(0.0, 1.0);
+        amplitude *= gain;
+        frequency *= lacunarity;
+    }
+
+    (value / max_value).clamp(0.0, 1.0)
 }
 
 fn apply_height_curve(val: f64) -> f64 {
     if val > 0.0 { val.powf(1.5) } else { val }
+}
+
+const SEA_LEVEL: i32 = 58;
+
+fn compute_terrain_detail(
+    noise: &Perlin,
+    world_x: f64,
+    world_z: f64,
+    biome: &BiomeDefinition,
+    continentalness: f64,
+    lod: u8,
+) -> f64 {
+    let nx = world_x * biome.frequency;
+    let nz = world_z * biome.frequency;
+    let octaves = lod_octaves(biome.octaves, lod);
+
+    let base_detail = apply_height_curve(fractal_brownian_motion(noise, nx, nz, octaves, 2.0, 0.5))
+        * biome.amplitude;
+    let ridge = ridged_fbm(noise, world_x * 0.006, world_z * 0.006, 4, 2.0, 0.55);
+    let peak = fractal_brownian_motion(noise, world_x * 0.02, world_z * 0.02, 3, 2.0, 0.45);
+    let valley =
+        fractal_brownian_motion(noise, world_x * 0.012, world_z * 0.012, 3, 2.0, 0.5).abs();
+
+    base_detail + ridge * 35.0 + peak * 28.0 - valley * 12.0 + continentalness * 35.0
 }
 
 fn lod_octaves(biome_octaves: u32, lod: u8) -> u32 {
@@ -70,6 +109,7 @@ fn random_range(x: i32, z: i32, seed: u32, min: u32, max: u32) -> u32 {
 
 const FEATURE_GRID_SIZE: i32 = 8;
 const FEATURE_CELLS_PER_CHUNK: f64 = ((32 / FEATURE_GRID_SIZE) * (32 / FEATURE_GRID_SIZE)) as f64;
+const BIOME_BLEND_DISTANCE: f64 = 0.12;
 
 fn div_floor(value: i32, divisor: i32) -> i32 {
     if value >= 0 {
@@ -79,53 +119,35 @@ fn div_floor(value: i32, divisor: i32) -> i32 {
     }
 }
 
-fn sample_climate(world_x: f64, world_z: f64, seed: u32) -> (f64, f64) {
-    let temp_noise = TEMPERATURE_NOISE.get_or_init(|| Perlin::new(seed));
-    let humid_noise = HUMIDITY_NOISE.get_or_init(|| Perlin::new(seed.wrapping_add(1)));
-
-    let temperature = (temp_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
-    let humidity = (humid_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
-    (temperature, humidity)
-}
-
 fn sample_height_and_biome(
     world_x: f64,
     world_z: f64,
     noise: &Perlin,
     biome_registry: &BiomeRegistry,
     lod: u8,
+    seed: u32,
 ) -> (i32, u16) {
-    let (temperature, humidity) = sample_climate(world_x, world_z, 12311231u32);
-    let weights = sample_biome_weights_at_climate(temperature, humidity, biome_registry, 0.05);
+    let weights =
+        sample_biome_weights(world_x, world_z, biome_registry, seed, BIOME_BLEND_DISTANCE);
 
-    let smoothed: Vec<(u16, f64)> = weights
-        .iter()
-        .map(|(id, w)| (*id, smooth_weight(*w)))
-        .collect();
-    let weight_sum: f64 = smoothed.iter().map(|(_, w)| w).sum();
+    let mut weighted_amplitude = 0.0f64;
 
-    let mut blended_height = 0.0f64;
     let mut dominant_biome = 0u16;
     let mut dominant_weight = 0.0f64;
+    let mut dominant_detail = 0.0f64;
 
-    for (biome_id, raw_weight) in &smoothed {
-        let weight = raw_weight / weight_sum;
-        let biome = &biome_registry.defs[*biome_id as usize];
-
-        let nx = world_x * biome.frequency;
-        let nz = world_z * biome.frequency;
-        let octaves = lod_octaves(biome.octaves, lod);
-        let val = fractal_brownian_motion(&noise, nx, nz, octaves, 2.0, 0.5);
-        let shaped = apply_height_curve(val);
-
-        blended_height += (64.0 + shaped * biome.amplitude) * weight;
+    for &(biome_id, weight) in &weights {
+        let biome = &biome_registry.defs[biome_id as usize];
+        weighted_amplitude += biome.amplitude * weight;
 
         if weight > dominant_weight {
             dominant_weight = weight;
-            dominant_biome = *biome_id;
+            dominant_biome = biome_id;
+            dominant_detail = compute_terrain_detail(&noise, world_x, world_z, biome, 0.0, lod);
         }
     }
 
+    let blended_height = 64.0 + weighted_amplitude * 0.4 + dominant_detail;
     (blended_height as i32, dominant_biome)
 }
 
@@ -252,7 +274,13 @@ fn place_tree_data_driven(
         .and_then(|v| v.as_u64())
         .unwrap_or(2) as i32;
 
-    let trunk_height = random_range(center_x, center_z, seed, min_height as u32, max_height as u32) as i32;
+    let trunk_height = random_range(
+        center_x,
+        center_z,
+        seed,
+        min_height as u32,
+        max_height as u32,
+    ) as i32;
     let shape_seed = hash_column(center_x, center_z, seed.wrapping_add(1));
     let canopy_radius = canopy_radius_base + ((shape_seed & 1) as i32);
     let max_y = 32;
@@ -402,7 +430,13 @@ fn place_boulder_data_driven(
         .and_then(|v| v.as_u64())
         .unwrap_or(2) as i32;
 
-    let radius = (random_range(center_x, center_z, seed, min_radius as u32, max_radius as u32) + 1) as i32;
+    let radius = (random_range(
+        center_x,
+        center_z,
+        seed,
+        min_radius as u32,
+        max_radius as u32,
+    ) + 1) as i32;
     let center_y = base_y + 1;
 
     for dz in -radius..=radius {
@@ -464,7 +498,7 @@ fn place_structure_asset(
 
     for block in asset.blocks.iter() {
         if let Some(voxel_id) = registry.name_to_id.get(&block.voxel).copied() {
-            set_voxel_global(
+            set_voxel_global_non_floating(
                 voxels,
                 feature_x + block.position[0],
                 feature_surface_y + block.position[1] + y_offset,
@@ -561,44 +595,49 @@ pub fn generate_chunk_data(
             let wx = world_x + x as f64;
             let wz = world_z + z as f64;
 
-            let (temp, humid) = climate.sample(x as f64, z as f64);
-            let weights = sample_biome_weights_at_climate(temp, humid, biome_registry, 0.05);
+            let (temp, humid, continental) = climate.sample(x as f64, z as f64);
+            let climate_temp = (temp * 0.7 + continental * 0.25 + 0.05).clamp(0.0, 1.0);
+            let climate_humid = (humid * 0.6 + (1.0 - continental) * 0.3 + 0.05).clamp(0.0, 1.0);
+            let weights = sample_biome_weights_at_climate(
+                climate_temp,
+                climate_humid,
+                biome_registry,
+                BIOME_BLEND_DISTANCE,
+            );
 
-            let smoothed: Vec<(u16, f64)> = weights
-                .iter()
-                .map(|(id, w)| (*id, smooth_weight(*w)))
-                .collect();
-            let weight_sum: f64 = smoothed.iter().map(|(_, w)| w).sum();
-
-            let mut blended_height = 0.0f64;
+            let mut weighted_amplitude = 0.0f64;
             let mut dominant_biome = 0u16;
             let mut dominant_weight = 0.0f64;
+            let mut weighted_detail = 0.0f64;
 
-            for (biome_id, raw_weight) in &smoothed {
-                let weight = raw_weight / weight_sum;
-                let biome = &biome_registry.defs[*biome_id as usize];
+            for &(biome_id, weight) in &weights {
+                let biome = &biome_registry.defs[biome_id as usize];
+                weighted_amplitude += biome.amplitude * weight;
 
-                let nx = wx * biome.frequency;
-                let nz = wz * biome.frequency;
+                let detail = compute_terrain_detail(&noise, wx, wz, biome, continental, lod);
 
-                let octaves = lod_octaves(biome.octaves, lod);
-                let val = fractal_brownian_motion(&noise, nx, nz, octaves, 2.0, 0.5);
-                let shaped = apply_height_curve(val);
-
-                blended_height += (base_height + shaped * biome.amplitude) * weight;
-
+                weighted_detail += detail * weight;
                 if weight > dominant_weight {
                     dominant_weight = weight;
-                    dominant_biome = *biome_id;
+                    dominant_biome = biome_id;
                 }
             }
 
+            let blended_height = base_height
+                + weighted_amplitude * 0.35
+                + weighted_detail * 0.6
+                + (continental - 0.5) * 45.0;
             heightmap[z * 32 + x] = blended_height as i32;
             column_biome[z * 32 + x] = dominant_biome;
         }
     }
 
     let mut voxels = vec![0u16; 32 * 32 * 32].into_boxed_slice();
+    let water_voxel = registry
+        .name_to_id
+        .get("Apostasy:Voxel:Water")
+        .copied()
+        .unwrap_or(0);
 
     for z in 0..32usize {
         for x in 0..32usize {
@@ -624,7 +663,11 @@ pub fn generate_chunk_data(
                 let depth = surface_y - wy;
 
                 let id = if wy > surface_y {
-                    0 // air
+                    if water_voxel != 0 && wy <= SEA_LEVEL {
+                        water_voxel
+                    } else {
+                        0 // air
+                    }
                 } else if depth == 0 {
                     surface_voxel
                 } else if depth < 4 {
@@ -667,15 +710,21 @@ pub fn generate_chunk_data(
                 &noise,
                 biome_registry,
                 lod,
+                seed,
             );
             let biome = &biome_registry.defs[feature_biome_id as usize];
 
             // Iterate through all structures defined in the biome
             for (structure_idx, structure) in biome.structures.iter().enumerate() {
-                let structure_probability = (structure.density / FEATURE_CELLS_PER_CHUNK).clamp(0.0, 1.0);
-                
+                let structure_probability =
+                    (structure.density / FEATURE_CELLS_PER_CHUNK).clamp(0.0, 1.0);
+
                 // Use different bits of the hash for each structure type
-                let structure_hash = hash_column(feature_x, feature_z, seed.wrapping_add(1 + structure_idx as u32));
+                let structure_hash = hash_column(
+                    feature_x,
+                    feature_z,
+                    seed.wrapping_add(1 + structure_idx as u32),
+                );
                 let structure_chance = ((structure_hash & 0xffff) as f64) / 65535.0;
 
                 if structure_chance < structure_probability {
