@@ -1,0 +1,9 @@
+name: Sandstone
+namespace: Apostasy
+class: Voxel
+textures:
+  all: textures/sandstone.png
+components:
+  IsSolid: true
+  BreakTicks: 25
+  Drops: "Apostasy:Item:Sandstone"

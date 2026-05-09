@@ -1,0 +1,9 @@
+name: Snow
+namespace: Apostasy
+class: Voxel
+textures:
+  all: textures/snow.png
+components:
+  IsSolid: true
+  BreakTicks: 10
+  Drops: Apostasy:Item:Snow

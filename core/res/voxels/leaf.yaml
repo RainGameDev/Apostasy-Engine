@@ -1,0 +1,11 @@
+name: Leaves
+namespace: Apostasy
+class: Voxel
+textures:
+  all:
+    - textures/leaf.png
+components:
+  IsSolid: true
+  BreakTicks: 5
+  Drops: "Apostasy:Item:Leaves"
+  IsTransparent: true

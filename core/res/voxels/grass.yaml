@@ -1,0 +1,15 @@
+name: Grass
+namespace: Apostasy
+class: Voxel
+textures:
+  front: textures/grass_side.png
+  back: textures/grass_side.png
+  left: textures/grass_side.png
+  right: textures/grass_side.png
+  top: textures/grass_top.png
+  bottom: textures/dirt.png
+components:
+  IsSolid: true
+  BreakTicks: 10
+  Drops: Apostasy:Item:Dirt
+  HasTint: 0

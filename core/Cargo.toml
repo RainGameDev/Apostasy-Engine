@@ -1,0 +1,36 @@
+[package]
+name = "apostasy-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+ash = "0.38.0"
+ash-window = "0.13.0"
+anyhow = "1.0.100"
+bytemuck = { version = "1.19.0", features = ["derive"]}
+cgmath = "0.18.0"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+winit = "0.30.5"
+parking_lot = "0.12.5"
+gl = "0.14.0"
+gltf = "1.4.1"
+serde = "1.0.228"
+serde_yaml = "0.9.34"
+inventory = "0.3.24"
+apostasy-macros = {path = "../macros/"}
+hashbrown = "0.17.0"
+rand = "0.10.0"
+image = "0.25.10"
+noise = "0.9.0"
+naga = { version = "27.0.3", features = ["glsl-in", "spv-out"] }
+slotmap = "1.1.1"
+egui = "0.33.3"
+eframe = "0.33.3"
+egui-winit = "0.33.3"
+epaint = "0.33.3"
+egui-ash-renderer = {version = "0.11", features = ["dynamic-rendering"]}
+rayon = "1.10"
+crossbeam-channel = "0.5"
+num_cpus = "1.16"

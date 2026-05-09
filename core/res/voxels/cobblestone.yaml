@@ -1,0 +1,9 @@
+name: Cobblestone
+namespace: Apostasy
+class: Voxel
+textures:
+  all: textures/stone.png
+components:
+  IsSolid: true
+  BreakTicks: 25
+  Drops: "Apostasy:Item:Cobblestone"

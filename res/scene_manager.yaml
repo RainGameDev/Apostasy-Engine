@@ -1,5 +1,0 @@
-scene_paths:
-- res/source_physics_showcase.scene
-- res/physics_test.scene
-- res/new_scene.scene
-primary_scene: res/scenes/source_physics_showcase.scene

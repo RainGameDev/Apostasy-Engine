@@ -1,0 +1,313 @@
+name: Structure
+namespace: Apostasy
+class: Structure
+origin:
+- 0
+- 0
+- 0
+size:
+- 6
+- 9
+- 10
+blocks:
+- position:
+  - -4
+  - 54
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 54
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 54
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 54
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 54
+  - -5
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -4
+  - 54
+  - -4
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -4
+  - 55
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 55
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 55
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 55
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 55
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 55
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 56
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 57
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -4
+  - 58
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 54
+  - -9
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 54
+  - -8
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 54
+  - -7
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 54
+  - -6
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 54
+  - -5
+  voxel: Apostasy:Voxel:Dirt
+- position:
+  - -3
+  - 54
+  - -4
+  voxel: Apostasy:Voxel:Dirt
+- position:
+  - -3
+  - 55
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 55
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 55
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 55
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 55
+  - -5
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 55
+  - -4
+  voxel: Apostasy:Voxel:Grass
+- position:
+  - -3
+  - 56
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 56
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 56
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 56
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 56
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 56
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 57
+  - -4
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -9
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -8
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -7
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -6
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -5
+  voxel: Apostasy:Air
+- position:
+  - -3
+  - 58
+  - -4
+  voxel: Apostasy:Air
+metadata: {}

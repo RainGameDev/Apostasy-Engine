@@ -1,0 +1,10 @@
+name: Log
+namespace: Apostasy
+class: Voxel
+textures:
+  all:
+    - textures/log.png
+components:
+  IsSolid: true
+  BreakTicks: 5
+  Drops: "Apostasy:Item:Log"

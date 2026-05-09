@@ -1,0 +1,5 @@
+name: Dirt
+namespace: Apostasy
+class: Item
+components:
+  Voxel: Dirt

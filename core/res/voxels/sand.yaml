@@ -1,0 +1,14 @@
+name: Sand
+namespace: Apostasy
+class: Voxel
+textures:
+  front: textures/sand.png
+  back: textures/sand.png
+  left: textures/sand.png
+  right: textures/sand.png
+  top: textures/sand.png
+  bottom: textures/sand.png
+components:
+  IsSolid: true
+  BreakTicks: 12
+  Drops: Apostasy:Item:Sand
