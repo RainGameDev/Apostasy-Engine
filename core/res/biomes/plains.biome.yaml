@@ -2,13 +2,20 @@
 name: Plains
 namespace: Apostasy
 class: Biome
-#Generation
-amplitude: 0.3
-frequency: 0.001
-octaves: 2
-#Generation Location
+octaves: 4
+# Generation Location
 humidity: 0.4
 temperature: 0.4
+# Generation
+amplitude: 8.0
+frequency: 0.015
+# Terrain shaping
+terrain_shaping:
+  preset: flat
+  ridge_strength: 0.02
+  peak_strength: 0.02
+  continental_scale: 10.0
+  height_curve: 1.0
 # Voxels
 voxel:
   surface:
@@ -16,8 +23,8 @@ voxel:
   subsurface:
     - "Apostasy:Voxel:Dirt"
   underground:
-    - "Apostasy:Voxel:Dirt"
-# Structures (plains have few trees and no boulders)
+    - "Apostasy:Voxel:Stone"
+# Structures
 structures:
   - type: tree
     density: 0.05
@@ -64,5 +71,5 @@ seasons:
         chance: 0.1
 # Graphics
 ambient_graphics:
-  water_color: [88, 153, 46]
+  water_color: [63, 118, 228]
   foliage_color: [88, 153, 46]

@@ -5,7 +5,7 @@ use hashbrown::HashMap;
 
 use crate::{
     assets::loader::AssetLoader,
-    voxels::biome::{BiomeDefinition, BiomeRegistry, StructureDefinition},
+    voxels::biome::{BiomeDefinition, BiomeRegistry, StructureDefinition, TerrainShaping},
 };
 
 pub struct BiomeLoader {
@@ -32,13 +32,10 @@ impl AssetLoader for BiomeLoader {
             let registry = self.registry.read().unwrap();
             for reg in registry.defs.iter() {
                 if reg.name == name && reg.namespace == namespace {
-                    let msg = format!(
-                        "Biome with the name: {} exists in name space {} already",
-                        name.to_string(),
-                        namespace.to_string()
-                    );
-
-                    return Err(Error::msg(msg));
+                    return Err(Error::msg(format!(
+                        "Biome with the name: {} exists in namespace {} already",
+                        name, namespace
+                    )));
                 }
             }
         }
@@ -84,7 +81,11 @@ impl AssetLoader for BiomeLoader {
             .as_f64()
             .ok_or_else(|| anyhow::anyhow!("Missing 'temperature'"))?;
 
-        // Parse structures
+        // ── terrain_shaping block (all fields optional, falls back to a named
+        //    preset or field-by-field defaults if the block is absent) ────────
+        let terrain_shaping = parse_terrain_shaping(&raw["terrain_shaping"])?;
+
+        // ── Structures ────────────────────────────────────────────────────────
         let mut structures: Vec<StructureDefinition> = Vec::new();
         if let Some(structures_seq) = raw["structures"].as_sequence() {
             for struct_yaml in structures_seq {
@@ -99,7 +100,6 @@ impl AssetLoader for BiomeLoader {
 
                 let asset = struct_yaml["asset"].as_str().map(|s| s.to_string());
 
-                // Parse voxel mappings
                 let mut voxels: HashMap<String, String> = HashMap::new();
                 if let Some(voxels_map) = struct_yaml["voxels"].as_mapping() {
                     for (key, value) in voxels_map {
@@ -109,7 +109,6 @@ impl AssetLoader for BiomeLoader {
                     }
                 }
 
-                // Parse parameters (shape, size, etc.)
                 let mut parameters: HashMap<String, serde_yaml::Value> = HashMap::new();
                 if let Some(params_map) = struct_yaml["parameters"].as_mapping() {
                     for (key, value) in params_map {
@@ -129,9 +128,9 @@ impl AssetLoader for BiomeLoader {
             }
         }
 
-        // Parse colors with sensible defaults
-        let water_color = parse_color(&raw["ambient_graphics"]["water_color"], (0, 0, 0))?;
-        let foliage_color = parse_color(&raw["ambient_graphics"]["foliage_color"], (100, 0, 0))?;
+        // ── Ambient graphics ──────────────────────────────────────────────────
+        let water_color = parse_color(&raw["ambient_graphics"]["water_color"], (63, 118, 228))?;
+        let foliage_color = parse_color(&raw["ambient_graphics"]["foliage_color"], (77, 140, 61))?;
 
         let def = BiomeDefinition {
             name: name.clone(),
@@ -151,37 +150,106 @@ impl AssetLoader for BiomeLoader {
             structures,
             water_color,
             foliage_color,
+
+            terrain_shaping,
         };
 
         let mut registry = self.registry.write().unwrap();
+        // Second duplicate check under write lock to avoid a TOCTOU race.
         for reg in registry.defs.iter() {
             if reg.name == name && reg.namespace == namespace {
-                let msg = format!(
-                    "Voxel with the name: {} exists in name space {} already",
-                    name.to_string(),
-                    namespace.to_string()
-                );
-
-                return Err(Error::msg(msg));
+                return Err(Error::msg(format!(
+                    "Biome with the name: {} exists in namespace {} already",
+                    name, namespace
+                )));
             }
         }
 
         let id = registry.defs.len() as u16;
         let full_name = format!("{}:Biomes:{}", namespace, name);
         registry.defs.push(def);
-
         registry.name_to_id.insert(full_name.clone(), id);
         registry.id_to_name.insert(id, full_name);
+
         Ok(())
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// terrain_shaping parser
+//
+// Supports two authoring styles in YAML:
+//
+// Style A – named preset (quickest):
+//   terrain_shaping:
+//     preset: flat          # flat | rolling | hilly | mountainous | ocean
+//
+// Style B – explicit fields (full control), any subset may be omitted:
+//   terrain_shaping:
+//     ridge_strength:      0.03
+//     peak_strength:       0.03
+//     valley_strength:     0.0
+//     continental_scale:   10.0
+//     height_curve:        1.0
+//
+// Style B fields override the chosen preset, so you can start from a preset
+// and tweak individual values:
+//   terrain_shaping:
+//     preset: rolling
+//     ridge_strength: 0.05   # slightly flatter ridges than the rolling preset
+//
+// If the block is absent entirely, TerrainShaping::flat() is used as the
+// safest default (no unexpected hills in new biomes).
+// ─────────────────────────────────────────────────────────────────────────────
+fn parse_terrain_shaping(raw: &serde_yaml::Value) -> Result<TerrainShaping> {
+    // Block absent → safe flat default.
+    if raw.is_null() || raw.as_mapping().map(|m| m.is_empty()).unwrap_or(false) {
+        return Ok(TerrainShaping::flat());
+    }
+
+    // Start from a preset if one is named, otherwise start from the default.
+    let mut shaping = match raw["preset"].as_str() {
+        Some("flat") => TerrainShaping::flat(),
+        Some("rolling") => TerrainShaping::rolling(),
+        Some("hilly") => TerrainShaping::hilly(),
+        Some("mountainous") => TerrainShaping::mountainous(),
+        Some("ocean") => TerrainShaping::ocean(),
+        Some(other) => {
+            return Err(anyhow::anyhow!(
+                "Unknown terrain_shaping preset '{}'. \
+                 Valid values: flat, rolling, hilly, mountainous, ocean",
+                other
+            ));
+        }
+        None => TerrainShaping::flat(),
+    };
+
+    // Override individual fields when present.
+    if let Some(v) = raw["ridge_strength"].as_f64() {
+        shaping.ridge_strength = v;
+    }
+    if let Some(v) = raw["peak_strength"].as_f64() {
+        shaping.peak_strength = v;
+    }
+    if let Some(v) = raw["valley_strength"].as_f64() {
+        shaping.valley_strength = v;
+    }
+    if let Some(v) = raw["continental_scale"].as_f64() {
+        shaping.continental_scale = v;
+    }
+    if let Some(v) = raw["height_curve"].as_f64() {
+        shaping.height_curve = v;
+    }
+
+    Ok(shaping)
 }
 
 fn parse_color(value: &serde_yaml::Value, default: (u8, u8, u8)) -> Result<(u8, u8, u8)> {
     if let Some(seq) = value.as_sequence() {
         if seq.len() >= 3 {
-            let r = seq[0].as_u64().unwrap_or(0) as u8;
-            let g = seq[1].as_u64().unwrap_or(0) as u8;
-            let b = seq[2].as_u64().unwrap_or(0) as u8;
+            let r = seq[0].as_u64().unwrap_or(default.0 as u64) as u8;
+            let g = seq[1].as_u64().unwrap_or(default.1 as u64) as u8;
+            let b = seq[2].as_u64().unwrap_or(default.2 as u64) as u8;
             return Ok((r, g, b));
         }
     }
@@ -189,15 +257,15 @@ fn parse_color(value: &serde_yaml::Value, default: (u8, u8, u8)) -> Result<(u8, 
         let r = map
             .get(&serde_yaml::Value::String("r".to_string()))
             .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+            .unwrap_or(default.0 as u64) as u8;
         let g = map
             .get(&serde_yaml::Value::String("g".to_string()))
             .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+            .unwrap_or(default.1 as u64) as u8;
         let b = map
             .get(&serde_yaml::Value::String("b".to_string()))
             .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+            .unwrap_or(default.2 as u64) as u8;
         return Ok((r, g, b));
     }
     Ok(default)

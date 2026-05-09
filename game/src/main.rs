@@ -101,6 +101,52 @@ pub fn input_init(world: &mut World) -> Result<()> {
         "ReloadShaders",
     ));
 
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit1),
+        KeyAction::Press,
+        "Hotbar1",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit2),
+        KeyAction::Press,
+        "Hotbar2",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit3),
+        KeyAction::Press,
+        "Hotbar3",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit4),
+        KeyAction::Press,
+        "Hotbar4",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit5),
+        KeyAction::Press,
+        "Hotbar5",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit6),
+        KeyAction::Press,
+        "Hotbar6",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit7),
+        KeyAction::Press,
+        "Hotbar7",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit8),
+        KeyAction::Press,
+        "Hotbar8",
+    ));
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Digit9),
+        KeyAction::Press,
+        "Hotbar9",
+    ));
+
     inputs.register_mousebind(MouseBind::new(MouseButton::Left, KeyAction::Hold, "Break"));
     inputs.register_mousebind(MouseBind::new(MouseButton::Right, KeyAction::Hold, "Place"));
 

@@ -48,6 +48,94 @@ pub struct StructureDefinition {
     pub parameters: HashMap<String, serde_yaml::Value>,
 }
 
+/// Per-biome terrain shaping parameters.
+#[derive(Clone, Debug)]
+pub struct TerrainShaping {
+    /// How strongly ridge noise lifts terrain. 0.0 = flat, 1.0 = sharp ridgelines.
+    pub ridge_strength: f64,
+
+    /// How strongly peak noise adds bumpy high points. 0.0 = smooth, 1.0 = peaky.
+    pub peak_strength: f64,
+
+    /// How strongly valley erosion carves downward. 0.0 = none, 1.0 = deep valleys.
+    pub valley_strength: f64,
+
+    /// How far the continentalness noise shifts this biome's base height.
+    pub continental_scale: f64,
+
+    /// Exponent applied to the base FBM noise before scaling by amplitude.
+    pub height_curve: f64,
+}
+
+impl Default for TerrainShaping {
+    fn default() -> Self {
+        Self {
+            ridge_strength: 0.0,
+            peak_strength: 0.0,
+            valley_strength: 0.0,
+            continental_scale: 15.0,
+            height_curve: 1.0,
+        }
+    }
+}
+
+impl TerrainShaping {
+    /// Preset for flat biomes: plains, beaches, tundra.
+    pub fn flat() -> Self {
+        Self {
+            ridge_strength: 0.03,
+            peak_strength: 0.03,
+            valley_strength: 0.0,
+            continental_scale: 10.0,
+            height_curve: 1.0,
+        }
+    }
+
+    /// Preset for gently rolling terrain: forests, savannas.
+    pub fn rolling() -> Self {
+        Self {
+            ridge_strength: 0.15,
+            peak_strength: 0.12,
+            valley_strength: 0.08,
+            continental_scale: 18.0,
+            height_curve: 1.2,
+        }
+    }
+
+    /// Preset for hilly terrain: shrublands, taiga, jungles.
+    pub fn hilly() -> Self {
+        Self {
+            ridge_strength: 0.4,
+            peak_strength: 0.3,
+            valley_strength: 0.2,
+            continental_scale: 25.0,
+            height_curve: 1.4,
+        }
+    }
+
+    /// Preset for mountainous terrain.
+    pub fn mountainous() -> Self {
+        Self {
+            ridge_strength: 1.0,
+            peak_strength: 0.8,
+            valley_strength: 0.6,
+            continental_scale: 45.0,
+            height_curve: 1.6,
+        }
+    }
+
+    /// Preset for ocean/deep water biomes: as flat as possible.
+    pub fn ocean() -> Self {
+        Self {
+            ridge_strength: 0.0,
+            peak_strength: 0.0,
+            valley_strength: 0.0,
+            continental_scale: 5.0,
+            height_curve: 1.0,
+        }
+    }
+}
+
 /// A biome definition used during terrain generation.
 ///
 /// This contains voxel rules, procedural noise properties, climate values, and
@@ -65,7 +153,7 @@ pub struct BiomeDefinition {
     /// Voxels used for deeper underground layers.
     pub underground_voxels: Vec<String>,
 
-    /// Height amplitude multiplier for this biome.
+    /// Height amplitude multiplier for this biome's base FBM noise.
     pub amplitude: f64,
     /// Noise frequency used to shape biome terrain.
     pub frequency: f64,
@@ -79,10 +167,36 @@ pub struct BiomeDefinition {
     /// Structures or feature definitions that spawn in this biome.
     pub structures: Vec<StructureDefinition>,
 
-    /// RGB color for water tinting (default: standard water blue)
+    /// RGB color for water tinting.
     pub water_color: (u8, u8, u8),
-    /// RGB color for foliage tinting (default: standard green)
+    /// RGB color for foliage tinting.
     pub foliage_color: (u8, u8, u8),
+
+    /// Per-biome terrain shaping parameters. Controls how much ridge,
+    /// peak, valley, and continental noise influence this biome's height.
+    pub terrain_shaping: TerrainShaping,
+}
+
+impl Default for BiomeDefinition {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            namespace: String::new(),
+            class: String::new(),
+            surface_voxels: vec![],
+            subsurface_voxels: vec![],
+            underground_voxels: vec![],
+            amplitude: 20.0,
+            frequency: 0.005,
+            octaves: 5,
+            temperature: 0.5,
+            humidity: 0.5,
+            structures: vec![],
+            water_color: (63, 118, 228),
+            foliage_color: (77, 140, 61),
+            terrain_shaping: TerrainShaping::default(),
+        }
+    }
 }
 
 pub struct ClimateCache {
@@ -132,6 +246,7 @@ impl ClimateCache {
         (t, h, c)
     }
 }
+
 pub fn select_biome_at_climate(
     temperature: f64,
     humidity: f64,
@@ -250,6 +365,7 @@ pub fn select_biome(world_x: f64, world_z: f64, registry: &BiomeRegistry, seed: 
         .map(|(i, _)| i as BiomeId)
         .unwrap_or(0)
 }
+
 pub fn sample_biome_weights(
     world_x: f64,
     world_z: f64,

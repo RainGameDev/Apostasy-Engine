@@ -158,7 +158,7 @@ pub fn update(world: &mut World) -> Result<()> {
     velocity.linear_velocity.z = wish_dir.z * 3.0;
 
     if should_jump && velocity.is_grounded {
-        velocity.linear_velocity.y = 4.0;
+        velocity.linear_velocity.y = 5.0;
     }
 
     Ok(())
@@ -297,6 +297,32 @@ pub fn hud(world: &mut World) -> Result<()> {
                     }
                 }
             });
+    }
+
+    Ok(())
+}
+
+#[update]
+pub fn hotbar_update(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource::<InputManager>()?;
+
+    let pressed_slot = (1..=9)
+        .find(|&i| inputs.is_keybind_active(&format!("Hotbar{}", i)))
+        .map(|i| i - 1);
+
+    let player_id = world
+        .get_objects_with_tag_with_ids::<Player>()
+        .first()
+        .unwrap()
+        .0;
+
+    let player = world.get_object_mut(player_id).unwrap();
+    let inventory = player.get_component_mut::<Container>()?;
+
+    if let Some(slot) = pressed_slot {
+        if inventory.items.len() > slot {
+            inventory.selected_item = slot as u32;
+        }
     }
 
     Ok(())

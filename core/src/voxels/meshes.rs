@@ -658,15 +658,19 @@ pub fn generate_mesh(
                     let tint_type = voxel_def.get_component::<HasTint>();
 
                     let mut tint = (0, 0, 0);
-                    if let Ok(tint_type) = tint_type {
-                        let biome = biome_registry.get_def(chunk.biome).unwrap();
-                        if tint_type.0 == TintType::Water {
-                            tint = biome.water_color;
-                        }
 
-                        if tint_type.0 == TintType::Foliage {
-                            tint = biome.foliage_color;
-                        }
+                    if let Ok(tint_type) = tint_type {
+                        tint = sample_blended_tint(
+                            gx,
+                            gy,
+                            gz,
+                            chunk,
+                            neighbours,
+                            biome_registry,
+                            tint_type.0,
+                            grid_size,
+                            lod,
+                        );
                     }
                     // push to the buffers
                     vertices.push(VoxelVertex::pack(
@@ -771,4 +775,94 @@ fn get_representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: us
         }
     }
     0
+}
+
+fn sample_blended_tint(
+    gx: usize,
+    gy: usize,
+    gz: usize,
+    chunk: &Chunk,
+    neighbours: &ChunkNeighbours,
+    biome_registry: &BiomeRegistry,
+    tint_type: TintType,
+    grid_size: usize,
+    lod: usize,
+) -> (u8, u8, u8) {
+    const RADIUS: i32 = 6;
+    let sigma = RADIUS as f32 / 2.0;
+
+    let mut r_sum = 0f32;
+    let mut g_sum = 0f32;
+    let mut b_sum = 0f32;
+    let mut w_sum = 0f32;
+
+    for dz in -RADIUS..=RADIUS {
+        for dx in -RADIUS..=RADIUS {
+            let dist_sq = (dx * dx + dz * dz) as f32;
+            let weight = (-dist_sq / (2.0 * sigma * sigma)).exp();
+
+            let sx = gx as i32 + dx;
+            let sz = gz as i32 + dz;
+            let biome_id = resolve_biome(sx, sz, gy as i32, grid_size as i32, chunk, neighbours);
+
+            if let Ok(biome) = biome_registry.get_def(biome_id) {
+                let color = match tint_type {
+                    TintType::Water => biome.water_color,
+                    TintType::Foliage => biome.foliage_color,
+                };
+                r_sum += to_linear(color.0) * weight;
+                g_sum += to_linear(color.1) * weight;
+                b_sum += to_linear(color.2) * weight;
+                w_sum += weight;
+            }
+        }
+    }
+
+    let tint = if w_sum > 0.0 {
+        (
+            to_gamma(r_sum / w_sum),
+            to_gamma(g_sum / w_sum),
+            to_gamma(b_sum / w_sum),
+        )
+    } else {
+        (0, 0, 0)
+    };
+
+    tint
+}
+
+fn to_linear(c: u8) -> f32 {
+    (c as f32 / 255.0).powf(2.2)
+}
+
+fn to_gamma(c: f32) -> u8 {
+    (c.powf(1.0 / 2.2) * 255.0).clamp(0.0, 255.0) as u8
+}
+
+fn resolve_biome(
+    sx: i32,
+    sz: i32,
+    _gy: i32,
+    grid_size: i32,
+    chunk: &Chunk,
+    neighbours: &ChunkNeighbours,
+) -> u16 {
+    // Determine which chunk owns this grid coordinate
+    let neighbour = if sx < 0 && sz >= 0 && sz < grid_size {
+        neighbours.nx.as_ref()
+    } else if sx >= grid_size && sz >= 0 && sz < grid_size {
+        neighbours.px.as_ref()
+    } else if sz < 0 && sx >= 0 && sx < grid_size {
+        neighbours.nz.as_ref()
+    } else if sz >= grid_size && sx >= 0 && sx < grid_size {
+        neighbours.pz.as_ref()
+    } else if sx >= 0 && sx < grid_size && sz >= 0 && sz < grid_size {
+        // In current chunk
+        return chunk.biome;
+    } else {
+        // Corner — pick whichever neighbour is available, or fallback
+        neighbours.px.as_ref().or(neighbours.pz.as_ref())
+    };
+
+    neighbour.map(|n| n.biome).unwrap_or(chunk.biome)
 }

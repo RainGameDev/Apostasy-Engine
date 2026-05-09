@@ -4,5 +4,4 @@ class: Voxel
 textures:
   all: textures/water.png
 components:
-  IsSolid: false
   BreakTicks: 30
