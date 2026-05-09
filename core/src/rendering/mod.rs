@@ -69,6 +69,14 @@ pub trait RenderingAPI {
         voxel_push_constants: &VoxelPushConstants,
     ) -> Result<()>;
 
+    fn water_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        atlas: &VoxelTextureAtlas,
+        push_constants: &PushConstants,
+        voxel_push_constants: &VoxelPushConstants,
+    ) -> Result<()>;
+
     fn begin_ui(&mut self);
     fn end_ui(&mut self) -> Result<()>;
     fn handle_ui_event(&mut self, event: &WindowEvent) -> bool;

@@ -141,4 +141,8 @@ impl VoxelRegistry {
         let msg = format!("Voxel {} not found", id);
         self.defs.get(id as usize).ok_or(Error::msg(msg))
     }
+
+    pub fn get(&self, name: &str) -> Option<VoxelId> {
+        self.name_to_id.get(name).copied()
+    }
 }

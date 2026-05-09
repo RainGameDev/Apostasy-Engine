@@ -24,6 +24,10 @@ use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
 use crate::objects::resources::input_manager::InputManager;
 use crate::objects::resources::window_manager::WindowManager;
+use crate::objects::systems::DeltaTime;
+use crate::objects::systems::EngineTimer;
+use crate::objects::systems::FixedUpdateSystem;
+use crate::objects::systems::FixedUpdateTimer;
 use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::components::camera::ActiveCamera;
@@ -33,11 +37,13 @@ use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::model_renderer::ModelRenderer;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
 use crate::states::ShouldExit;
 use crate::ui::ui_context::EguiContext;
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
+use crate::voxels::meshes::WaterMesh;
 use crate::voxels::meshes::{dispatch_remesh_jobs, receive_meshes};
 use crate::voxels::texture_atlas::PendingAtlas;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
@@ -61,7 +67,7 @@ pub mod voxels;
 
 pub use anyhow;
 pub use cgmath;
-use cgmath::Vector3;
+use cgmath::{InnerSpace, Vector3};
 pub use crossbeam_channel;
 pub use egui;
 pub use epaint;
@@ -87,6 +93,7 @@ impl Core {
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
         world.insert_resource(ObjectsDrawing(0));
+        world.insert_resource(EngineTimer(0.0));
 
         for package in packages {
             add_package(&mut world, package);
@@ -155,7 +162,9 @@ impl Core {
                     };
 
                     let camera = world.get_object_with_tag::<ActiveCamera>().unwrap();
-                    let view = get_view_matrix(camera.get_component::<Transform>().unwrap());
+                    let camera_transform = camera.get_component::<Transform>().unwrap().clone();
+                    let camera_pos = camera_transform.global_position;
+                    let view = get_view_matrix(&camera_transform);
 
                     let aspect = renderer.get_aspect();
                     let proj = get_perspective_projection(
@@ -179,7 +188,7 @@ impl Core {
                         receive_meshes(&mut world, &context, command_pool)
                             .expect("Failed to receive meshes");
                     }
-                    
+
                     // Begin frame - if device is lost, skip rendering this frame
                     if let Err(e) = renderer.begin_frame(push_constants.clone()) {
                         log_error!("Failed to begin frame: {}", e);
@@ -239,23 +248,19 @@ impl Core {
 
                         for mesh in &model.meshes {
                             if model_renderer.is_wireframe {
-                                if let Err(e) = renderer
-                                    .wireframe_render(
-                                        Box::new(mesh.clone()),
-                                        push_constants.clone(),
-                                        &frame_model_push,
-                                    )
-                                {
+                                if let Err(e) = renderer.wireframe_render(
+                                    Box::new(mesh.clone()),
+                                    push_constants.clone(),
+                                    &frame_model_push,
+                                ) {
                                     log_error!("Failed to render wireframe: {}", e);
                                 }
                             } else {
-                                if let Err(e) = renderer
-                                    .render(
-                                        Box::new(mesh.clone()),
-                                        push_constants.clone(),
-                                        &frame_model_push,
-                                    )
-                                {
+                                if let Err(e) = renderer.render(
+                                    Box::new(mesh.clone()),
+                                    push_constants.clone(),
+                                    &frame_model_push,
+                                ) {
                                     log_error!("Failed to render model: {}", e);
                                 }
                             }
@@ -264,6 +269,12 @@ impl Core {
 
                     if let Some(texture_atlas) = world.get_resource::<VoxelTextureAtlas>().ok() {
                         let frustum = Frustum::from_view_proj(&view_proj);
+                        let mut water_draws: Vec<(
+                            f32,
+                            Box<dyn crate::rendering::shared::model::GpuMesh>,
+                            PushConstants,
+                            VoxelPushConstants,
+                        )> = Vec::new();
 
                         for object in world.get_objects_with_component::<VoxelChunkMesh>() {
                             let transform = object.get_component::<VoxelTransform>().unwrap();
@@ -282,24 +293,50 @@ impl Core {
                             objects_dawn += 1;
                             let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
 
+                            let delta = world.get_resource::<EngineTimer>().unwrap();
+
                             let chunk_push = push_constants.clone();
                             let mut voxel_chunk_push = voxel_push_constants.clone();
 
+                            voxel_chunk_push.time = delta.0;
                             voxel_chunk_push.set_position(Vector3::new(
                                 transform.position.x * 32,
                                 transform.position.y * 32,
                                 transform.position.z * 32,
                             ));
 
-                            if let Err(e) = renderer
-                                .voxel_render(
-                                    Box::new(voxel_mesh.clone()),
-                                    &texture_atlas,
-                                    &chunk_push,
-                                    &voxel_chunk_push,
-                                )
-                            {
+                            if let Err(e) = renderer.voxel_render(
+                                Box::new(voxel_mesh.clone()),
+                                &texture_atlas,
+                                &chunk_push,
+                                &voxel_chunk_push,
+                            ) {
                                 log_error!("Failed to render voxel: {}", e);
+                            }
+
+                            if let Ok(water_mesh) = object.get_component::<WaterMesh>() {
+                                let chunk_center = world_pos + Vector3::new(16.0, 16.0, 16.0);
+                                let distance = (chunk_center - camera_pos).magnitude2();
+                                water_draws.push((
+                                    distance,
+                                    Box::new(water_mesh.clone()),
+                                    chunk_push.clone(),
+                                    voxel_chunk_push.clone(),
+                                ));
+                            }
+                        }
+
+                        water_draws.sort_by(|a, b| {
+                            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        for (_, mesh, chunk_push, voxel_chunk_push) in water_draws {
+                            if let Err(e) = renderer.water_render(
+                                mesh,
+                                &texture_atlas,
+                                &chunk_push,
+                                &voxel_chunk_push,
+                            ) {
+                                log_error!("Failed to render water: {}", e);
                             }
                         }
                     }

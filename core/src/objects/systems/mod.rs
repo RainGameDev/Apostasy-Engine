@@ -46,6 +46,9 @@ impl HasPriority for FixedUpdateSystem {
 pub struct DeltaTime(pub f32);
 
 #[derive(Resource, Clone, Default)]
+pub struct EngineTimer(pub f32);
+
+#[derive(Resource, Clone, Default)]
 pub struct FixedUpdateTimer {
     pub accumulator: f32,
     pub fixed_timestep: f32, // 1.0 / 20.0 = 0.05s for 20 tps

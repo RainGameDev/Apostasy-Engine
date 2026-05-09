@@ -1,5 +1,6 @@
 use apostasy_core::{
     cgmath::Vector3,
+    log,
     noise::{NoiseFn, Perlin},
     utils::flatten::flatten,
     voxels::{
@@ -14,10 +15,7 @@ use apostasy_core::{
     },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Noise helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 fn fractal_brownian_motion(
     noise: &Perlin,
     x: f64,
@@ -60,14 +58,7 @@ fn ridged_fbm(noise: &Perlin, x: f64, z: f64, octaves: u32, lacunarity: f64, gai
     (value / max_value).clamp(0.0, 1.0)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Per-biome base detail
-//
-// This function only returns the FBM-shaped base noise scaled by the biome's
-// amplitude.  Ridge / peak / valley / continental contributions are handled
-// separately in the caller and blended across biomes by weight, so that a flat
-// biome (ridge_strength = 0) genuinely stays flat.
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn lod_octaves(biome_octaves: u32, lod: u8) -> u32 {
     match lod {
@@ -101,9 +92,7 @@ fn compute_biome_base_detail(
     apply_height_curve(raw, biome.terrain_shaping.height_curve) * biome.amplitude
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Global noise layers (evaluated once per column, shared by all biomes)
-// ─────────────────────────────────────────────────────────────────────────────
 
 struct GlobalNoiseLayers {
     /// ridged_fbm result, [0, 1]
@@ -134,13 +123,11 @@ impl GlobalNoiseLayers {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Height + dominant-biome computation (shared between heightmap build and
 // the structure-placement height probe)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const SEA_LEVEL: i32 = 58;
-const BASE_HEIGHT: f64 = 64.0;
+const BASE_HEIGHT: f64 = 60.0;
 const BIOME_BLEND_DISTANCE: f64 = 0.12;
 
 /// Returns `(surface_y, dominant_biome_id)` for a world-space column.
@@ -198,10 +185,6 @@ fn sample_height_and_biome(
 
     (blended_height as i32, dominant_biome)
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Structure placement helpers  (unchanged from original)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const FEATURE_GRID_SIZE: i32 = 8;
 const FEATURE_CELLS_PER_CHUNK: f64 = ((32 / FEATURE_GRID_SIZE) * (32 / FEATURE_GRID_SIZE)) as f64;
@@ -638,10 +621,6 @@ fn place_structure_data_driven(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main entry point
-// ─────────────────────────────────────────────────────────────────────────────
-
 pub fn generate_chunk_data(
     position: Vector3<i32>,
     registry: &VoxelRegistry,
@@ -718,8 +697,7 @@ pub fn generate_chunk_data(
             column_biome[z * 32 + x] = dominant_biome;
         }
     }
-
-    // ── Fill voxels ──────────────────────────────────────────────────────────
+    // Fill voxels
 
     let mut voxels = vec![0u16; 32 * 32 * 32].into_boxed_slice();
     let water_voxel = registry
@@ -770,7 +748,7 @@ pub fn generate_chunk_data(
         }
     }
 
-    // ── Structure placement ───────────────────────────────────────────────────
+    // Structure placement
 
     let chunk_world_x = position.x * 32;
     let chunk_world_y = position.y * 32;

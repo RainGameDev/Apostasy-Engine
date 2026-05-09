@@ -79,8 +79,10 @@ pub struct GeneratedChunkData {
 
 pub struct GeneratedMeshData {
     pub position: Vector3<i32>,
-    pub vertices: Vec<VoxelVertex>,
-    pub indices: Vec<u32>,
+    pub opaque_vertices: Vec<VoxelVertex>,
+    pub opaque_indices: Vec<u32>,
+    pub water_vertices: Vec<VoxelVertex>,
+    pub water_indices: Vec<u32>,
 }
 
 #[derive(Resource, Clone)]

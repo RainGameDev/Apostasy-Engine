@@ -32,7 +32,6 @@ void main() {
   if (fragFace == 4u || fragFace == 5u) shade = 0.7;
   if (fragFace == 3u)                   shade = 0.4;
   vec4 color = texture(atlas, uv);
-  if (color.a < 0.5) discard;
 
   float maxC = max(color.r, max(color.g, color.b));
   float minC = min(color.r, min(color.g, color.b));
@@ -42,5 +41,5 @@ void main() {
   }
 
   float ao = mix(0.1, 1.0, pow(fragAO, 3.0));
-  outColor = vec4(color.rgb * shade * ao, color.a);
+  outColor = vec4(color.rgb * shade * ao, 0.5); // semi-transparent for water
 }

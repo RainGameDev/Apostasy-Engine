@@ -37,6 +37,7 @@ impl VoxelVertex {
         face: u8,
         u: u8,
         v: u8,
+        is_top: bool,
         texture_id: u16,
         ao: u8,
         r: u8,
@@ -48,7 +49,8 @@ impl VoxelVertex {
             | ((z as u32) << 12)
             | ((face as u32) << 18)
             | ((u as u32) << 21)
-            | ((v as u32) << 27);
+            | ((v as u32) << 23)
+            | ((is_top as u32) << 25);
         let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
         let packed: u16 = (((r as u16) >> 4) & 0xFu16)
             | ((((g as u16) >> 4) & 0xFu16) << 4)
@@ -109,7 +111,22 @@ pub struct VoxelChunkMesh {
     pub index_count: u32,
 }
 
+#[derive(Debug, Component, Clone, Default)]
+pub struct WaterMesh {
+    pub vertex_buffer: Buffer,
+    pub vertex_buffer_memory: DeviceMemory,
+    pub index_buffer: Buffer,
+    pub index_buffer_memory: DeviceMemory,
+    pub index_count: u32,
+}
+
 impl VoxelChunkMesh {
+    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl WaterMesh {
     pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
         Ok(())
     }
@@ -119,6 +136,18 @@ impl VoxelChunkMesh {
 pub struct NeedsRemeshing;
 
 impl GpuMesh for VoxelChunkMesh {
+    fn get_vertex_buffer(&self) -> Buffer {
+        self.vertex_buffer
+    }
+    fn get_index_buffer(&self) -> Buffer {
+        self.index_buffer
+    }
+    fn get_index_count(&self) -> u32 {
+        self.index_count
+    }
+}
+
+impl GpuMesh for WaterMesh {
     fn get_vertex_buffer(&self) -> Buffer {
         self.vertex_buffer
     }
@@ -237,12 +266,14 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
         // spawn the job
         pool.spawn(move || {
-            let (vertices, indices) =
+            let (opaque_vertices, opaque_indices, water_vertices, water_indices) =
                 generate_mesh(&chunk, &registry, &neighbours, &biome_registry);
             let mesh_data = crate::voxels::chunk::GeneratedMeshData {
                 position: pos,
-                vertices,
-                indices,
+                opaque_vertices,
+                opaque_indices,
+                water_vertices,
+                water_indices,
             };
             let _ = mesh_sender.send(mesh_data);
         });
@@ -294,38 +325,69 @@ pub fn receive_meshes(
             continue;
         };
 
-        if mesh_data.vertices.is_empty() || mesh_data.indices.is_empty() {
+        if mesh_data.opaque_vertices.is_empty() && mesh_data.water_vertices.is_empty() {
             continue;
         }
 
-        // Convert VoxelVertex to VoxelVertex
-        let vertices: Vec<VoxelVertex> = mesh_data.vertices;
-        if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
-            if mesh.vertex_buffer != vk::Buffer::null() {
-                unsafe {
-                    ctx.device.destroy_buffer(mesh.vertex_buffer, None);
-                    ctx.device.free_memory(mesh.vertex_buffer_memory, None);
-                    ctx.device.destroy_buffer(mesh.index_buffer, None);
-                    ctx.device.free_memory(mesh.index_buffer_memory, None);
+        // Handle opaque mesh
+        if !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty() {
+            if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
+                if mesh.vertex_buffer != vk::Buffer::null() {
+                    unsafe {
+                        ctx.device.destroy_buffer(mesh.vertex_buffer, None);
+                        ctx.device.free_memory(mesh.vertex_buffer_memory, None);
+                        ctx.device.destroy_buffer(mesh.index_buffer, None);
+                        ctx.device.free_memory(mesh.index_buffer_memory, None);
+                    }
                 }
             }
+
+            let (vertex_buffer, vertex_buffer_memory) =
+                ctx.create_vertex_buffer(&mesh_data.opaque_vertices, command_pool)?;
+            let (index_buffer, index_buffer_memory) =
+                ctx.create_index_buffer(&mesh_data.opaque_indices, command_pool)?;
+
+            if !object.has_component::<VoxelChunkMesh>() {
+                object.add_component(VoxelChunkMesh::default());
+            }
+
+            let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
+            mesh.vertex_buffer = vertex_buffer;
+            mesh.vertex_buffer_memory = vertex_buffer_memory;
+            mesh.index_buffer = index_buffer;
+            mesh.index_buffer_memory = index_buffer_memory;
+            mesh.index_count = mesh_data.opaque_indices.len() as u32;
         }
 
-        let (vertex_buffer, vertex_buffer_memory) =
-            ctx.create_vertex_buffer(&vertices, command_pool)?;
-        let (index_buffer, index_buffer_memory) =
-            ctx.create_index_buffer(&mesh_data.indices, command_pool)?;
+        // Handle water mesh
+        if !mesh_data.water_vertices.is_empty() && !mesh_data.water_indices.is_empty() {
+            if let Ok(mesh) = object.get_component::<WaterMesh>() {
+                if mesh.vertex_buffer != vk::Buffer::null() {
+                    unsafe {
+                        ctx.device.destroy_buffer(mesh.vertex_buffer, None);
+                        ctx.device.free_memory(mesh.vertex_buffer_memory, None);
+                        ctx.device.destroy_buffer(mesh.index_buffer, None);
+                        ctx.device.free_memory(mesh.index_buffer_memory, None);
+                    }
+                }
+            }
 
-        if !object.has_component::<VoxelChunkMesh>() {
-            object.add_component(VoxelChunkMesh::default());
+            let (vertex_buffer, vertex_buffer_memory) =
+                ctx.create_vertex_buffer(&mesh_data.water_vertices, command_pool)?;
+            let (index_buffer, index_buffer_memory) =
+                ctx.create_index_buffer(&mesh_data.water_indices, command_pool)?;
+
+            if !object.has_component::<WaterMesh>() {
+                object.add_component(WaterMesh::default());
+            }
+
+            let mesh = object.get_component_mut::<WaterMesh>().unwrap();
+            mesh.vertex_buffer = vertex_buffer;
+            mesh.vertex_buffer_memory = vertex_buffer_memory;
+            mesh.index_buffer = index_buffer;
+            mesh.index_buffer_memory = index_buffer_memory;
+            mesh.index_count = mesh_data.water_indices.len() as u32;
         }
-
-        let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
-        mesh.vertex_buffer = vertex_buffer;
-        mesh.vertex_buffer_memory = vertex_buffer_memory;
-        mesh.index_buffer = index_buffer;
-        mesh.index_buffer_memory = index_buffer_memory;
-        mesh.index_count = mesh_data.indices.len() as u32;
     }
 
     Ok(())
@@ -336,7 +398,7 @@ pub fn generate_mesh(
     registry: &VoxelRegistry,
     neighbours: &ChunkNeighbours,
     biome_registry: &BiomeRegistry,
-) -> (Vec<VoxelVertex>, Vec<u32>) {
+) -> (Vec<VoxelVertex>, Vec<u32>, Vec<VoxelVertex>, Vec<u32>) {
     let lod = chunk.lod as usize;
     let grid_size = 32 / lod;
 
@@ -412,6 +474,8 @@ pub fn generate_mesh(
     let max_faces = grid_size * grid_size * grid_size * 6;
     let mut vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
+    let mut water_vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
+    let mut water_indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
 
     let is_transparent_voxel = |id: u16| -> bool {
         if id == 0 {
@@ -499,7 +563,7 @@ pub fn generate_mesh(
     };
 
     // get if the neighbour of the current voxel is solid (and not transparent)
-    let neighbour_solid = |face: usize, gx: usize, gy: usize, gz: usize| -> bool {
+    let neighbour_solid = |face: usize, gx: usize, gy: usize, gz: usize, current_id: u16| -> bool {
         let neighbor_id = match face {
             0 => {
                 // +X
@@ -551,7 +615,11 @@ pub fn generate_mesh(
             }
         };
 
-        neighbor_id != 0 && !is_transparent_voxel(neighbor_id)
+        let is_neighbor_water = registry.get("Apostasy:Voxel:Water") == Some(neighbor_id);
+        let is_current_water = registry.get("Apostasy:Voxel:Water") == Some(current_id);
+
+        neighbor_id != 0
+            && (!is_transparent_voxel(neighbor_id) || (is_current_water && is_neighbor_water))
     };
 
     // for each voxel
@@ -573,11 +641,14 @@ pub fn generate_mesh(
                 // render each face
                 for face in 0..6usize {
                     // if the neighbouring face is solid skip
-                    if neighbour_solid(face, gx, gy, gz) {
+                    if neighbour_solid(face, gx, gy, gz, id) {
                         continue;
                     }
 
                     let texture_id = voxel_def.textures.get_for_face(face as u8, vx, vy, vz);
+
+                    // Check if this is a water voxel
+                    let is_water = registry.get("Apostasy:Voxel:Water") == Some(id);
 
                     let x = vx as u8;
                     let y = vy as u8;
@@ -607,8 +678,6 @@ pub fn generate_mesh(
                         ],
                         _ => [[x, y, z], [x, y + l, z], [x + l, y + l, z], [x + l, y, z]],
                     };
-
-                    let base = vertices.len() as u32;
 
                     let (ao0, ao1, ao2, ao3) = match face {
                         0 => (
@@ -672,53 +741,73 @@ pub fn generate_mesh(
                             lod,
                         );
                     }
+
+                    let base = if is_water {
+                        water_vertices.len() as u32
+                    } else {
+                        vertices.len() as u32
+                    };
+
                     // push to the buffers
-                    vertices.push(VoxelVertex::pack(
+                    let target_vertices = if is_water {
+                        &mut water_vertices
+                    } else {
+                        &mut vertices
+                    };
+                    let top0 = corners[0][1] == y + l;
+                    let top1 = corners[1][1] == y + l;
+                    let top2 = corners[2][1] == y + l;
+                    let top3 = corners[3][1] == y + l;
+                    target_vertices.push(VoxelVertex::pack(
                         corners[0][0],
                         corners[0][1],
                         corners[0][2],
                         face as u8,
                         0,
                         0,
+                        top0,
                         texture_id as u16,
                         ao0,
                         tint.0,
                         tint.1,
                         tint.2,
                     ));
-                    vertices.push(VoxelVertex::pack(
+                    target_vertices.push(VoxelVertex::pack(
                         corners[1][0],
                         corners[1][1],
                         corners[1][2],
                         face as u8,
                         1,
                         0,
+                        top1,
                         texture_id as u16,
                         ao1,
                         tint.0,
                         tint.1,
                         tint.2,
                     ));
-                    vertices.push(VoxelVertex::pack(
+                    target_vertices.push(VoxelVertex::pack(
                         corners[2][0],
                         corners[2][1],
                         corners[2][2],
                         face as u8,
                         1,
                         1,
+                        top2,
                         texture_id as u16,
                         ao2,
                         tint.0,
                         tint.1,
                         tint.2,
                     ));
-                    vertices.push(VoxelVertex::pack(
+                    target_vertices.push(VoxelVertex::pack(
                         corners[3][0],
                         corners[3][1],
                         corners[3][2],
                         face as u8,
                         0,
                         1,
+                        top3,
                         texture_id as u16,
                         ao3,
                         tint.0,
@@ -727,9 +816,14 @@ pub fn generate_mesh(
                     ));
 
                     // fixes diagonal artefacting on darker/occluded corners
+                    let target_indices = if is_water {
+                        &mut water_indices
+                    } else {
+                        &mut indices
+                    };
                     if ao0 + ao2 > ao1 + ao3 {
                         // flip
-                        indices.extend_from_slice(&[
+                        target_indices.extend_from_slice(&[
                             base,
                             base + 1,
                             base + 2,
@@ -739,7 +833,7 @@ pub fn generate_mesh(
                         ]);
                     } else {
                         // standard
-                        indices.extend_from_slice(&[
+                        target_indices.extend_from_slice(&[
                             base,
                             base + 1,
                             base + 3,
@@ -753,7 +847,7 @@ pub fn generate_mesh(
         }
     }
 
-    (vertices, indices)
+    (vertices, indices, water_vertices, water_indices)
 }
 
 fn get_representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: usize) -> u16 {

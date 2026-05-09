@@ -86,6 +86,7 @@ impl ModelPushConstants {
 pub struct VoxelPushConstants {
     pub atlas_tiles: u32, // how many tiles per row in the atlas
     pub world_position: Vector3<i32>,
+    pub time: f32,
 }
 
 impl Default for VoxelPushConstants {
@@ -93,6 +94,7 @@ impl Default for VoxelPushConstants {
         Self {
             atlas_tiles: 1,
             world_position: Vector3::zero(),
+            time: 0.0,
         }
     }
 }
@@ -105,10 +107,12 @@ impl VoxelPushConstants {
             let atlas: [u8; 4] = transmute(self.atlas_tiles);
             let pad: [u8; 12] = [0u8; 12];
             let position: [u8; 12] = transmute(self.world_position);
-            data.extend_from_slice(&atlas); // offset 128, 4 bytes
-            data.extend_from_slice(&pad); // offset 132, 12 bytes padding
-            data.extend_from_slice(&position); // offset 144, 12 bytes
-            data // 28 bytes total
+            let time: [u8; 4] = transmute(self.time);
+            data.extend_from_slice(&atlas);
+            data.extend_from_slice(&pad);
+            data.extend_from_slice(&position);
+            data.extend_from_slice(&time);
+            data // 32 bytes total
         }
     }
 

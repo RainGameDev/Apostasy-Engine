@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::fs;
+use std::sync::{Arc, Mutex};
 
 use crate::assets::shader_loader::load_shader_bytes;
 use crate::rendering::shared::model::GpuMesh;
@@ -59,6 +59,8 @@ pub struct VulkanRenderer {
     pub voxel_pipeline: Pipeline,
     pub voxel_wireframe_pipeline: Pipeline,
     pub voxel_pipeline_layout: PipelineLayout,
+    pub water_pipeline: Pipeline,
+    pub water_pipeline_layout: PipelineLayout,
     pub voxel_descriptor_pool: vk::DescriptorPool,
     pub voxel_descriptor_set_layout: vk::DescriptorSetLayout,
 
@@ -157,7 +159,7 @@ impl RenderingAPI for VulkanRenderer {
                     .push_constant_ranges(&[vk::PushConstantRange::default()
                         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                         .offset(0)
-                        .size(156)])
+                        .size(160)])
                     .set_layouts(&[descriptor_set_layout]),
                 None,
             )?;
@@ -182,6 +184,31 @@ impl RenderingAPI for VulkanRenderer {
                 Default::default(),
             )?;
 
+            let water_vertex_shader =
+                load_shader_module(&rendering_info.context.clone().into(), "water.vert")?;
+            let water_fragment_shader =
+                load_shader_module(&rendering_info.context.clone().into(), "water.frag")?;
+
+            let water_pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default()
+                    .push_constant_ranges(&[vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .offset(0)
+                        .size(156)])
+                    .set_layouts(&[descriptor_set_layout]),
+                None,
+            )?;
+
+            let water_pipeline = context.create_water_graphics_pipeline(
+                water_vertex_shader,
+                water_fragment_shader,
+                swapchain.extent,
+                swapchain.format,
+                swapchain.depth_format,
+                water_pipeline_layout,
+                Default::default(),
+            )?;
+
             context.device.destroy_shader_module(vertex_shader, None);
             context
                 .device
@@ -190,6 +217,12 @@ impl RenderingAPI for VulkanRenderer {
             context
                 .device
                 .destroy_shader_module(voxel_fragment_shader, None);
+            context
+                .device
+                .destroy_shader_module(water_vertex_shader, None);
+            context
+                .device
+                .destroy_shader_module(water_fragment_shader, None);
 
             let command_pool = context.device.create_command_pool(
                 &ash::vk::CommandPoolCreateInfo::default()
@@ -260,6 +293,8 @@ impl RenderingAPI for VulkanRenderer {
                 voxel_wireframe_pipeline,
                 voxel_descriptor_pool: descriptor_pool,
                 voxel_descriptor_set_layout: descriptor_set_layout,
+                water_pipeline,
+                water_pipeline_layout,
 
                 push_constants: PushConstants::default(),
                 ubo,
@@ -275,7 +310,7 @@ impl RenderingAPI for VulkanRenderer {
 
     fn begin_frame(&mut self, _push_constants: PushConstants) -> Result<()> {
         let frame = &self.frames[self.current_frame];
-        
+
         // Recreate swapchain if it was marked dirty
         if self.swapchain.is_dirty {
             if let Err(e) = self.swapchain.resize() {
@@ -283,15 +318,17 @@ impl RenderingAPI for VulkanRenderer {
                 return Err(anyhow::anyhow!("Failed to recreate swapchain: {}", e));
             }
         }
-        
+
         unsafe {
             // Use a 5-second timeout instead of infinite to prevent device hangs
             const FENCE_TIMEOUT_NS: u64 = 5_000_000_000; // 5 seconds in nanoseconds
-            
-            match self.context
-                .device
-                .wait_for_fences(&[frame.in_flight_fence], true, FENCE_TIMEOUT_NS) {
-                Ok(()) => {},
+
+            match self.context.device.wait_for_fences(
+                &[frame.in_flight_fence],
+                true,
+                FENCE_TIMEOUT_NS,
+            ) {
+                Ok(()) => {}
                 Err(e) => {
                     eprintln!("Fence wait failed (likely device timeout): {}", e);
                     // Reset the device state and try to recover
@@ -299,21 +336,26 @@ impl RenderingAPI for VulkanRenderer {
                     return Err(anyhow::anyhow!("Device timeout during frame wait"));
                 }
             }
-            
+
             if let Err(e) = self.context.device.reset_fences(&[frame.in_flight_fence]) {
                 eprintln!("Failed to reset fences: {}", e);
                 return Err(anyhow::anyhow!("Failed to reset in-flight fence: {}", e));
             }
-            
-            if let Err(e) = self.context
+
+            if let Err(e) = self
+                .context
                 .device
-                .reset_command_buffer(frame.command_buffer, CommandBufferResetFlags::empty()) {
+                .reset_command_buffer(frame.command_buffer, CommandBufferResetFlags::empty())
+            {
                 eprintln!("Failed to reset command buffer: {}", e);
                 return Err(anyhow::anyhow!("Failed to reset command buffer: {}", e));
             }
 
             // Attempt to acquire next image; if device is lost, try to recover by recreating swapchain
-            match self.swapchain.acquire_next_image(frame.image_available_semaphore) {
+            match self
+                .swapchain
+                .acquire_next_image(frame.image_available_semaphore)
+            {
                 Ok(index) => self.current_image_index = index,
                 Err(e) => {
                     eprintln!("Failed to acquire next image: {}", e);
@@ -324,8 +366,14 @@ impl RenderingAPI for VulkanRenderer {
                     }
                     // Try to recover by recreating the swapchain
                     if let Err(resize_err) = self.swapchain.resize() {
-                        eprintln!("Failed to recreate swapchain during recovery: {}", resize_err);
-                        return Err(anyhow::anyhow!("Failed to recover swapchain: {}", resize_err));
+                        eprintln!(
+                            "Failed to recreate swapchain during recovery: {}",
+                            resize_err
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Failed to recover swapchain: {}",
+                            resize_err
+                        ));
                     }
                     // After swapchain recreation, try acquiring again
                     self.current_image_index = self
@@ -423,8 +471,10 @@ impl RenderingAPI for VulkanRenderer {
                 return Err(anyhow::anyhow!("Failed to submit graphics queue: {}", e));
             }
 
-            if let Err(e) = self.swapchain
-                .present_image(self.current_image_index, frame.render_finished_semaphore) {
+            if let Err(e) = self
+                .swapchain
+                .present_image(self.current_image_index, frame.render_finished_semaphore)
+            {
                 eprintln!("Failed to present image: {}", e);
                 // Mark swapchain as dirty for recreation
                 self.swapchain.is_dirty = true;
@@ -561,6 +611,61 @@ impl RenderingAPI for VulkanRenderer {
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.voxel_pipeline_layout,
+                0,
+                &[atlas.descriptor_set],
+                &[],
+            );
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+        Ok(())
+    }
+
+    fn water_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        atlas: &VoxelTextureAtlas,
+        push_constants: &PushConstants,
+        voxel_push_constants: &VoxelPushConstants,
+    ) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let mut data = push_constants.return_renderable();
+        data.extend(voxel_push_constants.return_renderable());
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.water_pipeline,
+            );
+            self.context.device.cmd_push_constants(
+                frame.command_buffer,
+                self.water_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                &data,
+            );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.water_pipeline_layout,
                 0,
                 &[atlas.descriptor_set],
                 &[],

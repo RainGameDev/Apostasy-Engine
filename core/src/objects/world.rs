@@ -8,8 +8,8 @@ use crate::{
         resource::{Resource, ResourceMap},
         scene::{ObjectId, Scene},
         systems::{
-            DeltaTime, FixedUpdateSystem, FixedUpdateTimer, HasPriority, LateUpdateSystem,
-            StartSystem, UpdateSystem,
+            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasPriority,
+            LateUpdateSystem, StartSystem, UpdateSystem,
         },
         tag::Tag,
     },
@@ -73,7 +73,11 @@ impl World {
             };
             timer.last_time = Some(now);
             timer.accumulator += delta;
+
             timer.accumulator = timer.accumulator.min(timer.fixed_timestep * 5.0);
+
+            let engine_timer = self.get_resource_mut::<EngineTimer>().unwrap();
+            engine_timer.0 += delta;
 
             let dt = self.get_resource_mut::<DeltaTime>().unwrap();
             dt.0 = delta;
