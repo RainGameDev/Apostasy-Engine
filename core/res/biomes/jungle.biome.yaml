@@ -1,0 +1,87 @@
+# Class
+name: Jungle
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 28.0
+frequency: 0.007
+octaves: 5
+# Generation Location
+humidity: 0.75
+temperature: 0.8
+# Terrain shaping
+# Rolling-to-hilly tropical terrain — jungles grow on broken ground with
+# many streams. Moderate valley carving creates river channels.
+terrain_shaping:
+  preset: rolling
+  ridge_strength: 0.2
+  peak_strength: 0.22
+  valley_strength: 0.15
+  continental_scale: 16.0
+  height_curve: 1.3
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Grass"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: tree
+    density: 20.0
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 8
+      max_height: 16
+      canopy_radius: 3
+  - type: boulder
+    density: 0.08
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 1
+      max_radius: 2
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Rain"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [22.0, 32.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.5
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.15
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.08
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [25.0, 35.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.4
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.2
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [22.0, 32.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.45
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [20.0, 30.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.35
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.2
+# Graphics
+ambient_graphics:
+  water_color: [30, 90, 60]
+  foliage_color: [34, 120, 28]

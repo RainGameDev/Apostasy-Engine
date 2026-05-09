@@ -1,0 +1,85 @@
+# Class
+name: Taiga
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 20.0
+frequency: 0.007
+octaves: 5
+# Generation Location
+humidity: 0.55
+temperature: 0.18
+# Terrain shaping
+# Gently rolling boreal terrain — glacially smoothed hills with shallow
+# valleys. No dramatic peaks; taiga sits on ancient worn-down shield rock.
+terrain_shaping:
+  preset: rolling
+  ridge_strength: 0.1
+  peak_strength: 0.12
+  valley_strength: 0.08
+  continental_scale: 20.0
+  height_curve: 1.1
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Snow"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: tree
+    density: 8.0
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 7
+      max_height: 14
+      canopy_radius: 1
+  - type: boulder
+    density: 0.4
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 1
+      max_radius: 3
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Cloudy"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [-2.0, 8.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.2
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.1
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.4
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [8.0, 18.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.35
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [-2.0, 8.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.25
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.35
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-25.0, -5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.65
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.25
+# Graphics
+ambient_graphics:
+  water_color: [140, 180, 200]
+  foliage_color: [60, 100, 60]

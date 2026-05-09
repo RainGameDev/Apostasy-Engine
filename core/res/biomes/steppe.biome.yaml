@@ -1,0 +1,83 @@
+# Class
+name: Steppe
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 9.0
+frequency: 0.007
+octaves: 4
+# Generation Location
+humidity: 0.25
+temperature: 0.5
+# Terrain shaping
+# Very flat to gently rolling — steppes are ancient seabeds and worn plains.
+# Minimal ridge or peak. Low valley carving; rivers are rare and shallow.
+terrain_shaping:
+  preset: flat
+  ridge_strength: 0.03
+  peak_strength: 0.04
+  valley_strength: 0.02
+  continental_scale: 18.0
+  height_curve: 1.0
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Grass"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: tree
+    density: 0.03
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 4
+      max_height: 7
+      canopy_radius: 1
+  - type: boulder
+    density: 0.1
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 1
+      max_radius: 2
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Sunny"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [5.0, 18.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.1
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.2
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [18.0, 32.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.8
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.03
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [2.0, 14.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.25
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.08
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-15.0, 0.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.3
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.3
+# Graphics
+ambient_graphics:
+  water_color: [140, 170, 180]
+  foliage_color: [155, 160, 80]

@@ -1,0 +1,79 @@
+# Class
+name: Mangrove
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 3.0
+frequency: 0.02
+octaves: 4
+# Generation Location
+humidity: 0.8
+temperature: 0.7
+# Terrain shaping
+# Essentially flat coastal mud. Very low amplitude reinforces how close
+# to sea level everything is. valley_strength creates tidal channels.
+# Lowest continental_scale of any biome — mangroves hug the coast.
+terrain_shaping:
+  preset: flat
+  valley_strength: 0.12
+  continental_scale: 4.0
+  height_curve: 1.0
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Dirt"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: tree
+    density: 9.0
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 4
+      max_height: 8
+      canopy_radius: 3
+  - type: boulder
+    density: 0.0
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Rain"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [22.0, 30.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.4
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [26.0, 34.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.35
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.15
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.08
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [22.0, 30.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.4
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.2
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [18.0, 26.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.25
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.25
+# Graphics
+ambient_graphics:
+  water_color: [22, 58, 44]
+  foliage_color: [40, 100, 44]

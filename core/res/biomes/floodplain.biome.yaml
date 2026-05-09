@@ -1,0 +1,81 @@
+# Class
+name: Floodplain
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 6.0
+frequency: 0.012
+octaves: 4
+# Generation Location
+humidity: 0.65
+temperature: 0.62
+# Terrain shaping
+# Near-flat with strong valley carving — the defining feature of a floodplain
+# is the river channels that cut through it. Everything else is tabletop flat.
+# Very low continental_scale; floodplains sit at the bottom of watersheds.
+terrain_shaping:
+  preset: flat
+  ridge_strength: 0.01
+  peak_strength: 0.02
+  valley_strength: 0.35
+  continental_scale: 6.0
+  height_curve: 1.0
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Grass"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Dirt"
+# Structures
+structures:
+  - type: tree
+    density: 3.5
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 6
+      max_height: 11
+      canopy_radius: 3
+  - type: boulder
+    density: 0.0
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Cloudy"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [16.0, 26.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.35
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.1
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.05
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [22.0, 34.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.2
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.2
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [14.0, 24.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.3
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.08
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [8.0, 18.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.25
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.3
+# Graphics
+ambient_graphics:
+  water_color: [55, 110, 75]
+  foliage_color: [78, 148, 50]

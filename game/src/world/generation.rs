@@ -360,22 +360,19 @@ fn place_tree_data_driven(
     let canopy_radius = canopy_radius_base + ((shape_seed & 1) as i32);
     let max_y = 32;
 
-    for level in 1..=trunk_height {
+    for level in 0..trunk_height {
         let y = base_y + level;
         if y >= chunk_world_y + max_y {
             break;
         }
 
-        set_voxel_global_non_floating(
-            voxels,
-            center_x,
-            y,
-            center_z,
-            chunk_world_x,
-            chunk_world_y,
-            chunk_world_z,
-            trunk_id,
-        );
+        let lx = center_x - chunk_world_x;
+        let ly = y - chunk_world_y;
+        let lz = center_z - chunk_world_z;
+        if (0..32).contains(&lx) && (0..32).contains(&ly) && (0..32).contains(&lz) {
+            let index = flatten(lx as u32, ly as u32, lz as u32, 32);
+            voxels[index] = trunk_id;
+        }
 
         if level > trunk_height / 2 && (shape_seed >> (level as u32)) & 1 == 1 {
             let branch_x = center_x

@@ -1,0 +1,74 @@
+# Class
+name: Glacier
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 18.0
+frequency: 0.006
+octaves: 5
+# Generation Location
+humidity: 0.15
+temperature: 0.1
+# Terrain shaping
+# Broad, smooth ice sheets with gentle undulation from buried bedrock.
+# No ridges or peaks — ice smooths everything. Slight valley_strength
+# creates crevasse-like depressions. High continental_scale; glaciers
+# push inland far from coastlines.
+terrain_shaping:
+  preset: flat
+  ridge_strength: 0.02
+  peak_strength: 0.02
+  valley_strength: 0.04
+  continental_scale: 20.0
+  height_curve: 1.0
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Snow"
+  subsurface:
+    - "Apostasy:Voxel:Stone"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: boulder
+    density: 0.4
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 2
+      max_radius: 5
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Snow"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [-15.0, -2.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.4
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.4
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [-5.0, 5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.2
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [-15.0, -3.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.5
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.3
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-35.0, -10.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.75
+# Graphics
+ambient_graphics:
+  water_color: [210, 235, 255]
+  foliage_color: [230, 240, 255]

@@ -1,0 +1,75 @@
+# Class
+name: Badlands
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 35.0
+frequency: 0.01
+octaves: 6
+# Generation Location
+humidity: 0.5
+temperature: 0.7
+# Terrain shaping
+# Strong valley carving is the defining feature — badlands are created by
+# extreme erosion cutting deep gullies. Moderate peak_strength for mesa tops.
+# ridge_strength low; ridges erode away, leaving rounded buttes.
+# height_curve above 1.0 makes the high ground stay high and the valleys cut deep.
+terrain_shaping:
+  ridge_strength: 0.1
+  peak_strength: 0.4
+  valley_strength: 0.55
+  continental_scale: 15.0
+  height_curve: 1.5
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Sand"
+  subsurface:
+    - "Apostasy:Voxel:Sandstone"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: boulder
+    density: 2.5
+    voxels:
+      boulder: "Apostasy:Voxel:Sandstone"
+    parameters:
+      min_radius: 2
+      max_radius: 6
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Sunny"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [15.0, 28.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.75
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [28.0, 42.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.9
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.04
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [12.0, 26.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.7
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.1
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [2.0, 14.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.7
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.15
+# Graphics
+ambient_graphics:
+  water_color: [180, 140, 90]
+  foliage_color: [160, 110, 55]
