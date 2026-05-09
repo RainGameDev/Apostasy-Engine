@@ -3,6 +3,7 @@ use apostasy_core::{
     objects::{
         resources::{
             cursor_manager::{CursorLockMode, CursorManager},
+            input_manager::InputManager,
             window_manager::WindowManager,
         },
         world::World,
@@ -18,6 +19,21 @@ pub struct GetNewSeed;
 
 #[derive(Resource, Clone)]
 pub struct IsPaused;
+
+#[update]
+pub fn pause(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource::<InputManager>()?;
+
+    if inputs.is_keybind_active("Pause") {
+        if world.get_resource::<IsPaused>().is_ok() {
+            world.remove_resource::<IsPaused>();
+        } else {
+            world.insert_resource(IsPaused);
+        }
+    }
+
+    Ok(())
+}
 
 #[update]
 pub fn paused_update(world: &mut World) -> Result<()> {

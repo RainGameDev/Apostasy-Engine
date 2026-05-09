@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
+    cgmath::Vector3,
     egui, log,
-    noise::Worley,
     objects::world::World,
     rand::{RngExt, rng},
     start,
@@ -11,7 +11,10 @@ use apostasy_core::{
 };
 use apostasy_macros::Resource;
 
-use crate::states::{GetNewSeed, HasInitGeneration, IsPaused};
+use crate::{
+    states::{GetNewSeed, HasInitGeneration, IsPaused},
+    world::chunk_loader::ChunkLoader,
+};
 
 const SPLASH_TEXTS: [&str; 7] = [
     "Now with 100% more Rust",
@@ -142,6 +145,11 @@ pub fn hud(world: &mut World) -> Result<()> {
                     world.remove_resource::<IsPaused>();
                     world.insert_resource(HasInitGeneration);
                     world.insert_resource(GetNewSeed);
+
+                    world
+                        .get_resource_mut::<ChunkLoader>()
+                        .unwrap()
+                        .last_chunk_position = Vector3::new(i32::MAX, i32::MAX, i32::MAX);
                 }
 
                 ui.add_space(6.0);
@@ -165,6 +173,6 @@ pub fn hud(world: &mut World) -> Result<()> {
 
 #[start]
 pub fn main_menu_start(world: &mut World) -> Result<()> {
-    world.insert_resource(IsPaused);
+    // world.insert_resource(IsPaused);
     Ok(())
 }

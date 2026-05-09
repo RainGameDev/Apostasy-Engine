@@ -4,16 +4,9 @@ use apostasy_core::{
     cgmath::{Vector3, Zero},
     egui, fixed_update,
     items::container::Container,
-    log,
     objects::{
-        Object,
-        components::transform::Transform,
-        resources::{
-            cursor_manager::CursorManager, input_manager::InputManager,
-            window_manager::WindowManager,
-        },
-        tags::Player,
-        world::World,
+        Object, components::transform::Transform, resources::input_manager::InputManager,
+        tags::Player, world::World,
     },
     physics::{Gravity, collider::Collider, velocity::Velocity},
     rendering::components::{
@@ -50,7 +43,7 @@ impl PlayerData {
 impl Default for PlayerData {
     fn default() -> Self {
         Self {
-            build_delay: 3,
+            build_delay: 4,
             current_build_ticks: 0,
         }
     }
@@ -101,12 +94,22 @@ pub fn player_init(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-#[update]
+#[update(priority = 1)]
 pub fn update(world: &mut World) -> Result<()> {
     if world.get_resource::<IsPaused>().is_ok()
         && !world.get_resource::<HasInitGeneration>().is_ok()
     {
         return Ok(());
+    }
+    if world.get_resource::<IsPaused>().is_ok() {
+        let player = world.get_object_with_tag_mut::<Player>()?;
+        let velocity = player.get_component_mut::<Velocity>()?;
+        velocity.process = false;
+        return Ok(());
+    } else {
+        let player = world.get_object_with_tag_mut::<Player>()?;
+        let velocity = player.get_component_mut::<Velocity>()?;
+        velocity.process = true;
     }
 
     let player = world.get_object_with_tag::<Player>()?;
@@ -164,7 +167,11 @@ pub fn update(world: &mut World) -> Result<()> {
     Ok(())
 }
 #[fixed_update]
+
 pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
+    if world.get_resource::<IsPaused>().is_ok() {
+        return Ok(());
+    }
     let inputs = world.get_resource::<InputManager>()?;
     let voxel_registry = world.get_resource::<VoxelRegistry>()?.clone();
     let to_break = inputs.is_mousebind_active("Break");
@@ -177,7 +184,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .unwrap()
         .0
         .clone();
-    let mut new_pos = Vector3::zero();
+    let new_pos;
 
     if let Ok(hit) = voxel_raycast_camera(world, 4.0) {
         new_pos = Vector3::new(
@@ -209,10 +216,6 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         player_data.current_build_ticks += 1;
 
         can_build = player_data.current_build_ticks >= player_data.build_delay;
-
-        if player_data.current_build_ticks >= player_data.build_delay {
-            player_data.current_build_ticks = 0;
-        }
     }
 
     if to_break {
@@ -262,7 +265,12 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
 
         let player = world.get_object_mut(player_id).unwrap();
         let inventory = player.get_component_mut::<Container>()?;
+
         inventory.remove_item_index(selected_index as usize);
+
+        let player = world.get_object_mut(player_id).unwrap();
+        let player_data = player.get_component_mut::<PlayerData>()?;
+        player_data.current_build_ticks = 0;
     }
 
     Ok(())

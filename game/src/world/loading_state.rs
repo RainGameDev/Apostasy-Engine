@@ -6,7 +6,10 @@ use apostasy_core::{
 };
 use apostasy_macros::Resource;
 
-use crate::entities::loading_gate::LoadingGate;
+use crate::{
+    entities::loading_gate::LoadingGate,
+    states::{HasInitGeneration, IsPaused},
+};
 
 /// Tracks the state of initial chunk loading
 #[derive(Resource, Clone)]
@@ -62,6 +65,10 @@ impl Default for LoadingState {
 
 #[update]
 pub fn check_loading_complete(world: &mut World) -> Result<()> {
+    if !world.get_resource::<HasInitGeneration>().is_ok() {
+        return Ok(());
+    }
+
     // Check if loading is complete and update state
     let should_mark_complete = {
         let loading_state = world.get_resource::<LoadingState>()?;
@@ -78,6 +85,7 @@ pub fn check_loading_complete(world: &mut World) -> Result<()> {
         if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
             if player.has_tag::<LoadingGate>() {
                 player.remove_tag::<LoadingGate>();
+                world.remove_resource::<IsPaused>();
             }
         }
     } else {

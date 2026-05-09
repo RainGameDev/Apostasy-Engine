@@ -14,6 +14,7 @@ pub struct Velocity {
     pub linear_velocity: Vector3<f32>,
     pub mass: f32,
     pub is_grounded: bool,
+    pub process: bool,
 }
 
 impl Default for Velocity {
@@ -23,6 +24,7 @@ impl Default for Velocity {
             linear_velocity: Vector3::zero(),
             mass: 1.0,
             is_grounded: false,
+            process: true,
         }
     }
 }
@@ -37,6 +39,9 @@ fn velocity_process(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
 
     for node in world.get_objects_with_component_mut::<Velocity>() {
+        if !node.get_component::<Velocity>()?.process {
+            continue;
+        }
         // if node.get_component::<Collider>().is_ok() {
         //     continue;
         // }

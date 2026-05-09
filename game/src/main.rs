@@ -147,6 +147,12 @@ pub fn input_init(world: &mut World) -> Result<()> {
         "Hotbar9",
     ));
 
+    inputs.register_keybind(KeyBind::new(
+        PhysicalKey::Code(KeyCode::Escape),
+        KeyAction::Press,
+        "Pause",
+    ));
+
     inputs.register_mousebind(MouseBind::new(MouseButton::Left, KeyAction::Hold, "Break"));
     inputs.register_mousebind(MouseBind::new(MouseButton::Right, KeyAction::Hold, "Place"));
 

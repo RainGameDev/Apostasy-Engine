@@ -50,6 +50,13 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
     let registry = world.get_resource::<VoxelRegistry>()?.clone();
 
     for data in collider_data {
+        let obj = world
+            .get_object(data.id)
+            .and_then(|o| o.get_component::<Velocity>().ok());
+        if obj.unwrap().process == false {
+            break;
+        }
+
         let velocity_snapshot = world
             .get_object(data.id)
             .and_then(|o| o.get_component::<Velocity>().ok())
