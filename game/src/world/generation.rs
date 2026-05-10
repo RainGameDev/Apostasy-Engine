@@ -39,6 +39,62 @@ fn fractal_brownian_motion(
     value / max_value // normalised to [-1, 1]
 }
 
+/// Sample 3D noise for cave generation at world coordinates.
+/// Returns [-1, 1] noise value.
+fn sample_3d_noise(noise: &Perlin, wx: f64, wy: f64, wz: f64, scale: f64) -> f64 {
+    noise.get([wx * scale, wy * scale, wz * scale])
+}
+
+/// Layered 3D noise for caverns .
+fn sample_cavern_noise(noise: &Perlin, wx: f64, wy: f64, wz: f64) -> f64 {
+    let cavern_low = sample_3d_noise(noise, wx, wy, wz, 0.00005);
+    let cavern_detail = sample_3d_noise(noise, wx, wy, wz, 0.0002).abs() * 0.3;
+
+    (cavern_low + cavern_detail) / 1.3
+}
+
+/// Layered 3D noise for tunnels (high frequency = narrow paths).
+fn sample_tunnel_noise(noise: &Perlin, wx: f64, wy: f64, wz: f64) -> f64 {
+    let tunnel_winding = sample_3d_noise(noise, wx, wy, wz, 0.05);
+    (1.0 - tunnel_winding.abs() * 0.7).max(-1.0)
+}
+
+/// Determines if a voxel position is inside a cave.
+fn is_carved_out(
+    wx: f64,
+    wy: f64,
+    wz: f64,
+    depth: i32,
+    cavern_noise: &Perlin,
+    tunnel_noise: &Perlin,
+) -> bool {
+    // Don't carve above surface
+    if depth < 0 {
+        return false;
+    }
+
+    let cavern = sample_cavern_noise(cavern_noise, wx, wy, wz);
+    let tunnel = sample_tunnel_noise(tunnel_noise, wx, wy, wz);
+
+    // Surface openings check for strong cave signal
+    if depth == 0 {
+        return cavern < -0.3;
+    }
+
+    // Near-surface allow caves to start forming, creating entrance connections
+    if depth < 3 {
+        let cavern_carve = cavern < -0.55; // Caves propagate upward
+        let tunnel_carve = tunnel < -0.2 && cavern < -0.4;
+        return cavern_carve || tunnel_carve;
+    }
+
+    // Deep caves normal carving thresholds
+    let cavern_carve = cavern < -0.4;
+    let tunnel_carve = tunnel < -0.3 && cavern > -0.7;
+
+    cavern_carve || tunnel_carve
+}
+
 fn ridged_fbm(noise: &Perlin, x: f64, z: f64, octaves: u32, lacunarity: f64, gain: f64) -> f64 {
     let mut value = 0.0;
     let mut amplitude = 0.5;
@@ -255,7 +311,10 @@ fn set_voxel_global_non_floating(
     }
 
     // Skip over empty spaces and water voxels
-    while ly > 0 && (voxels[(lx + ly * 32 + lz * 32 * 32) as usize] == 0 || voxels[(lx + ly * 32 + lz * 32 * 32) as usize] == water_voxel) {
+    while ly > 0
+        && (voxels[(lx + ly * 32 + lz * 32 * 32) as usize] == 0
+            || voxels[(lx + ly * 32 + lz * 32 * 32) as usize] == water_voxel)
+    {
         ly -= 1;
     }
 
@@ -647,6 +706,10 @@ pub fn generate_chunk_data(
     lod: u8,
 ) -> GeneratedChunkData {
     let noise = NOISE.get_or_init(|| Perlin::new(seed));
+
+    let cavern_noise = Perlin::new(seed.wrapping_add(10)); // Different seed for variety
+    let tunnel_noise = Perlin::new(seed.wrapping_add(11));
+
     let world_x = position.x as f64 * 32.0;
     let world_y = position.y as f64 * 32.0;
     let world_z = position.z as f64 * 32.0;
@@ -746,7 +809,12 @@ pub fn generate_chunk_data(
                 let wy = world_y as i32 + y as i32;
                 let depth = surface_y - wy;
 
-                let id = if wy > surface_y {
+                // World coordinates for 3D noise
+                let wx = world_x + x as f64;
+                let wy_f64 = wy as f64;
+                let wz = world_z + z as f64;
+
+                let mut id = if wy > surface_y {
                     if water_voxel != 0 && wy <= SEA_LEVEL {
                         water_voxel
                     } else {
@@ -759,7 +827,9 @@ pub fn generate_chunk_data(
                 } else {
                     underground_voxel
                 };
-
+                if is_carved_out(wx, wy_f64, wz, depth, &cavern_noise, &tunnel_noise) {
+                    id = 0;
+                }
                 voxels[flatten(x as u32, y as u32, z as u32, 32)] = id;
             }
         }
