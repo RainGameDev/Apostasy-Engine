@@ -86,6 +86,7 @@ pub trait RenderingAPI {
     fn update_command_buffer(&mut self);
     fn recreate_swapchain(&mut self);
 
+    fn get_buffer_graveyard(&mut self) -> &mut Vec<(vk::Buffer, vk::DeviceMemory)>;
     fn get_command_pool(&self) -> Result<CommandPool>;
     fn get_aspect(&self) -> f32;
     fn get_descriptor_pool(&self) -> vk::DescriptorPool;

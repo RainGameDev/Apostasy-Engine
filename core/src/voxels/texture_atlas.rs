@@ -224,7 +224,7 @@ pub fn upload_atlas(
         );
     }
 
-    let queue = ctx.queues[ctx.queue_families.transfer as usize];
+    let queue = ctx.queues[&ctx.queue_families.transfer];
     ctx.end_single_time_commands(cmd, queue, command_pool);
 
     // cleanup staging

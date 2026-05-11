@@ -268,14 +268,14 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
             let collider = player.get_component::<Collider>()?;
 
             let min = Vector3::new(
-                (transform.global_position.x - collider.half_extents.x) as i32,
-                (transform.global_position.y - collider.half_extents.y) as i32,
-                (transform.global_position.z - collider.half_extents.z) as i32,
+                (transform.global_position.x.floor() - collider.half_extents.x) as i32,
+                (transform.global_position.y.floor() - collider.half_extents.y) as i32,
+                (transform.global_position.z.floor() - collider.half_extents.z) as i32,
             );
             let max = Vector3::new(
-                (transform.global_position.x + collider.half_extents.x) as i32,
-                (transform.global_position.y + collider.half_extents.y) as i32,
-                (transform.global_position.z + collider.half_extents.z) as i32,
+                (transform.global_position.x.floor() + collider.half_extents.x) as i32,
+                (transform.global_position.y.floor() + collider.half_extents.y) as i32,
+                (transform.global_position.z.floor() + collider.half_extents.z) as i32,
             );
 
             if (min.x >= raycast.voxel_pos.x && max.x <= raycast.voxel_pos.x)

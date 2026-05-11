@@ -64,6 +64,8 @@ pub struct VulkanRenderer {
     pub voxel_descriptor_pool: vk::DescriptorPool,
     pub voxel_descriptor_set_layout: vk::DescriptorSetLayout,
 
+    pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
+
     pub ui_renderer: UIRenderer,
 
     pub push_constants: PushConstants,
@@ -194,7 +196,7 @@ impl RenderingAPI for VulkanRenderer {
                     .push_constant_ranges(&[vk::PushConstantRange::default()
                         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                         .offset(0)
-                        .size(156)])
+                        .size(160)])
                     .set_layouts(&[descriptor_set_layout]),
                 None,
             )?;
@@ -287,6 +289,8 @@ impl RenderingAPI for VulkanRenderer {
                 pipeline_layout,
                 voxel_pipeline_layout,
 
+                buffer_graveyard: Vec::new(),
+
                 ui_renderer,
 
                 voxel_pipeline,
@@ -328,7 +332,9 @@ impl RenderingAPI for VulkanRenderer {
                 true,
                 FENCE_TIMEOUT_NS,
             ) {
-                Ok(()) => {}
+                Ok(()) => {
+                    self.buffer_graveyard.drain(..);
+                }
                 Err(e) => {
                     eprintln!("Fence wait failed (likely device timeout): {}", e);
                     // Reset the device state and try to recover
@@ -458,7 +464,7 @@ impl RenderingAPI for VulkanRenderer {
             }
 
             if let Err(e) = self.context.device.queue_submit(
-                self.context.queues[self.context.queue_families.graphics as usize],
+                self.context.queues[&self.context.queue_families.graphics],
                 &[ash::vk::SubmitInfo::default()
                     .wait_semaphores(&[frame.image_available_semaphore])
                     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
@@ -723,7 +729,7 @@ impl RenderingAPI for VulkanRenderer {
 
         if !texture_updates.is_empty() {
             self.ui_renderer.renderer.set_textures(
-                self.context.queues[self.context.queue_families.graphics as usize],
+                self.context.queues[&self.context.queue_families.graphics],
                 self.command_pool,
                 &texture_updates,
             )?;
@@ -762,14 +768,15 @@ impl RenderingAPI for VulkanRenderer {
         self.swapchain.resize()
     }
 
+    fn get_buffer_graveyard(&mut self) -> &mut Vec<(vk::Buffer, vk::DeviceMemory)> {
+        &mut self.buffer_graveyard
+    }
     fn get_command_pool(&self) -> Result<CommandPool> {
         Ok(self.command_pool)
     }
-
     fn get_aspect(&self) -> f32 {
         self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
     }
-
     fn get_descriptor_pool(&self) -> vk::DescriptorPool {
         self.voxel_descriptor_pool
     }

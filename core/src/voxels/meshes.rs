@@ -226,7 +226,9 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     // Sort to prioritize voxel-break-initiated remeshes over chunk generation
     needs_remesh.sort_by_key(|(id, _pos)| {
         let obj = world.get_object(*id);
-        let has_priority = obj.map(|o| o.has_tag::<VoxelBreakRemesh>()).unwrap_or(false);
+        let has_priority = obj
+            .map(|o| o.has_tag::<VoxelBreakRemesh>())
+            .unwrap_or(false);
         !has_priority
     });
 
@@ -305,6 +307,7 @@ pub fn receive_meshes(
     world: &mut World,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
+    buffer_graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
 ) -> Result<()> {
     let completed: Vec<GeneratedMeshData> = {
         let queue = world.get_resource::<crate::voxels::chunk::ChunkGenQueue>()?;
@@ -347,10 +350,12 @@ pub fn receive_meshes(
             if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
                 if mesh.vertex_buffer != vk::Buffer::null() {
                     unsafe {
-                        ctx.device.destroy_buffer(mesh.vertex_buffer, None);
-                        ctx.device.free_memory(mesh.vertex_buffer_memory, None);
-                        ctx.device.destroy_buffer(mesh.index_buffer, None);
-                        ctx.device.free_memory(mesh.index_buffer_memory, None);
+                        buffer_graveyard.push((mesh.vertex_buffer, mesh.vertex_buffer_memory));
+                        buffer_graveyard.push((mesh.index_buffer, mesh.index_buffer_memory));
+                        // ctx.device.destroy_buffer(mesh.vertex_buffer, None);
+                        // ctx.device.free_memory(mesh.vertex_buffer_memory, None);
+                        // ctx.device.destroy_buffer(mesh.index_buffer, None);
+                        // ctx.device.free_memory(mesh.index_buffer_memory, None);
                     }
                 }
             }
@@ -414,9 +419,14 @@ pub fn generate_mesh(
 ) -> (Vec<VoxelVertex>, Vec<u32>, Vec<VoxelVertex>, Vec<u32>) {
     let lod = chunk.lod as usize;
     let grid_size = 32 / lod;
+    let mut grid = vec![0u16; 32 * 32 * 32];
+    let mut border_px = vec![0u16; 32 * 32];
+    let mut border_nx = vec![0u16; 32 * 32];
+    let mut border_py = vec![0u16; 32 * 32];
+    let mut border_ny = vec![0u16; 32 * 32];
+    let mut border_pz = vec![0u16; 32 * 32];
+    let mut border_nz = vec![0u16; 32 * 32];
 
-    // compute voxels into easily accessable grid
-    let mut grid = [0u16; 32 * 32 * 32];
     for gz in 0..grid_size {
         for gy in 0..grid_size {
             for gx in 0..grid_size {
@@ -425,14 +435,6 @@ pub fn generate_mesh(
             }
         }
     }
-
-    // get neighbours voxels on their neighbouring plain
-    let mut border_px = [0u16; 32 * 32]; // [y * 32 + z]
-    let mut border_nx = [0u16; 32 * 32];
-    let mut border_py = [0u16; 32 * 32];
-    let mut border_ny = [0u16; 32 * 32];
-    let mut border_pz = [0u16; 32 * 32];
-    let mut border_nz = [0u16; 32 * 32];
 
     // calculate the voxels on the neighbours
     if let Some(n) = &neighbours.px {

@@ -229,7 +229,7 @@ impl VulkanSwapchain {
     ) -> Result<()> {
         let is_suboptimal = unsafe {
             match self.context.swapchain_extension.queue_present(
-                self.context.queues[self.context.queue_families.present as usize],
+                self.context.queues[&self.context.queue_families.present],
                 &vk::PresentInfoKHR::default()
                     .wait_semaphores(&[render_finished_semaphore])
                     .swapchains(&[self.handle])

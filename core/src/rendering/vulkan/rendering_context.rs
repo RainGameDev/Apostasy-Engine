@@ -88,6 +88,7 @@ use ash::vk::ShaderStageFlags;
 use ash::vk::SharingMode;
 use ash::vk::SubmitInfo;
 use ash::vk::Viewport;
+use hashbrown::HashMap;
 use winit::raw_window_handle::HasDisplayHandle;
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::Window;
@@ -109,7 +110,7 @@ pub struct RenderingContextAttributes<'window> {
 
 #[derive(Clone, Resource)]
 pub struct VulkanRenderingContext {
-    pub queues: Vec<Queue>,
+    pub queues: HashMap<u32, Queue>,
     pub device: Device,
     pub physical_device: PhysicalDevice,
     pub queue_family_indices: HashSet<u32>,
@@ -223,9 +224,8 @@ impl VulkanRenderingContext {
 
             let queues = queue_family_indices
                 .iter()
-                .map(|&index| device.get_device_queue(index, 0))
-                .collect::<Vec<_>>();
-
+                .map(|&index| (index, device.get_device_queue(index, 0)))
+                .collect::<HashMap<_, _>>();
             Ok(Self {
                 queues,
                 device,
@@ -1120,7 +1120,7 @@ impl VulkanRenderingContext {
             self.device
                 .cmd_copy_buffer(cmd, staging_buffer, buffer, &[copy_region]);
         }
-        let queue = self.queues[self.queue_families.transfer as usize];
+        let queue = self.queues[&self.queue_families.transfer];
         self.end_single_time_commands(cmd, queue, command_pool);
 
         unsafe {
@@ -1181,7 +1181,7 @@ impl VulkanRenderingContext {
             self.device
                 .cmd_copy_buffer(cmd, staging_buffer, buffer, &[copy_region]);
         }
-        let queue = self.queues[self.queue_families.transfer as usize];
+        let queue = self.queues[&self.queue_families.transfer];
         self.end_single_time_commands(cmd, queue, command_pool);
 
         unsafe {

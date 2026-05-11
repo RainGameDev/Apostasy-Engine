@@ -24,10 +24,7 @@ use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
 use crate::objects::resources::input_manager::InputManager;
 use crate::objects::resources::window_manager::WindowManager;
-use crate::objects::systems::DeltaTime;
 use crate::objects::systems::EngineTimer;
-use crate::objects::systems::FixedUpdateSystem;
-use crate::objects::systems::FixedUpdateTimer;
 use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::components::camera::ActiveCamera;
@@ -185,8 +182,13 @@ impl Core {
                     }
 
                     if let Ok(command_pool) = renderer.get_command_pool() {
-                        receive_meshes(&mut world, &context, command_pool)
-                            .expect("Failed to receive meshes");
+                        receive_meshes(
+                            &mut world,
+                            &context,
+                            command_pool,
+                            renderer.get_buffer_graveyard(),
+                        )
+                        .expect("Failed to receive meshes");
                     }
 
                     // Begin frame - if device is lost, skip rendering this frame
