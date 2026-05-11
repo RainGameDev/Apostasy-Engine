@@ -277,10 +277,38 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
                 (transform.global_position.y + collider.half_extents.y).floor() as i32,
                 (transform.global_position.z + collider.half_extents.z).floor() as i32,
             );
+            let face_offset = match raycast.face {
+                0 => (1, 0, 0),  // +X
+                1 => (-1, 0, 0), // -X
+                2 => (0, 1, 0),  // +Y
+                3 => (0, -1, 0), // -Y
+                4 => (0, 0, 1),  // +Z
+                5 => (0, 0, -1), // -Z
+                _ => (0, 0, 0),
+            };
 
-            if (min.x >= raycast.voxel_pos.x && max.x <= raycast.voxel_pos.x)
-                || (min.y >= raycast.voxel_pos.y && max.y <= raycast.voxel_pos.y)
-                || (min.z >= raycast.voxel_pos.z && max.z <= raycast.voxel_pos.z)
+            let place_pos = Vector3::new(
+                raycast.voxel_pos.x + face_offset.0,
+                raycast.voxel_pos.y + face_offset.1,
+                raycast.voxel_pos.z + face_offset.2,
+            );
+
+            if place_pos.x >= min.x
+                && place_pos.x <= max.x
+                && place_pos.y >= min.y
+                && place_pos.y <= max.y
+                && place_pos.z >= min.z
+                && place_pos.z <= max.z
+            {
+                return Ok(());
+            }
+
+            if place_pos.x >= min.x
+                && place_pos.x <= max.x
+                && place_pos.y >= min.y
+                && place_pos.y <= max.y
+                && place_pos.z >= min.z
+                && place_pos.z <= max.z
             {
                 return Ok(());
             }
