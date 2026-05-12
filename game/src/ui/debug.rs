@@ -2,9 +2,10 @@ use apostasy_macros::{Resource, update};
 
 use apostasy_core::{
     anyhow::Result,
-    cgmath::Vector3,
+    cgmath::{InnerSpace, Vector3},
     egui,
     objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
+    physics::velocity::Velocity,
     rendering::shared::frustrum::ObjectsDrawing,
     start,
     ui::ui_context::EguiContext,
@@ -137,6 +138,26 @@ pub fn hud(world: &mut World) -> Result<()> {
                         .unwrap()
                         .global_position
                 ));
+
+                let velocity = world
+                    .get_object_with_tag::<Player>()
+                    .unwrap()
+                    .get_component::<Velocity>()
+                    .unwrap()
+                    .linear_velocity;
+
+                ui.label(format!(
+                    "Player velocity: {:.2} voxels/s",
+                    velocity.magnitude()
+                ));
+
+                let grounded = world
+                    .get_object_with_tag::<Player>()
+                    .unwrap()
+                    .get_component::<Velocity>()
+                    .unwrap()
+                    .is_grounded;
+                ui.label(format!("Player grounded: {} ", grounded));
 
                 let transform = world
                     .get_object_with_tag::<Player>()

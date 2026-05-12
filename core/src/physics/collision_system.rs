@@ -121,7 +121,7 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
                     let overlap_z = (cur_max.z.min(vox_max.z) - cur_min.z.max(vox_min.z)).max(0.0);
 
                     // detect if theres no overlap
-                    if overlap_x <= 0.0 || overlap_y <= 0.0 || overlap_z <= 0.0 {
+                    if overlap_x <= 0.0 || overlap_y <= 0.01 || overlap_z <= 0.0 {
                         continue;
                     }
 
@@ -198,7 +198,7 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
             }
             if let Ok(v) = obj.get_component_mut::<Velocity>() {
                 v.is_grounded = grounded;
-                if total_correction.y > 0.0 && v.linear_velocity.y < 0.0 {
+                if total_correction.y > 0.05 && v.linear_velocity.y < 0.05 {
                     v.linear_velocity.y = 0.0;
                     v.is_grounded = true;
                 }
