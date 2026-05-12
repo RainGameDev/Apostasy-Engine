@@ -1,101 +1,66 @@
 # Apostasy Engine
 
-Apostasy is an experimental Rust game engine prototype built specifically for the game *Apostasy*, a Morrowind-inspired RPG with 1990s era design goals. The engine is designed to support the kind of open-world RPG systems and scene-driven gameplay needed by that game, while also providing basic editor-style tooling.
+Apostasy is a Rust game engine built specifically for the game *Apostasy*, A *Morrowind* and *Vintage Story* inspired voxel game developed with 1990s and 2000s era design goals. The engine is designed to support open-world RPG systems, Voxel Worlds and scene-driven Game Object gameplay whilst staying data-driven.
 
-## What the engine does
+## What the engine does:
 
-- launches a window and render loop
-- maintains a shared `World` containing scene nodes
-- updates input state and propagates transforms
-- loads assets such as shaders, scenes, and materials
-- renders content through a Vulkan backend
-- provides editor scaffolding for inspecting and editing runtime state
+- windowing and render loops 
+- maintains a shared `World` containing objects 
+- update, start, fixed update and late update systems 
+- loading of assets, including custom asset loaders 
+- renders content through a Vulkan backend (soon to support other backends)
 
-The runtime is driven by an engine crate and a small root application that starts the engine.
+The engine is split into several parts, the Core and Macros support the base of engine management, rendering, voxels and scenes, Game is customisable to what you need and Editor will be a full scene based editor.
 
-## How it works
+## How to use it:
 
-The engine initializes a window and Vulkan context, then creates:
-- a `World` with default scene nodes and input handling
-- an `AssetServer` for loading resources from `res/`
-- a renderer for drawing frames
-- editor state for runtime inspection
+The base of the engine can be launched via this code
 
-Input events are dispatched into the world, and update hooks can operate directly on the shared `World`.
+```rust
 
-### World and scene graph
-
-The world is a tree of `Node` objects. Each node has:
-- an identifier and name
-- a default transform component
-- optional child nodes
-- a collection of typed components
-
-Components are stored as dynamic trait objects, which lets the engine attach behavior such as cameras, physics, velocity, and terrain to nodes.
-
-Transforms are propagated through the node hierarchy so child nodes inherit position, rotation, and scale from their parents.
-
-### Update flow
-
-The engine exposes fixed-update hooks for game logic. The root app uses a macro to register a function that receives:
-- a mutable reference to the `World`
-- the time delta for the current update
-
-This is where gameplay code can query input, move objects, and modify component state.
-
-### Rendering flow
-
-Rendering is handled by an internal renderer that manages:
-- Vulkan swapchain and surface setup
-- shader loading
-- material and model rendering
-- window resize and redraw requests
-
-The engine supports multiple windows and updates render targets when window state changes.
-
-## Usage
-
-Run the engine from the repository root with:
-
-```bash
-cargo run
+fn main() {
+    init_core(
+        RenderingBackend::Vulkan,
+        vec![*packages*],
+    )
+    .unwrap();
+}
 ```
 
-This starts the application and opens the engine window.
+Packages can be empty or have different defined packages, packages contain a bunch of startup commands to help clean up startup code.
 
-For a release build:
 
-```bash
-cargo build --release
+### Objects and Components: 
+
+Apostasy runs off an object and component system, objects are defined with a name, id, set of components and a set of tags.
+Components are a set of data similar to the average ECS data, tags are tags theyre empty components that are used to find specific objects
+
+Objects can be created via the following code:
+
+```rust
+
+
+let player = Object::new()
+    .add_component(transform)
+    .add_component(Velocity::default())
+    .add_component(Gravity::default())
+    .add_component(Collider::player())
+    .add_tag(Player);
+
+world.add_object(player);
 ```
 
-## Custom logic
-
-Game code can be attached through the engine's update hooks rather than through a separate game loop. A sample root app demonstrates:
-- starting the engine
-- reading input from the world
-- locating nodes by component type
-- moving a player node using velocity and transform components
-
-The engine's macros simplify registering those update callbacks.
-
-## Asset loading
-
-Assets are loaded through an engine asset server at runtime. The current setup registers loaders for:
-- shaders
-- materials
-- scenes
-
-Scene files and shader assets are used to populate the runtime world and rendering state.
+this creates an object (`player`) and then adds it to the world.
+Objects can be read with `world.get_object(id)` or modified via `world.get_object_mut(id)`.
 
 ## Current limitations
 
 Apostasy is not a finished engine. Existing limitations include:
-- limited system scheduling and ECS behavior
-- basic lighting and rendering support
-- incomplete asset import/export
-- prototype editor UI
-- early-stage API and architecture
+- limited shader support,
+- limited rendering capabilities
+- performance
+- ease of use
+- an in built editor
 
 ## Requirements
 
@@ -103,6 +68,3 @@ Apostasy is not a finished engine. Existing limitations include:
 - Vulkan-capable system and drivers
 - `cargo` available on PATH
 
-## Notes
-
-This project is primarily a learning and experimentation engine. It is useful as a reference for how a Rust engine can wire together windowing, Vulkan rendering, a scene graph, and runtime update hooks.
