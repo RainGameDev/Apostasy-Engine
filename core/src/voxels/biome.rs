@@ -29,40 +29,23 @@ pub static NOISE: RwLock<Option<Perlin>> = RwLock::new(None);
 pub static TEMPERATURE_NOISE: RwLock<Option<Perlin>> = RwLock::new(None);
 pub static HUMIDITY_NOISE: RwLock<Option<Perlin>> = RwLock::new(None);
 pub static CONTINENTAL_NOISE: RwLock<Option<Perlin>> = RwLock::new(None);
-/// A structure entry inside a biome definition.
-///
-/// This describes how a biome should spawn reusable structures or data-driven
-/// features during world generation.
+
 #[derive(Clone, Debug)]
 pub struct StructureDefinition {
-    /// Feature type, e.g. `tree`, `boulder`, or a custom asset-backed type.
     pub structure_type: String,
-    /// Relative density across the feature grid.
     pub density: f64,
-    /// Optional external structure asset name to instantiate.
     pub asset: Option<String>,
-    /// Named voxel references used by the structure generator.
     pub voxels: HashMap<String, String>,
-    /// Additional custom parameters for the generator or asset placement.
     pub parameters: HashMap<String, serde_yaml::Value>,
 }
 
 /// Per-biome terrain shaping parameters.
 #[derive(Clone, Debug)]
 pub struct TerrainShaping {
-    /// How strongly ridge noise lifts terrain. 0.0 = flat, 1.0 = sharp ridgelines.
     pub ridge_strength: f64,
-
-    /// How strongly peak noise adds bumpy high points. 0.0 = smooth, 1.0 = peaky.
     pub peak_strength: f64,
-
-    /// How strongly valley erosion carves downward. 0.0 = none, 1.0 = deep valleys.
     pub valley_strength: f64,
-
-    /// How far the continentalness noise shifts this biome's base height.
     pub continental_scale: f64,
-
-    /// Exponent applied to the base FBM noise before scaling by amplitude.
     pub height_curve: f64,
 }
 
@@ -79,7 +62,6 @@ impl Default for TerrainShaping {
 }
 
 impl TerrainShaping {
-    /// Preset for flat biomes: plains, beaches, tundra.
     pub fn flat() -> Self {
         Self {
             ridge_strength: 0.03,
@@ -90,7 +72,6 @@ impl TerrainShaping {
         }
     }
 
-    /// Preset for gently rolling terrain: forests, savannas.
     pub fn rolling() -> Self {
         Self {
             ridge_strength: 0.15,
@@ -101,7 +82,6 @@ impl TerrainShaping {
         }
     }
 
-    /// Preset for hilly terrain: shrublands, taiga, jungles.
     pub fn hilly() -> Self {
         Self {
             ridge_strength: 0.4,
@@ -112,7 +92,6 @@ impl TerrainShaping {
         }
     }
 
-    /// Preset for mountainous terrain.
     pub fn mountainous() -> Self {
         Self {
             ridge_strength: 1.0,
@@ -123,7 +102,6 @@ impl TerrainShaping {
         }
     }
 
-    /// Preset for ocean/deep water biomes: as flat as possible.
     pub fn ocean() -> Self {
         Self {
             ridge_strength: 0.0,
@@ -136,43 +114,27 @@ impl TerrainShaping {
 }
 
 /// A biome definition used during terrain generation.
-///
-/// This contains voxel rules, procedural noise properties, climate values, and
-/// any structures that should spawn inside the biome.
 #[derive(Clone, Debug)]
 pub struct BiomeDefinition {
     pub name: String,
     pub namespace: String,
     pub class: String,
 
-    /// Voxels used for the terrain surface.
     pub surface_voxels: Vec<String>,
-    /// Voxels used for the shallow subsurface layer.
     pub subsurface_voxels: Vec<String>,
-    /// Voxels used for deeper underground layers.
     pub underground_voxels: Vec<String>,
 
-    /// Height amplitude multiplier for this biome's base FBM noise.
     pub amplitude: f64,
-    /// Noise frequency used to shape biome terrain.
     pub frequency: f64,
-    /// Number of noise octaves for terrain detail.
     pub octaves: u32,
 
-    /// Target biome temperature for climate sampling.
     pub temperature: f64,
-    /// Target biome humidity for climate sampling.
     pub humidity: f64,
-    /// Structures or feature definitions that spawn in this biome.
     pub structures: Vec<StructureDefinition>,
 
-    /// RGB color for water tinting.
     pub water_color: (u8, u8, u8),
-    /// RGB color for foliage tinting.
     pub foliage_color: (u8, u8, u8),
 
-    /// Per-biome terrain shaping parameters. Controls how much ridge,
-    /// peak, valley, and continental noise influence this biome's height.
     pub terrain_shaping: TerrainShaping,
 }
 

@@ -3,6 +3,7 @@ use cgmath::{Vector3, Zero};
 
 pub mod biome;
 pub mod chunk;
+pub mod heightmap;
 pub mod meshes;
 pub mod structure;
 pub mod texture_atlas;

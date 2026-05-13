@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use apostasy_core::noise::Perlin;
 use apostasy_core::objects::components::transform::FORWARD;
@@ -35,9 +35,9 @@ impl Default for ChunkLoader {
     fn default() -> Self {
         Self {
             last_chunk_position: Vector3::new(i32::MAX, i32::MAX, i32::MAX),
-            load_radius: 8,
+            load_radius: 16,
             v_load_radius: 16,
-            chunk_lod_distances: vec![8, 12, 14, 64],
+            chunk_lod_distances: vec![16, 32, 64, 128],
             frame_counter: 0,
             seed: 1,
         }
@@ -119,7 +119,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         (
             loader.last_chunk_position,
             loader.load_radius,
-            loader.v_load_radius,   
+            loader.v_load_radius,
             loader.chunk_lod_distances.clone(),
             loader.frame_counter,
         )
@@ -130,7 +130,6 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         return Ok(());
     }
 
-   
     log!("Entered new chunk at {:?}", player_chunk_pos);
     world.get_resource_mut::<ChunkLoader>()?.last_chunk_position = player_chunk_pos;
 
