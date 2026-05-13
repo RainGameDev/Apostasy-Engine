@@ -19,11 +19,10 @@ pub fn compute_column(
     noise: &Perlin,
     biome_registry: &BiomeRegistry,
     lod: u8,
+    temp_noise: &Perlin,
+    humid_noise: &Perlin,
+    continental_noise: &Perlin,
 ) -> (i32, u16) {
-    let temp_noise = TEMPERATURE_NOISE.read().unwrap().unwrap();
-    let humid_noise = HUMIDITY_NOISE.read().unwrap().unwrap();
-    let continental_noise = CONTINENTAL_NOISE.read().unwrap().unwrap();
-
     let temperature = (temp_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
     let humidity = (humid_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
     let continental = (continental_noise.get([world_x * 0.00035, world_z * 0.00035]) + 1.0) * 0.5;

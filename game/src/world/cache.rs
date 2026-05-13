@@ -31,9 +31,21 @@ impl NoiseColumnCache {
         biome_registry: &BiomeRegistry,
         lod: u8,
         seed: u32,
+        temp_noise: &Perlin,
+        humid_noise: &Perlin,
+        continental_noise: &Perlin,
     ) -> &CachedColumn {
         self.entries.entry((wx, wz)).or_insert_with(|| {
-            let (height, biome) = compute_column(wx as f64, wz as f64, noise, biome_registry, lod);
+            let (height, biome) = compute_column(
+                wx as f64,
+                wz as f64,
+                noise,
+                biome_registry,
+                lod,
+                temp_noise,
+                humid_noise,
+                continental_noise,
+            );
             CachedColumn { height, biome }
         })
     }

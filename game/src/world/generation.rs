@@ -1,10 +1,14 @@
 use apostasy_core::{
     cgmath::Vector3,
+    crossbeam_channel::IntoIter,
     log,
     noise::Perlin,
     utils::flatten::flatten,
     voxels::{
-        biome::{BiomeRegistry, NOISE, StructureDefinition},
+        biome::{
+            BiomeRegistry, CONTINENTAL_NOISE, HUMIDITY_NOISE, NOISE, StructureDefinition,
+            TEMPERATURE_NOISE,
+        },
         chunk::GeneratedChunkData,
         structure::StructureRegistry,
         voxel::{VoxelId, VoxelRegistry},
@@ -373,21 +377,28 @@ pub fn generate_chunk_data(
     seed: u32,
     lod: u8,
 ) -> GeneratedChunkData {
-    let now = Instant::now();
+    let full = Instant::now();
+
+    let instant = Instant::now();
     let noise = NOISE.read().unwrap().unwrap();
     let cavern_noise = Perlin::new(seed.wrapping_add(10));
     let tunnel_noise = Perlin::new(seed.wrapping_add(11));
 
+    let temp_noise = TEMPERATURE_NOISE.read().unwrap().unwrap();
+    let humid_noise = HUMIDITY_NOISE.read().unwrap().unwrap();
+    let continental_noise = CONTINENTAL_NOISE.read().unwrap().unwrap();
+
+    let base_noise = instant.elapsed();
+
     let world_x = position.x as f64 * 32.0;
     let world_z = position.z as f64 * 32.0;
-
     let chunk_world_x = position.x * 32;
     let chunk_world_y = position.y * 32;
     let chunk_world_z = position.z * 32;
 
-    //  Column cache covers in-chunk columns + structure overhang
+    let instant = Instant::now();
     let feature_radius = 4i32;
-    let overhang = (feature_radius * 2 + 32) as usize; // ~40
+    let overhang = (feature_radius * 2 + 32) as usize;
     let mut col_cache = NoiseColumnCache::with_capacity(overhang * overhang);
 
     let cell_size = upsample_cell_size(lod);
@@ -400,80 +411,134 @@ pub fn generate_chunk_data(
         &mut col_cache,
         lod,
         seed,
+        &temp_noise,
+        &humid_noise,
+        &continental_noise, // pass through
     );
+    let column_caching = instant.elapsed();
 
-    // Per colum biome selection
+    let instant = Instant::now();
     let mut heightmap = [0i32; 32 * 32];
     let mut column_biome = [0u16; 32 * 32];
 
     for z in 0..32usize {
         for x in 0..32usize {
             heightmap[z * 32 + x] = heightmap_sampler.sample(x, z);
-
             let wx = chunk_world_x + x as i32;
             let wz = chunk_world_z + z as i32;
-            let col = col_cache.get_or_insert(wx, wz, &noise, biome_registry, lod, seed);
+            let col = col_cache.get_or_insert(
+                wx,
+                wz,
+                &noise,
+                biome_registry,
+                lod,
+                seed,
+                &temp_noise,
+                &humid_noise,
+                &continental_noise,
+            );
             column_biome[z * 32 + x] = col.biome;
         }
     }
+    let column_biome_selection = instant.elapsed();
 
-    //  Voxel fill
-    let mut voxels = vec![0u16; 32 * 32 * 32].into_boxed_slice();
+    // Early chunk skip: if entire chunk is above surface, all air
+    let chunk_top = chunk_world_y + 32;
+    let max_surface = *heightmap.iter().max().unwrap();
+    let min_surface = *heightmap.iter().min().unwrap();
+
+    if chunk_world_y > max_surface.max(SEA_LEVEL) {
+        let voxels = Box::new([0u16; 32 * 32 * 32]);
+        let center_biome = column_biome[16 * 32 + 16];
+        return GeneratedChunkData {
+            position,
+            voxels,
+            lod,
+            biome: center_biome,
+        };
+    }
+
+    let instant = Instant::now();
     let water_voxel = registry
         .name_to_id
         .get("Apostasy:Voxel:Water")
         .copied()
         .unwrap_or(0);
 
+    // Precompute biome voxel IDs per column
+    let mut col_surface_voxel = [0u16; 32 * 32];
+    let mut col_subsurface_voxel = [0u16; 32 * 32];
+    let mut col_underground_voxel = [0u16; 32 * 32];
+
+    for z in 0..32usize {
+        for x in 0..32usize {
+            let biome_id = column_biome[z * 32 + x];
+            let biome = &biome_registry.defs[biome_id as usize];
+            col_surface_voxel[z * 32 + x] = *registry
+                .name_to_id
+                .get(biome.surface_voxels.first().unwrap())
+                .expect("surface voxel");
+            col_subsurface_voxel[z * 32 + x] = *registry
+                .name_to_id
+                .get(biome.subsurface_voxels.first().unwrap())
+                .expect("subsurface voxel");
+            col_underground_voxel[z * 32 + x] = *registry
+                .name_to_id
+                .get(biome.underground_voxels.first().unwrap())
+                .expect("underground voxel");
+        }
+    }
+
+    let mut voxels = vec![0u16; 32 * 32 * 32].into_boxed_slice();
+
+    // Determine carving bounds
+    let carve_ceiling = min_surface; // no point carving above the lowest surface in chunk
+
     for z in 0..32usize {
         for x in 0..32usize {
             let surface_y = heightmap[z * 32 + x];
-            let biome_id = column_biome[z * 32 + x];
-            let biome = &biome_registry.defs[biome_id as usize];
+            let surface_voxel = col_surface_voxel[z * 32 + x];
+            let subsurface_voxel = col_subsurface_voxel[z * 32 + x];
+            let underground_voxel = col_underground_voxel[z * 32 + x];
 
-            let surface_voxel = *registry
-                .name_to_id
-                .get(biome.surface_voxels.first().unwrap())
-                .expect("surface voxel not found");
-            let subsurface_voxel = *registry
-                .name_to_id
-                .get(biome.subsurface_voxels.first().unwrap())
-                .expect("subsurface voxel not found");
-            let underground_voxel = *registry
-                .name_to_id
-                .get(biome.underground_voxels.first().unwrap())
-                .expect("underground voxel not found");
+            let wx_f = world_x + x as f64;
+            let wz_f = world_z + z as f64;
 
             for y in 0..32usize {
                 let wy = chunk_world_y + y as i32;
                 let depth = surface_y - wy;
-                let wx_f = world_x + x as f64;
-                let wy_f = wy as f64;
-                let wz_f = world_z + z as f64;
 
-                let mut id = if wy > surface_y {
+                let id = if wy > surface_y {
+                    // Above surface: water or air no carving needed
                     if water_voxel != 0 && wy <= SEA_LEVEL {
                         water_voxel
                     } else {
                         0
                     }
-                } else if depth == 0 {
-                    surface_voxel
-                } else if depth < 4 {
-                    subsurface_voxel
                 } else {
-                    underground_voxel
-                };
+                    // Below or at surface: determine base voxel
+                    let base = if depth == 0 {
+                        surface_voxel
+                    } else if depth < 4 {
+                        subsurface_voxel
+                    } else {
+                        underground_voxel
+                    };
 
-                if is_carved_out(wx_f, wy_f, wz_f, depth, &cavern_noise, &tunnel_noise) {
-                    id = 0;
-                }
+                    if is_carved_out(wx_f, wy as f64, wz_f, depth, &cavern_noise, &tunnel_noise) {
+                        0
+                    } else {
+                        base
+                    }
+                };
 
                 voxels[flatten(x as u32, y as u32, z as u32, 32)] = id;
             }
         }
     }
+    let voxel_fill = instant.elapsed();
 
+    let instant = Instant::now();
     let min_cell_x = div_floor(chunk_world_x - feature_radius, FEATURE_GRID_SIZE);
     let max_cell_x = div_floor(chunk_world_x + 31 + feature_radius, FEATURE_GRID_SIZE);
     let min_cell_z = div_floor(chunk_world_z - feature_radius, FEATURE_GRID_SIZE);
@@ -487,8 +552,17 @@ pub fn generate_chunk_data(
             let feature_x = cell_x * FEATURE_GRID_SIZE + offset_x;
             let feature_z = cell_z * FEATURE_GRID_SIZE + offset_z;
 
-            let col =
-                col_cache.get_or_insert(feature_x, feature_z, &noise, biome_registry, lod, seed);
+            let col = col_cache.get_or_insert(
+                feature_x,
+                feature_z,
+                &noise,
+                biome_registry,
+                lod,
+                seed,
+                &temp_noise,
+                &humid_noise,
+                &continental_noise,
+            );
             let feature_surface_y = col.height;
             let feature_biome_id = col.biome;
 
@@ -525,14 +599,22 @@ pub fn generate_chunk_data(
         }
     }
 
-    // Finalise
+    let structures = instant.elapsed();
+    // log!(
+    //     "Chunk generation LOD{} | total: {:.2?} | noise: {:.2?} | column caching: {:.2?} | column biomes: {:.2?} | voxel fill: {:.2?} | structures: {:.2?}",
+    //     lod,
+    //     full.elapsed(),
+    //     base_noise,
+    //     column_caching,
+    //     column_biome_selection,
+    //     voxel_fill,
+    //     structures,
+    // );
+    // // Finalise
     let voxels: Box<[VoxelId; 32 * 32 * 32]> =
         voxels.try_into().expect("voxel array size mismatch");
 
     let center_biome = column_biome[16 * 32 + 16];
-
-    let elapsed = now.elapsed();
-    log!("Chunk took: {:.2?}s to load", elapsed);
 
     GeneratedChunkData {
         position,

@@ -20,7 +20,6 @@ pub enum Upsample {
     X16,
 }
 
-// Upsampled heightmap
 pub struct UpsampledHeightmap {
     coarse: Vec<f64>,
     grid_size: usize,
@@ -37,6 +36,9 @@ impl UpsampledHeightmap {
         cache: &mut NoiseColumnCache,
         lod: u8,
         seed: u32,
+        temp_noise: &Perlin,
+        humid_noise: &Perlin,
+        continental_noise: &Perlin,
     ) -> Self {
         debug_assert!(32 % cell_size == 0, "cell_size must divide 32 evenly");
 
@@ -48,9 +50,17 @@ impl UpsampledHeightmap {
             for gx in 0..corner_count {
                 let wx = world_x as i32 + (gx * cell_size) as i32;
                 let wz = world_z as i32 + (gz * cell_size) as i32;
-
-                // Reuse the cache so corners shared with adjacent chunks are only ever computed once per generation session
-                let col = cache.get_or_insert(wx, wz, noise, biome_registry, lod, seed);
+                let col = cache.get_or_insert(
+                    wx,
+                    wz,
+                    noise,
+                    biome_registry,
+                    lod,
+                    seed,
+                    temp_noise,
+                    humid_noise,
+                    continental_noise,
+                );
                 coarse.push(col.height as f64);
             }
         }
@@ -62,7 +72,6 @@ impl UpsampledHeightmap {
         }
     }
 
-    /// interpolat height for local chunk coordinates (lx, lz)
     pub fn sample(&self, lx: usize, lz: usize) -> i32 {
         let cs = self.cell_size;
         let gx = lx / cs;
@@ -76,11 +85,9 @@ impl UpsampledHeightmap {
         let h01 = self.coarse[(gz + 1) * stride + gx];
         let h11 = self.coarse[(gz + 1) * stride + gx + 1];
 
-        let h = h00 * (1.0 - fx) * (1.0 - fz)
+        (h00 * (1.0 - fx) * (1.0 - fz)
             + h10 * fx * (1.0 - fz)
             + h01 * (1.0 - fx) * fz
-            + h11 * fx * fz;
-
-        h as i32
+            + h11 * fx * fz) as i32
     }
 }

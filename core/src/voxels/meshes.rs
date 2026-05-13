@@ -1,5 +1,6 @@
 use std::num::NonZeroU16;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use anyhow::Result;
 use apostasy_macros::{Component, Tag};
@@ -8,6 +9,7 @@ use ash::vk::{self, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
+use crate::log;
 use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
 use crate::rendering::shared::model::GpuMesh;
@@ -16,7 +18,7 @@ use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::utils::flatten::flatten;
 use crate::voxels::VoxelTransform;
 use crate::voxels::biome::BiomeRegistry;
-use crate::voxels::chunk::{Chunk, ChunkGenQueue, GeneratedMeshData};
+use crate::voxels::chunk::{Chunk, ChunkGenQueue, GeneratedMeshData, MeshJobFn};
 use crate::voxels::voxel::VoxelRegistry;
 use crate::voxels::voxel_components::is_transparent::IsTransparent;
 use crate::voxels::voxel_components::tints::{HasTint, TintType};
@@ -185,7 +187,6 @@ impl ChunkNeighbours {
         }
     }
 }
-
 pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     const MAX_MESH_JOBS_PER_FRAME: usize = 6;
 
@@ -195,14 +196,13 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             .expect("No VoxelRegistry resource")
             .clone(),
     );
-
     let biome_registry = Arc::new(
         world
             .get_resource::<BiomeRegistry>()
             .expect("No BiomeRegistry resource")
             .clone(),
     );
-    // build a map from chunk positions to their object ids
+
     let mut chunk_positions: HashMap<(i32, i32, i32), ObjectId> = HashMap::new();
     for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
         if let Ok(t) = obj.get_component::<VoxelTransform>() {
@@ -212,7 +212,6 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         }
     }
 
-    // get all objects with NeedsRemeshing tag and their positions
     let mut needs_remesh: Vec<(ObjectId, Vector3<i32>)> = world
         .get_objects_with_tag_with_ids::<NeedsRemeshing>()
         .into_iter()
@@ -223,10 +222,9 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         })
         .collect();
 
-    // Sort to prioritize voxel-break-initiated remeshes over chunk generation
     needs_remesh.sort_by_key(|(id, _pos)| {
-        let obj = world.get_object(*id);
-        let has_priority = obj
+        let has_priority = world
+            .get_object(*id)
             .map(|o| o.has_tag::<VoxelBreakRemesh>())
             .unwrap_or(false);
         !has_priority
@@ -234,38 +232,43 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
     needs_remesh.truncate(MAX_MESH_JOBS_PER_FRAME);
 
-    // get the pools
-    let mesh_pool = world.get_resource::<ChunkGenQueue>()?.mesh_pool.clone();
-    let mesh_sender = world.get_resource::<ChunkGenQueue>()?.mesh_sender.clone();
+    let mesh_job_sender = world
+        .get_resource::<ChunkGenQueue>()?
+        .mesh_job_sender
+        .clone();
+    let mesh_result_sender = {
+        world
+            .get_resource::<ChunkGenQueue>()?
+            .mesh_result_sender
+            .clone()
+    };
 
-    let pool = mesh_pool.lock().unwrap();
+    struct Job {
+        id: ObjectId,
+        chunk: Chunk,
+        neighbours: ChunkNeighbours,
+        pos: Vector3<i32>,
+    }
 
-    // for each chunk that needs remeshing, spawn a job
+    let mut jobs: Vec<Job> = Vec::new();
+
     for (id, pos) in needs_remesh {
-        let registry = registry.clone();
-        let biome_registry = biome_registry.clone();
-        let mesh_sender = mesh_sender.clone();
-
-        let chunk = if let Some(&chunk_id) = chunk_positions.get(&(pos.x, pos.y, pos.z)) {
-            if let Some(obj) = world.get_object(chunk_id) {
-                if let Ok(chunk) = obj.get_component::<Chunk>() {
-                    chunk.clone()
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
-            }
-        } else {
-            continue;
+        let chunk = match chunk_positions.get(&(pos.x, pos.y, pos.z)) {
+            Some(&chunk_id) => match world
+                .get_object(chunk_id)
+                .and_then(|o| o.get_component::<Chunk>().ok().cloned())
+            {
+                Some(c) => c,
+                None => continue,
+            },
+            None => continue,
         };
 
-        // get the neighbours of the chunk
         let clone_neighbour = |offset: Vector3<i32>| -> Option<Chunk> {
-            let neighbour_pos = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
+            let np = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
             chunk_positions
-                .get(&neighbour_pos)
-                .and_then(|&neighbour_id| world.get_object(neighbour_id))
+                .get(&np)
+                .and_then(|&nid| world.get_object(nid))
                 .and_then(|obj| obj.get_component::<Chunk>().ok().cloned())
         };
 
@@ -278,31 +281,57 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             nz: clone_neighbour(Vector3::new(0, 0, -1)),
         };
 
-        // spawn the job
-        pool.spawn(move || {
-            let (opaque_vertices, opaque_indices, water_vertices, water_indices) =
-                generate_mesh(&chunk, &registry, &neighbours, &biome_registry);
-            let mesh_data = crate::voxels::chunk::GeneratedMeshData {
-                position: pos,
-                opaque_vertices,
-                opaque_indices,
-                water_vertices,
-                water_indices,
-            };
-            let _ = mesh_sender.send(mesh_data);
-        });
+        if !chunk.has_visible_faces(&neighbours) {
+            if let Some(obj) = world.get_object_mut(id) {
+                obj.remove_tag::<NeedsRemeshing>();
+                obj.remove_tag::<VoxelBreakRemesh>();
+            }
+            continue;
+        }
 
-        if let Some(obj) = world.get_object_mut(id) {
+        jobs.push(Job {
+            id,
+            chunk,
+            neighbours,
+            pos,
+        });
+    }
+
+    for job in &jobs {
+        if let Some(obj) = world.get_object_mut(job.id) {
             obj.remove_tag::<NeedsRemeshing>();
             obj.remove_tag::<VoxelBreakRemesh>();
         }
     }
 
-    drop(pool);
+    for Job {
+        chunk,
+        neighbours,
+        pos,
+        ..
+    } in jobs
+    {
+        let registry = registry.clone();
+        let biome_registry = biome_registry.clone();
+        let sender = mesh_result_sender.clone();
+
+        let job: MeshJobFn = Box::new(move || {
+            let (opaque_vertices, opaque_indices, water_vertices, water_indices) =
+                generate_mesh(&chunk, &registry, &neighbours, &biome_registry);
+            let _ = sender.send(GeneratedMeshData {
+                position: pos,
+                opaque_vertices,
+                opaque_indices,
+                water_vertices,
+                water_indices,
+            });
+        });
+
+        let _ = mesh_job_sender.send(job);
+    }
 
     Ok(())
 }
-
 pub fn receive_meshes(
     world: &mut World,
     ctx: &VulkanRenderingContext,
@@ -349,10 +378,8 @@ pub fn receive_meshes(
         if !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty() {
             if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
                 if mesh.vertex_buffer != vk::Buffer::null() {
-                    
-                        buffer_graveyard.push((mesh.vertex_buffer, mesh.vertex_buffer_memory));
-                        buffer_graveyard.push((mesh.index_buffer, mesh.index_buffer_memory));
-                      
+                    buffer_graveyard.push((mesh.vertex_buffer, mesh.vertex_buffer_memory));
+                    buffer_graveyard.push((mesh.index_buffer, mesh.index_buffer_memory));
                 }
             }
 
@@ -407,14 +434,36 @@ pub fn receive_meshes(
     Ok(())
 }
 
+static TINT_KERNEL: OnceLock<Vec<f32>> = OnceLock::new();
+
+fn get_tint_kernel() -> &'static Vec<f32> {
+    TINT_KERNEL.get_or_init(|| {
+        const RADIUS: i32 = 8;
+        let sigma = RADIUS as f32 / 2.0;
+        let denom = 2.0 * sigma * sigma;
+        let kernel_size = (RADIUS * 2 + 1) as usize;
+        (0..kernel_size * kernel_size)
+            .map(|i| {
+                let dz = (i / kernel_size) as i32 - RADIUS;
+                let dx = (i % kernel_size) as i32 - RADIUS;
+                (-(dx * dx + dz * dz) as f32 / denom).exp()
+            })
+            .collect()
+    })
+}
+
 pub fn generate_mesh(
     chunk: &Chunk,
     registry: &VoxelRegistry,
     neighbours: &ChunkNeighbours,
     biome_registry: &BiomeRegistry,
 ) -> (Vec<VoxelVertex>, Vec<u32>, Vec<VoxelVertex>, Vec<u32>) {
+    let instant = Instant::now();
     let lod = chunk.lod as usize;
     let grid_size = 32 / lod;
+
+    // Phase 1: Grid fill                        -
+    let t0 = Instant::now();
     let mut grid = vec![0u16; 32 * 32 * 32];
     let mut border_px = vec![0u16; 32 * 32];
     let mut border_nx = vec![0u16; 32 * 32];
@@ -431,8 +480,10 @@ pub fn generate_mesh(
             }
         }
     }
+    let t_grid = t0.elapsed();
 
-    // calculate the voxels on the neighbours
+    // Phase 2: Border fill                       -
+    let t0 = Instant::now();
     if let Some(n) = &neighbours.px {
         for v in 0..grid_size {
             for u in 0..grid_size {
@@ -481,7 +532,111 @@ pub fn generate_mesh(
             }
         }
     }
+    let t_borders = t0.elapsed();
 
+    // Phase 3: Tint map
+    let t0 = Instant::now();
+
+    // Precompute biome id for every grid cell
+    const RADIUS: i32 = 8;
+    let kernel = get_tint_kernel();
+    let kernel_size = (RADIUS * 2 + 1) as usize;
+
+    // resolve all biome colors into flat arrays upfront  avoids repeated
+    // registry lookups and branch logic inside the hot kernel loop
+    let gs = grid_size as i32;
+    let sample_min = -RADIUS;
+    let sample_max = gs + RADIUS;
+    let sample_w = (sample_max - sample_min) as usize;
+
+    // Flat  arrays of already-linearized colors
+    let mut biome_foliage_r = vec![0f32; sample_w * sample_w];
+    let mut biome_foliage_g = vec![0f32; sample_w * sample_w];
+    let mut biome_foliage_b = vec![0f32; sample_w * sample_w];
+    let mut biome_water_r = vec![0f32; sample_w * sample_w];
+    let mut biome_water_g = vec![0f32; sample_w * sample_w];
+    let mut biome_water_b = vec![0f32; sample_w * sample_w];
+
+    for sz in sample_min..sample_max {
+        for sx in sample_min..sample_max {
+            let biome_id = resolve_biome(sx, sz, 0, gs, chunk, neighbours);
+            let idx = ((sz - sample_min) as usize) * sample_w + (sx - sample_min) as usize;
+            if let Ok(biome) = biome_registry.get_def(biome_id) {
+                biome_foliage_r[idx] = to_linear(biome.foliage_color.0);
+                biome_foliage_g[idx] = to_linear(biome.foliage_color.1);
+                biome_foliage_b[idx] = to_linear(biome.foliage_color.2);
+                biome_water_r[idx] = to_linear(biome.water_color.0);
+                biome_water_g[idx] = to_linear(biome.water_color.1);
+                biome_water_b[idx] = to_linear(biome.water_color.2);
+            }
+        }
+    }
+
+    // Check if biome is uniform across the entire sample region
+    let first_fr = biome_foliage_r[0];
+    let first_wr = biome_water_r[0];
+    let is_uniform = biome_foliage_r.iter().all(|&v| (v - first_fr).abs() < 1e-4)
+        && biome_water_r.iter().all(|&v| (v - first_wr).abs() < 1e-4);
+
+    let mut foliage = vec![(0u8, 0u8, 0u8); grid_size * grid_size];
+    let mut water = vec![(0u8, 0u8, 0u8); grid_size * grid_size];
+
+    if is_uniform {
+        // uniform biome all cells get the same color, no kernel needed
+        let fc = (
+            to_gamma(biome_foliage_r[0]),
+            to_gamma(biome_foliage_g[0]),
+            to_gamma(biome_foliage_b[0]),
+        );
+        let wc = (
+            to_gamma(biome_water_r[0]),
+            to_gamma(biome_water_g[0]),
+            to_gamma(biome_water_b[0]),
+        );
+        foliage.fill(fc);
+        water.fill(wc);
+    } else {
+        // Multi-biome chunk run the kernel with just float array
+        for gz in 0..grid_size {
+            for gx in 0..grid_size {
+                let mut fr = 0f32;
+                let mut fg = 0f32;
+                let mut fb = 0f32;
+                let mut wr = 0f32;
+                let mut wg = 0f32;
+                let mut wb = 0f32;
+                let mut fw = 0f32;
+
+                for dz in -RADIUS..=RADIUS {
+                    for dx in -RADIUS..=RADIUS {
+                        let w =
+                            kernel[((dz + RADIUS) as usize) * kernel_size + (dx + RADIUS) as usize];
+                        let sx = (gx as i32 + dx - sample_min) as usize;
+                        let sz = (gz as i32 + dz - sample_min) as usize;
+                        let bidx = sz * sample_w + sx;
+                        fr += biome_foliage_r[bidx] * w;
+                        fg += biome_foliage_g[bidx] * w;
+                        fb += biome_foliage_b[bidx] * w;
+                        wr += biome_water_r[bidx] * w;
+                        wg += biome_water_g[bidx] * w;
+                        wb += biome_water_b[bidx] * w;
+                        fw += w;
+                    }
+                }
+
+                let idx = gz * grid_size + gx;
+                foliage[idx] = (to_gamma(fr / fw), to_gamma(fg / fw), to_gamma(fb / fw));
+                water[idx] = (to_gamma(wr / fw), to_gamma(wg / fw), to_gamma(wb / fw));
+            }
+        }
+    }
+
+    let foliage_tint_map = foliage;
+    let water_tint_map = water;
+    let t_tint = t0.elapsed();
+
+    // phase 4 Face iteration / vertex/index generation
+    let t0 = Instant::now();
     let max_faces = grid_size * grid_size * grid_size * 6;
     let mut vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
@@ -506,7 +661,6 @@ pub fn generate_mesh(
             let nx = gx as i32 + dx;
             let ny = gy as i32 + dy;
             let nz = gz as i32 + dz;
-
             let id = if nx >= 0
                 && nx < grid_size as i32
                 && ny >= 0
@@ -548,24 +702,19 @@ pub fn generate_mesh(
             } else {
                 0
             };
-
             id != 0 && !is_transparent_voxel(id)
         };
 
         let su = if corner_u == 0 { -1i32 } else { 1 };
         let sv = if corner_v == 0 { -1i32 } else { 1 };
-
-        // For each face: normal axis is fixed, tangent axes are (u_axis, v_axis)
-        // s1 = neighbour along u, s2 = neighbour along v, c = diagonal
         let (s1, s2, c) = match face {
-            0 => (solid(1, su, 0), solid(1, 0, sv), solid(1, su, sv)), // +X: u=Y, v=Z
-            1 => (solid(-1, su, 0), solid(-1, 0, sv), solid(-1, su, sv)), // -X: u=Y, v=Z
-            2 => (solid(su, 1, 0), solid(0, 1, sv), solid(su, 1, sv)), // +Y: u=X, v=Z
-            3 => (solid(su, -1, 0), solid(0, -1, sv), solid(su, -1, sv)), // -Y: u=X, v=Z
-            4 => (solid(su, 0, 1), solid(0, sv, 1), solid(su, sv, 1)), // +Z: u=X, v=Y
-            _ => (solid(su, 0, -1), solid(0, sv, -1), solid(su, sv, -1)), // -Z: u=X, v=Y
+            0 => (solid(1, su, 0), solid(1, 0, sv), solid(1, su, sv)),
+            1 => (solid(-1, su, 0), solid(-1, 0, sv), solid(-1, su, sv)),
+            2 => (solid(su, 1, 0), solid(0, 1, sv), solid(su, 1, sv)),
+            3 => (solid(su, -1, 0), solid(0, -1, sv), solid(su, -1, sv)),
+            4 => (solid(su, 0, 1), solid(0, sv, 1), solid(su, sv, 1)),
+            _ => (solid(su, 0, -1), solid(0, sv, -1), solid(su, sv, -1)),
         };
-
         if s1 && s2 {
             0
         } else {
@@ -573,11 +722,9 @@ pub fn generate_mesh(
         }
     };
 
-    // get if the neighbour of the current voxel is solid (and not transparent)
     let neighbour_solid = |face: usize, gx: usize, gy: usize, gz: usize, current_id: u16| -> bool {
         let neighbor_id = match face {
             0 => {
-                // +X
                 if gx + 1 < grid_size {
                     grid[gz * grid_size * grid_size + gy * grid_size + gx + 1]
                 } else {
@@ -585,7 +732,6 @@ pub fn generate_mesh(
                 }
             }
             1 => {
-                // -X
                 if gx > 0 {
                     grid[gz * grid_size * grid_size + gy * grid_size + gx - 1]
                 } else {
@@ -593,7 +739,6 @@ pub fn generate_mesh(
                 }
             }
             2 => {
-                // +Y
                 if gy + 1 < grid_size {
                     grid[gz * grid_size * grid_size + (gy + 1) * grid_size + gx]
                 } else {
@@ -601,7 +746,6 @@ pub fn generate_mesh(
                 }
             }
             3 => {
-                // -Y
                 if gy > 0 {
                     grid[gz * grid_size * grid_size + (gy - 1) * grid_size + gx]
                 } else {
@@ -609,7 +753,6 @@ pub fn generate_mesh(
                 }
             }
             4 => {
-                // +Z
                 if gz + 1 < grid_size {
                     grid[(gz + 1) * grid_size * grid_size + gy * grid_size + gx]
                 } else {
@@ -617,7 +760,6 @@ pub fn generate_mesh(
                 }
             }
             _ => {
-                // -Z
                 if gz > 0 {
                     grid[(gz - 1) * grid_size * grid_size + gy * grid_size + gx]
                 } else {
@@ -625,42 +767,41 @@ pub fn generate_mesh(
                 }
             }
         };
-
         let is_neighbor_water = registry.get("Apostasy:Voxel:Water") == Some(neighbor_id);
         let is_current_water = registry.get("Apostasy:Voxel:Water") == Some(current_id);
-
         neighbor_id != 0
             && (!is_transparent_voxel(neighbor_id) || (is_current_water && is_neighbor_water))
     };
 
-    // for each voxel
     for gz in 0..grid_size {
         for gy in 0..grid_size {
             let row_base = gz * grid_size * grid_size + gy * grid_size;
             for gx in 0..grid_size {
                 let id = grid[row_base + gx];
                 if id == 0 {
-                    continue; // skip air immediately
+                    continue;
                 }
 
                 let vx = (gx * lod) as u32;
                 let vy = (gy * lod) as u32;
                 let vz = (gz * lod) as u32;
-
                 let voxel_def = &registry.defs[id as usize];
+                let is_water = registry.get("Apostasy:Voxel:Water") == Some(id);
 
-                // render each face
+                let tint = match voxel_def.get_component::<HasTint>() {
+                    Ok(ht) => match ht.0 {
+                        TintType::Foliage => foliage_tint_map[gz * grid_size + gx],
+                        TintType::Water => water_tint_map[gz * grid_size + gx],
+                    },
+                    Err(_) => (0, 0, 0),
+                };
+
                 for face in 0..6usize {
-                    // if the neighbouring face is solid skip
                     if neighbour_solid(face, gx, gy, gz, id) {
                         continue;
                     }
 
                     let texture_id = voxel_def.textures.get_for_face(face as u8, vx, vy, vz);
-
-                    // Check if this is a water voxel
-                    let is_water = registry.get("Apostasy:Voxel:Water") == Some(id);
-
                     let x = vx as u8;
                     let y = vy as u8;
                     let z = vz as u8;
@@ -692,42 +833,36 @@ pub fn generate_mesh(
 
                     let (ao0, ao1, ao2, ao3) = match face {
                         0 => (
-                            // +X: u=Y, v=Z. corners: (y=0,z=0),(y=1,z=0),(y=1,z=1),(y=0,z=1)
                             vertex_ao(face, gx, gy, gz, 0, 0),
                             vertex_ao(face, gx, gy, gz, 1, 0),
                             vertex_ao(face, gx, gy, gz, 1, 1),
                             vertex_ao(face, gx, gy, gz, 0, 1),
                         ),
                         1 => (
-                            // -X: u=Y, v=Z. corners: (y=0,z=1),(y=1,z=1),(y=1,z=0),(y=0,z=0)
                             vertex_ao(face, gx, gy, gz, 0, 1),
                             vertex_ao(face, gx, gy, gz, 1, 1),
                             vertex_ao(face, gx, gy, gz, 1, 0),
                             vertex_ao(face, gx, gy, gz, 0, 0),
                         ),
                         2 => (
-                            // +Y: u=X, v=Z. corners: (x=0,z=1),(x=1,z=1),(x=1,z=0),(x=0,z=0)
                             vertex_ao(face, gx, gy, gz, 0, 1),
                             vertex_ao(face, gx, gy, gz, 1, 1),
                             vertex_ao(face, gx, gy, gz, 1, 0),
                             vertex_ao(face, gx, gy, gz, 0, 0),
                         ),
                         3 => (
-                            // -Y: u=X, v=Z. corners: (x=0,z=0),(x=1,z=0),(x=1,z=1),(x=0,z=1)
                             vertex_ao(face, gx, gy, gz, 0, 0),
                             vertex_ao(face, gx, gy, gz, 1, 0),
                             vertex_ao(face, gx, gy, gz, 1, 1),
                             vertex_ao(face, gx, gy, gz, 0, 1),
                         ),
                         4 => (
-                            // +Z: u=X, v=Y. corners: (x=1,y=0),(x=1,y=1),(x=0,y=1),(x=0,y=0)
                             vertex_ao(face, gx, gy, gz, 1, 0),
                             vertex_ao(face, gx, gy, gz, 1, 1),
                             vertex_ao(face, gx, gy, gz, 0, 1),
                             vertex_ao(face, gx, gy, gz, 0, 0),
                         ),
                         _ => (
-                            // -Z: u=X, v=Y. corners: (x=0,y=0),(x=0,y=1),(x=1,y=1),(x=1,y=0)
                             vertex_ao(face, gx, gy, gz, 0, 0),
                             vertex_ao(face, gx, gy, gz, 0, 1),
                             vertex_ao(face, gx, gy, gz, 1, 1),
@@ -735,31 +870,11 @@ pub fn generate_mesh(
                         ),
                     };
 
-                    let tint_type = voxel_def.get_component::<HasTint>();
-
-                    let mut tint = (0, 0, 0);
-
-                    if let Ok(tint_type) = tint_type {
-                        tint = sample_blended_tint(
-                            gx,
-                            gy,
-                            gz,
-                            chunk,
-                            neighbours,
-                            biome_registry,
-                            tint_type.0,
-                            grid_size,
-                            lod,
-                        );
-                    }
-
                     let base = if is_water {
                         water_vertices.len() as u32
                     } else {
                         vertices.len() as u32
                     };
-
-                    // push to the buffers
                     let target_vertices = if is_water {
                         &mut water_vertices
                     } else {
@@ -826,14 +941,12 @@ pub fn generate_mesh(
                         tint.2,
                     ));
 
-                    // fixes diagonal artefacting on darker/occluded corners
                     let target_indices = if is_water {
                         &mut water_indices
                     } else {
                         &mut indices
                     };
                     if ao0 + ao2 > ao1 + ao3 {
-                        // flip
                         target_indices.extend_from_slice(&[
                             base,
                             base + 1,
@@ -843,7 +956,6 @@ pub fn generate_mesh(
                             base + 3,
                         ]);
                     } else {
-                        // standard
                         target_indices.extend_from_slice(&[
                             base,
                             base + 1,
@@ -857,10 +969,22 @@ pub fn generate_mesh(
             }
         }
     }
+    let t_faces = t0.elapsed();
+
+    // log!(
+    //     "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
+    //     lod,
+    //     instant.elapsed(),
+    //     t_grid,
+    //     t_borders,
+    //     t_tint,
+    //     t_faces,
+    //     vertices.len(),
+    //     indices.len()
+    // );
 
     (vertices, indices, water_vertices, water_indices)
 }
-
 fn get_representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: usize) -> u16 {
     for dz in 0..lod {
         for dy in 0..lod {
