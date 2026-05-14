@@ -971,17 +971,17 @@ pub fn generate_mesh(
     }
     let t_faces = t0.elapsed();
 
-    // log!(
-    //     "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
-    //     lod,
-    //     instant.elapsed(),
-    //     t_grid,
-    //     t_borders,
-    //     t_tint,
-    //     t_faces,
-    //     vertices.len(),
-    //     indices.len()
-    // );
+    log!(
+        "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
+        lod,
+        instant.elapsed(),
+        t_grid,
+        t_borders,
+        t_tint,
+        t_faces,
+        vertices.len(),
+        indices.len()
+    );
 
     (vertices, indices, water_vertices, water_indices)
 }

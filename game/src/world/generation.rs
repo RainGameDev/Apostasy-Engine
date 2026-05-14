@@ -600,16 +600,16 @@ pub fn generate_chunk_data(
     }
 
     let structures = instant.elapsed();
-    // log!(
-    //     "Chunk generation LOD{} | total: {:.2?} | noise: {:.2?} | column caching: {:.2?} | column biomes: {:.2?} | voxel fill: {:.2?} | structures: {:.2?}",
-    //     lod,
-    //     full.elapsed(),
-    //     base_noise,
-    //     column_caching,
-    //     column_biome_selection,
-    //     voxel_fill,
-    //     structures,
-    // );
+    log!(
+        "Chunk generation LOD{} | total: {:.2?} | noise: {:.2?} | column caching: {:.2?} | column biomes: {:.2?} | voxel fill: {:.2?} | structures: {:.2?}",
+        lod,
+        full.elapsed(),
+        base_noise,
+        column_caching,
+        column_biome_selection,
+        voxel_fill,
+        structures,
+    );
     // // Finalise
     let voxels: Box<[VoxelId; 32 * 32 * 32]> =
         voxels.try_into().expect("voxel array size mismatch");
