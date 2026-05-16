@@ -1,14 +1,26 @@
 use apostasy_core::{
-    Component, anyhow::Result, cgmath::{Vector3, Zero}, egui, fixed_update, items::{ItemRegistry, container::Container, voxel_component::Voxel}, log_warn, objects::{
+    Component,
+    anyhow::Result,
+    cgmath::{Vector3, Zero},
+    egui, fixed_update,
+    items::{ItemRegistry, container::Container, voxel_component::Voxel},
+    log_warn,
+    objects::{
         Object, components::transform::Transform, resources::input_manager::InputManager,
         tags::Player, world::World,
-    }, physics::{Gravity, collider::Collider, velocity::Velocity}, rendering::components::{
+    },
+    physics::{Gravity, collider::Collider, velocity::Velocity},
+    rendering::components::{
         camera::{ActiveCamera, Camera, GameCamera},
         model_renderer::ModelRenderer,
-    }, serde_yaml, start, ui::ui_context::EguiContext, update, voxels::{
+    },
+    serde_yaml, start,
+    ui::ui_context::EguiContext,
+    update,
+    voxels::{
         voxel::VoxelRegistry,
         voxel_raycast::{voxel_raycast_camera, voxel_raycast_system},
-    }
+    },
 };
 
 use crate::{
@@ -235,7 +247,10 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
                     if let Some(voxel_id) = voxel_registry.name_to_id.get(&voxel_key) {
                         Some((inventory.selected_item as u64, voxel_id.clone() as u64))
                     } else {
-                        log_warn!("Voxel with the name: {} does not exist in the registry", voxel_key);
+                        log_warn!(
+                            "Voxel with the name: {} does not exist in the registry",
+                            voxel_key
+                        );
                         None
                     }
                 } else {

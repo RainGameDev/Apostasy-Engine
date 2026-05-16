@@ -108,7 +108,6 @@ impl VulkanSwapchain {
                     vk::PresentModeKHR::FIFO
                 }
             };
-
             let composite_alpha = {
                 let flags = self.surface.capabilities.supported_composite_alpha;
                 if flags.contains(vk::CompositeAlphaFlagsKHR::OPAQUE) {

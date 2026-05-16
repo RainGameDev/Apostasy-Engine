@@ -10,6 +10,7 @@ use winit::event::DeviceId;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::Result;
 use winit::{
@@ -97,6 +98,7 @@ impl Core {
             add_package(&mut world, package);
         }
 
+        world.build_systems();
         Self {
             rendering_api,
             rendering_info: None,
@@ -137,6 +139,7 @@ impl Core {
                     }
                 }
                 WindowEvent::RedrawRequested => {
+                    let redraw_total = Instant::now();
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
 
@@ -150,9 +153,12 @@ impl Core {
                     let mut voxel_push_constants = rendering_info.voxel_push_constants.clone();
                     let model_push = rendering_info.model_push_constants.clone();
 
+                    let set_atlas = Instant::now();
                     if let Some(atlas) = world.get_resource::<VoxelTextureAtlas>().ok() {
                         voxel_push_constants.set_atlas_tiles(atlas.atlas_size);
                     }
+
+                    let atlas_time = set_atlas.elapsed();
 
                     let Some(renderer) = &mut rendering_info.renderer else {
                         log_error!("No renderer found!");
@@ -175,6 +181,7 @@ impl Core {
                     let mut push_constants = push_constants;
                     push_constants.set_camera_constants(camera.to_owned(), aspect);
 
+                    let dispatch_meshes = Instant::now();
                     if !world
                         .get_objects_with_tag_with_ids::<NeedsRemeshing>()
                         .is_empty()
@@ -182,6 +189,9 @@ impl Core {
                         dispatch_remesh_jobs(&mut world).expect("Failed to dispatch remesh jobs");
                     }
 
+                    let dispatch_time = dispatch_meshes.elapsed();
+
+                    let recieve_meshes = Instant::now();
                     if let Ok(command_pool) = renderer.get_command_pool() {
                         receive_meshes(
                             &mut world,
@@ -191,6 +201,7 @@ impl Core {
                         )
                         .expect("Failed to receive meshes");
                     }
+                    let recieve_meshes_time = recieve_meshes.elapsed();
 
                     // Begin frame - if device is lost, skip rendering this frame
                     if let Err(e) = renderer.begin_frame(push_constants.clone()) {
@@ -198,15 +209,28 @@ impl Core {
                         return;
                     }
 
+                    let begin_ui = Instant::now();
                     renderer.begin_ui();
+                    let begin_ui = begin_ui.elapsed();
+
+                    let update = Instant::now();
                     world.update();
+                    let update_time = update.elapsed();
+
+                    let fixed_update = Instant::now();
                     world.fixed_update();
+                    let fixed_update = fixed_update.elapsed();
+
+                    let get_models = Instant::now();
                     let object_ids: Vec<_> = world
                         .get_objects_with_component_with_ids::<ModelRenderer>()
                         .iter()
                         .map(|o| o.0)
                         .collect();
 
+                    let get_models = get_models.elapsed();
+
+                    let render_models = Instant::now();
                     for id in object_ids {
                         let object = world.get_object_mut(id).unwrap();
 
@@ -270,6 +294,9 @@ impl Core {
                         }
                     }
 
+                    let render_models = render_models.elapsed();
+
+                    let redraw_voxels = Instant::now();
                     if let Some(texture_atlas) = world.get_resource::<VoxelTextureAtlas>().ok() {
                         let frustum = Frustum::from_view_proj(&view_proj);
                         let mut water_draws: Vec<(
@@ -343,6 +370,7 @@ impl Core {
                             }
                         }
                     }
+                    let redraw_voxels = redraw_voxels.elapsed();
 
                     world.get_resource_mut::<ObjectsDrawing>().unwrap().0 = objects_dawn;
                     if let Err(e) = renderer.end_ui() {
@@ -352,6 +380,20 @@ impl Core {
                         log_error!("Failed to end frame: {}", e);
                     }
                     world.late_update();
+
+                    // log!(
+                    //     "Redraw took: {:.2?} | atlast_time: {:.2?} | dispatch_time: {:.2?} | recieve_meshes_time: {:.2?} | begin_ui: {:.2?} | update: {:.2?} ¬ fixed_update: {:.2?} | get_models: {:.2?} | render_models: {:.2?} | render_voxels: {:.2?} ",
+                    //     redraw_total.elapsed(),
+                    //     atlas_time,
+                    //     dispatch_time,
+                    //     recieve_meshes_time,
+                    //     begin_ui,
+                    //     update.elapsed(),
+                    //     fixed_update,
+                    //     get_models,
+                    //     render_models,
+                    //     redraw_voxels
+                    // );
                 }
 
                 _ => {}

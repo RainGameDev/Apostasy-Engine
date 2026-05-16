@@ -232,7 +232,7 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
 
-            let in_flight_frames_count = 1;
+            let in_flight_frames_count = 3;
 
             let command_buffers = context.device.allocate_command_buffers(
                 &ash::vk::CommandBufferAllocateInfo::default()

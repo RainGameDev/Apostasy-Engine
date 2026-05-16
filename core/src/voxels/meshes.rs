@@ -4,8 +4,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use apostasy_macros::{Component, Tag};
-use ash::vk::Buffer;
-use ash::vk::{self, CommandPool, DeviceMemory};
+use ash::vk::{self, Buffer, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
@@ -32,6 +31,7 @@ pub struct VoxelVertex {
 }
 
 impl VoxelVertex {
+    #[inline]
     pub fn pack(
         x: u8,
         y: u8,
@@ -46,31 +46,32 @@ impl VoxelVertex {
         g: u8,
         b: u8,
     ) -> Self {
-        let data_lo: u32 = (x as u32)
+        let data_lo = (x as u32)
             | ((y as u32) << 6)
             | ((z as u32) << 12)
             | ((face as u32) << 18)
             | ((u as u32) << 21)
             | ((v as u32) << 23)
             | ((is_top as u32) << 25);
-        let data_hi: u32 = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
-        let packed: u16 = (((r as u16) >> 4) & 0xFu16)
-            | ((((g as u16) >> 4) & 0xFu16) << 4)
-            | ((((b as u16) >> 4) & 0xFu16) << 8);
 
-        let tint = NonZeroU16::new(packed);
+        let data_hi = (texture_id as u32) | ((ao as u32 & 0x3) << 16);
+
+        // pack rgb into 4 bits each; NonZeroU16::new returns None if all zero
+        let packed: u16 = ((r as u16 >> 4) & 0xF)
+            | (((g as u16 >> 4) & 0xF) << 4)
+            | (((b as u16 >> 4) & 0xF) << 8);
+
         Self {
             data_lo,
             data_hi,
-            tint: tint,
+            tint: NonZeroU16::new(packed),
         }
     }
 
-    pub fn data_lo(&self) -> u32 {
+    pub fn data_lo(self) -> u32 {
         self.data_lo
     }
-
-    pub fn data_hi(&self) -> u32 {
+    pub fn data_hi(self) -> u32 {
         self.data_hi
     }
 }
@@ -127,7 +128,6 @@ impl VoxelChunkMesh {
         Ok(())
     }
 }
-
 impl WaterMesh {
     pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
         Ok(())
@@ -137,8 +137,7 @@ impl WaterMesh {
 #[derive(Debug, Tag, Clone, Default)]
 pub struct NeedsRemeshing;
 
-/// Tag to mark chunks that need remeshing due to voxel breaking.
-/// These have priority over regular remesh jobs from chunk generation.
+// voxel break remeshes are higher priority than normal generation remeshes
 #[derive(Debug, Tag, Clone, Default)]
 pub struct VoxelBreakRemesh;
 
@@ -187,6 +186,7 @@ impl ChunkNeighbours {
         }
     }
 }
+
 pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     const MAX_MESH_JOBS_PER_FRAME: usize = 6;
 
@@ -203,45 +203,47 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             .clone(),
     );
 
-    let mut chunk_positions: HashMap<(i32, i32, i32), ObjectId> = HashMap::new();
-    for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
-        if let Ok(t) = obj.get_component::<VoxelTransform>() {
-            if obj.has_component::<Chunk>() {
-                chunk_positions.insert((t.position.x, t.position.y, t.position.z), id);
-            }
-        }
-    }
+    // map of position to object id for all chunk objects
+    let chunk_positions: HashMap<(i32, i32, i32), ObjectId> = world
+        .get_objects_with_component_with_ids::<VoxelTransform>()
+        .into_iter()
+        .filter_map(|(id, obj)| {
+            let t = obj.get_component::<VoxelTransform>().ok()?;
+            obj.has_component::<Chunk>()
+                .then_some(((t.position.x, t.position.y, t.position.z), id))
+        })
+        .collect();
 
+    // collect all chunks that need remeshing
     let mut needs_remesh: Vec<(ObjectId, Vector3<i32>)> = world
         .get_objects_with_tag_with_ids::<NeedsRemeshing>()
         .into_iter()
-        .filter_map(|(id, _o)| {
-            let obj = world.get_object(id)?;
-            let pos = obj.get_component::<VoxelTransform>().ok()?.position;
+        .filter_map(|(id, _)| {
+            let pos = world
+                .get_object(id)?
+                .get_component::<VoxelTransform>()
+                .ok()?
+                .position;
             Some((id, pos))
         })
         .collect();
 
-    needs_remesh.sort_by_key(|(id, _pos)| {
-        let has_priority = world
+    // voxel break remeshes go first
+    needs_remesh.sort_by_key(|(id, _)| {
+        !world
             .get_object(*id)
-            .map(|o| o.has_tag::<VoxelBreakRemesh>())
-            .unwrap_or(false);
-        !has_priority
+            .is_some_and(|o| o.has_tag::<VoxelBreakRemesh>())
     });
-
     needs_remesh.truncate(MAX_MESH_JOBS_PER_FRAME);
 
     let mesh_job_sender = world
         .get_resource::<ChunkGenQueue>()?
         .mesh_job_sender
         .clone();
-    let mesh_result_sender = {
-        world
-            .get_resource::<ChunkGenQueue>()?
-            .mesh_result_sender
-            .clone()
-    };
+    let mesh_result_sender = world
+        .get_resource::<ChunkGenQueue>()?
+        .mesh_result_sender
+        .clone();
 
     struct Job {
         id: ObjectId,
@@ -250,24 +252,23 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         pos: Vector3<i32>,
     }
 
-    let mut jobs: Vec<Job> = Vec::new();
+    let mut jobs: Vec<Job> = Vec::with_capacity(needs_remesh.len());
 
     for (id, pos) in needs_remesh {
-        let chunk = match chunk_positions.get(&(pos.x, pos.y, pos.z)) {
-            Some(&chunk_id) => match world
-                .get_object(chunk_id)
-                .and_then(|o| o.get_component::<Chunk>().ok().cloned())
-            {
-                Some(c) => c,
-                None => continue,
-            },
-            None => continue,
+        let Some(&chunk_id) = chunk_positions.get(&(pos.x, pos.y, pos.z)) else {
+            continue;
+        };
+        let Some(chunk) = world
+            .get_object(chunk_id)
+            .and_then(|o| o.get_component::<Chunk>().ok().cloned())
+        else {
+            continue;
         };
 
         let clone_neighbour = |offset: Vector3<i32>| -> Option<Chunk> {
-            let np = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
+            let key = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
             chunk_positions
-                .get(&np)
+                .get(&key)
                 .and_then(|&nid| world.get_object(nid))
                 .and_then(|obj| obj.get_component::<Chunk>().ok().cloned())
         };
@@ -281,6 +282,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             nz: clone_neighbour(Vector3::new(0, 0, -1)),
         };
 
+        // skip chunks with no visible faces
         if !chunk.has_visible_faces(&neighbours) {
             if let Some(obj) = world.get_object_mut(id) {
                 obj.remove_tag::<NeedsRemeshing>();
@@ -297,6 +299,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         });
     }
 
+    // clear the remesh tags before dispatching
     for job in &jobs {
         if let Some(obj) = world.get_object_mut(job.id) {
             obj.remove_tag::<NeedsRemeshing>();
@@ -332,26 +335,23 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
     Ok(())
 }
+
 pub fn receive_meshes(
     world: &mut World,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     buffer_graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
 ) -> Result<()> {
+    // collect finished mesh jobs
     let completed: Vec<GeneratedMeshData> = {
-        let queue = world.get_resource::<crate::voxels::chunk::ChunkGenQueue>()?;
-        queue
-            .mesh_receiver
-            .try_iter()
-            .take(2) // process up to 2 per frame
-            .collect()
+        let queue = world.get_resource::<ChunkGenQueue>()?;
+        queue.mesh_receiver.try_iter().take(2).collect()
     };
 
     if completed.is_empty() {
         return Ok(());
     }
 
-    // build a map from position to object id
     let pos_to_id: HashMap<Vector3<i32>, ObjectId> = world
         .get_objects_with_component_with_ids::<VoxelTransform>()
         .iter()
@@ -362,11 +362,10 @@ pub fn receive_meshes(
         .collect();
 
     for mesh_data in completed {
-        let Some(id) = pos_to_id.get(&mesh_data.position) else {
+        let Some(&id) = pos_to_id.get(&mesh_data.position) else {
             continue;
         };
-
-        let Some(object) = world.get_object_mut(*id) else {
+        let Some(object) = world.get_object_mut(id) else {
             continue;
         };
 
@@ -374,8 +373,9 @@ pub fn receive_meshes(
             continue;
         }
 
-        // Handle opaque mesh
+        // upload opaque mesh
         if !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty() {
+            // queue old buffers for cleanup
             if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
                 if mesh.vertex_buffer != vk::Buffer::null() {
                     buffer_graveyard.push((mesh.vertex_buffer, mesh.vertex_buffer_memory));
@@ -383,25 +383,23 @@ pub fn receive_meshes(
                 }
             }
 
-            let (vertex_buffer, vertex_buffer_memory) =
-                ctx.create_vertex_buffer(&mesh_data.opaque_vertices, command_pool)?;
-            let (index_buffer, index_buffer_memory) =
-                ctx.create_index_buffer(&mesh_data.opaque_indices, command_pool)?;
+            let (vb, vbm) = ctx.create_vertex_buffer(&mesh_data.opaque_vertices, command_pool)?;
+            let (ib, ibm) = ctx.create_index_buffer(&mesh_data.opaque_indices, command_pool)?;
 
             if !object.has_component::<VoxelChunkMesh>() {
                 object.add_component(VoxelChunkMesh::default());
             }
-
             let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
-            mesh.vertex_buffer = vertex_buffer;
-            mesh.vertex_buffer_memory = vertex_buffer_memory;
-            mesh.index_buffer = index_buffer;
-            mesh.index_buffer_memory = index_buffer_memory;
+            mesh.vertex_buffer = vb;
+            mesh.vertex_buffer_memory = vbm;
+            mesh.index_buffer = ib;
+            mesh.index_buffer_memory = ibm;
             mesh.index_count = mesh_data.opaque_indices.len() as u32;
         }
 
-        // Handle water mesh
+        // upload water mesh
         if !mesh_data.water_vertices.is_empty() && !mesh_data.water_indices.is_empty() {
+            // water buffers are destroyed immediately rather than deferred
             if let Ok(mesh) = object.get_component::<WaterMesh>() {
                 if mesh.vertex_buffer != vk::Buffer::null() {
                     unsafe {
@@ -413,20 +411,17 @@ pub fn receive_meshes(
                 }
             }
 
-            let (vertex_buffer, vertex_buffer_memory) =
-                ctx.create_vertex_buffer(&mesh_data.water_vertices, command_pool)?;
-            let (index_buffer, index_buffer_memory) =
-                ctx.create_index_buffer(&mesh_data.water_indices, command_pool)?;
+            let (vb, vbm) = ctx.create_vertex_buffer(&mesh_data.water_vertices, command_pool)?;
+            let (ib, ibm) = ctx.create_index_buffer(&mesh_data.water_indices, command_pool)?;
 
             if !object.has_component::<WaterMesh>() {
                 object.add_component(WaterMesh::default());
             }
-
             let mesh = object.get_component_mut::<WaterMesh>().unwrap();
-            mesh.vertex_buffer = vertex_buffer;
-            mesh.vertex_buffer_memory = vertex_buffer_memory;
-            mesh.index_buffer = index_buffer;
-            mesh.index_buffer_memory = index_buffer_memory;
+            mesh.vertex_buffer = vb;
+            mesh.vertex_buffer_memory = vbm;
+            mesh.index_buffer = ib;
+            mesh.index_buffer_memory = ibm;
             mesh.index_count = mesh_data.water_indices.len() as u32;
         }
     }
@@ -434,22 +429,207 @@ pub fn receive_meshes(
     Ok(())
 }
 
-static TINT_KERNEL: OnceLock<Vec<f32>> = OnceLock::new();
+static TINT_KERNEL_1D: OnceLock<Vec<f32>> = OnceLock::new();
 
-fn get_tint_kernel() -> &'static Vec<f32> {
-    TINT_KERNEL.get_or_init(|| {
+fn tint_kernel_1d() -> &'static [f32] {
+    TINT_KERNEL_1D.get_or_init(|| {
         const RADIUS: i32 = 8;
         let sigma = RADIUS as f32 / 2.0;
         let denom = 2.0 * sigma * sigma;
-        let kernel_size = (RADIUS * 2 + 1) as usize;
-        (0..kernel_size * kernel_size)
+        let size = (RADIUS * 2 + 1) as usize;
+        let raw: Vec<f32> = (0..size)
             .map(|i| {
-                let dz = (i / kernel_size) as i32 - RADIUS;
-                let dx = (i % kernel_size) as i32 - RADIUS;
-                (-(dx * dx + dz * dz) as f32 / denom).exp()
+                let d = i as i32 - RADIUS;
+                (-(d * d) as f32 / denom).exp()
             })
-            .collect()
+            .collect();
+        // normalise so the 1-D weights sum to 1
+        let sum: f32 = raw.iter().sum();
+        raw.into_iter().map(|v| v / sum).collect()
     })
+}
+
+pub struct BiomeColors {
+    id: u16,
+    fr: f32,
+    fg: f32,
+    fb: f32,
+    wr: f32,
+    wg: f32,
+    wb: f32,
+}
+
+fn build_tint_maps(
+    gs: usize,
+    chunk: &Chunk,
+    neighbours: &ChunkNeighbours,
+    biome_registry: &BiomeRegistry,
+) -> (Vec<(u8, u8, u8)>, Vec<(u8, u8, u8)>) {
+    const RADIUS: i32 = 8;
+    let kernel = tint_kernel_1d();
+    let ksize = (RADIUS * 2 + 1) as usize;
+    let pad = RADIUS as usize;
+    let sw = gs + 2 * pad;
+
+    // collect the set of distinct biome ids in this chunk/border
+    let mut biome_ids: Vec<u16> = Vec::with_capacity(8);
+    biome_ids.push(chunk.biome);
+    for nb in [
+        neighbours.px.as_ref(),
+        neighbours.nx.as_ref(),
+        neighbours.py.as_ref(),
+        neighbours.ny.as_ref(),
+        neighbours.pz.as_ref(),
+        neighbours.nz.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !biome_ids.contains(&nb.biome) {
+            biome_ids.push(nb.biome);
+        }
+    }
+
+    // resolve light colours for each unique biome id
+    let palette: Vec<BiomeColors> = biome_ids
+        .iter()
+        .map(|&id| {
+            if let Ok(biome) = biome_registry.get_def(id) {
+                BiomeColors {
+                    id,
+                    fr: to_linear(biome.foliage_color.0),
+                    fg: to_linear(biome.foliage_color.1),
+                    fb: to_linear(biome.foliage_color.2),
+                    wr: to_linear(biome.water_color.0),
+                    wg: to_linear(biome.water_color.1),
+                    wb: to_linear(biome.water_color.2),
+                }
+            } else {
+                BiomeColors {
+                    id,
+                    fr: 0.0,
+                    fg: 0.0,
+                    fb: 0.0,
+                    wr: 0.0,
+                    wg: 0.0,
+                    wb: 0.0,
+                }
+            }
+        })
+        .collect();
+
+    //  fill grid using palette index , resolve_biome + array scan
+    let mut foliage_r = vec![0f32; sw * sw];
+    let mut foliage_g = vec![0f32; sw * sw];
+    let mut foliage_b = vec![0f32; sw * sw];
+    let mut water_r = vec![0f32; sw * sw];
+    let mut water_g = vec![0f32; sw * sw];
+    let mut water_b = vec![0f32; sw * sw];
+
+    for sz in -(RADIUS)..gs as i32 + RADIUS {
+        for sx in -(RADIUS)..gs as i32 + RADIUS {
+            let biome_id = resolve_biome(sx, sz, gs as i32, chunk, neighbours);
+            // find in palette
+            let c = palette.iter().find(|c| c.id == biome_id).unwrap();
+            let idx = (sz + RADIUS) as usize * sw + (sx + RADIUS) as usize;
+            foliage_r[idx] = c.fr;
+            foliage_g[idx] = c.fg;
+            foliage_b[idx] = c.fb;
+            water_r[idx] = c.wr;
+            water_g[idx] = c.wg;
+            water_b[idx] = c.wb;
+        }
+    }
+
+    // uniform biome
+    if palette.len() == 1 {
+        let c = &palette[0];
+        let fc = (to_gamma(c.fr), to_gamma(c.fg), to_gamma(c.fb));
+        let wc = (to_gamma(c.wr), to_gamma(c.wg), to_gamma(c.wb));
+        return (vec![fc; gs * gs], vec![wc; gs * gs]);
+    }
+
+    // separable horizontal pass to intermediate sw x gs buffer
+    let mut tmp_fr = vec![0f32; sw * gs];
+    let mut tmp_fg = vec![0f32; sw * gs];
+    let mut tmp_fb = vec![0f32; sw * gs];
+    let mut tmp_wr = vec![0f32; sw * gs];
+    let mut tmp_wg = vec![0f32; sw * gs];
+    let mut tmp_wb = vec![0f32; sw * gs];
+
+    for gz in 0..gs {
+        let src_row = gz + pad;
+        for sx in 0..sw {
+            let mut fr = 0f32;
+            let mut fg = 0f32;
+            let mut fb = 0f32;
+            let mut wr = 0f32;
+            let mut wg = 0f32;
+            let mut wb = 0f32;
+            for k in 0..ksize {
+                let tap_col = sx as i32 + k as i32 - RADIUS;
+                if tap_col < 0 || tap_col >= sw as i32 {
+                    continue;
+                }
+                let w = kernel[k];
+                let i = src_row * sw + tap_col as usize;
+                fr += foliage_r[i] * w;
+                fg += foliage_g[i] * w;
+                fb += foliage_b[i] * w;
+                wr += water_r[i] * w;
+                wg += water_g[i] * w;
+                wb += water_b[i] * w;
+            }
+            let t = gz * sw + sx;
+            tmp_fr[t] = fr;
+            tmp_fg[t] = fg;
+            tmp_fb[t] = fb;
+            tmp_wr[t] = wr;
+            tmp_wg[t] = wg;
+            tmp_wb[t] = wb;
+        }
+    }
+
+    let mut foliage = vec![(0u8, 0u8, 0u8); gs * gs];
+    let mut water = vec![(0u8, 0u8, 0u8); gs * gs];
+
+    for gz in 0..gs {
+        for gx in 0..gs {
+            let col = gx + pad;
+            let mut fr = 0f32;
+            let mut fg = 0f32;
+            let mut fb = 0f32;
+            let mut wr = 0f32;
+            let mut wg = 0f32;
+            let mut wb = 0f32;
+            for k in 0..ksize {
+                let tap_row = gz as i32 + k as i32 - RADIUS;
+                if tap_row < 0 || tap_row >= gs as i32 {
+                    continue;
+                }
+                let w = kernel[k];
+                let t = tap_row as usize * sw + col;
+                fr += tmp_fr[t] * w;
+                fg += tmp_fg[t] * w;
+                fb += tmp_fb[t] * w;
+                wr += tmp_wr[t] * w;
+                wg += tmp_wg[t] * w;
+                wb += tmp_wb[t] * w;
+            }
+            foliage[gz * gs + gx] = (to_gamma(fr), to_gamma(fg), to_gamma(fb));
+            water[gz * gs + gx] = (to_gamma(wr), to_gamma(wg), to_gamma(wb));
+        }
+    }
+
+    (foliage, water)
+}
+#[inline]
+fn to_linear(c: u8) -> f32 {
+    (c as f32 / 255.0).powf(2.2)
+}
+#[inline]
+fn to_gamma(c: f32) -> u8 {
+    (c.powf(1.0 / 2.2) * 255.0).clamp(0.0, 255.0) as u8
 }
 
 pub fn generate_mesh(
@@ -458,496 +638,277 @@ pub fn generate_mesh(
     neighbours: &ChunkNeighbours,
     biome_registry: &BiomeRegistry,
 ) -> (Vec<VoxelVertex>, Vec<u32>, Vec<VoxelVertex>, Vec<u32>) {
-    let instant = Instant::now();
+    let start = Instant::now();
     let lod = chunk.lod as usize;
-    let grid_size = 32 / lod;
+    let gs = 32 / lod;
 
-    // Phase 1: Grid fill                        -
+    // phase 1: fill the voxel grid at this lod
     let t0 = Instant::now();
-    let mut grid = vec![0u16; 32 * 32 * 32];
-    let mut border_px = vec![0u16; 32 * 32];
-    let mut border_nx = vec![0u16; 32 * 32];
-    let mut border_py = vec![0u16; 32 * 32];
-    let mut border_ny = vec![0u16; 32 * 32];
-    let mut border_pz = vec![0u16; 32 * 32];
-    let mut border_nz = vec![0u16; 32 * 32];
-
-    for gz in 0..grid_size {
-        for gy in 0..grid_size {
-            for gx in 0..grid_size {
-                grid[gz * grid_size * grid_size + gy * grid_size + gx] =
-                    get_representative_voxel(chunk, gx * lod, gy * lod, gz * lod, lod);
+    let mut grid = vec![0u16; gs * gs * gs];
+    for gz in 0..gs {
+        for gy in 0..gs {
+            for gx in 0..gs {
+                grid[gz * gs * gs + gy * gs + gx] =
+                    representative_voxel(chunk, gx * lod, gy * lod, gz * lod, lod);
             }
         }
     }
     let t_grid = t0.elapsed();
 
-    // Phase 2: Border fill                       -
+    // phase 2: fill one-voxel-deep border slabs from each neighbour chunk
+    // each border is a gs*gs slab indexed [v * gs + u]
     let t0 = Instant::now();
+    let mut border_px = vec![0u16; gs * gs];
+    let mut border_nx = vec![0u16; gs * gs];
+    let mut border_py = vec![0u16; gs * gs];
+    let mut border_ny = vec![0u16; gs * gs];
+    let mut border_pz = vec![0u16; gs * gs];
+    let mut border_nz = vec![0u16; gs * gs];
+
     if let Some(n) = &neighbours.px {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_px[v * grid_size + u] =
-                    get_representative_voxel(n, 0, u * lod, v * lod, lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_px[v * gs + u] = representative_voxel(n, 0, u * lod, v * lod, lod);
             }
         }
     }
     if let Some(n) = &neighbours.nx {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_nx[v * grid_size + u] =
-                    get_representative_voxel(n, 31 - (lod - 1), u * lod, v * lod, lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_nx[v * gs + u] =
+                    representative_voxel(n, 31 - (lod - 1), u * lod, v * lod, lod);
             }
         }
     }
     if let Some(n) = &neighbours.py {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_py[v * grid_size + u] =
-                    get_representative_voxel(n, u * lod, 0, v * lod, lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_py[v * gs + u] = representative_voxel(n, u * lod, 0, v * lod, lod);
             }
         }
     }
     if let Some(n) = &neighbours.ny {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_ny[v * grid_size + u] =
-                    get_representative_voxel(n, u * lod, 31 - (lod - 1), v * lod, lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_ny[v * gs + u] =
+                    representative_voxel(n, u * lod, 31 - (lod - 1), v * lod, lod);
             }
         }
     }
     if let Some(n) = &neighbours.pz {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_pz[v * grid_size + u] =
-                    get_representative_voxel(n, u * lod, v * lod, 0, lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_pz[v * gs + u] = representative_voxel(n, u * lod, v * lod, 0, lod);
             }
         }
     }
     if let Some(n) = &neighbours.nz {
-        for v in 0..grid_size {
-            for u in 0..grid_size {
-                border_nz[v * grid_size + u] =
-                    get_representative_voxel(n, u * lod, v * lod, 31 - (lod - 1), lod);
+        for v in 0..gs {
+            for u in 0..gs {
+                border_nz[v * gs + u] =
+                    representative_voxel(n, u * lod, v * lod, 31 - (lod - 1), lod);
             }
         }
     }
     let t_borders = t0.elapsed();
 
-    // Phase 3: Tint map
+    // phase 3: precompute per-id property tables
+    // avoids repeated registry lookups inside the hot face loop
     let t0 = Instant::now();
+    let n_defs = registry.defs.len();
 
-    // Precompute biome id for every grid cell
-    const RADIUS: i32 = 8;
-    let kernel = get_tint_kernel();
-    let kernel_size = (RADIUS * 2 + 1) as usize;
+    // transparent[id] — id 0 (air) is always transparent
+    let transparent: Vec<bool> = (0..n_defs)
+        .map(|i| i == 0 || registry.defs[i].has_component::<IsTransparent>())
+        .collect();
 
-    // resolve all biome colors into flat arrays upfront  avoids repeated
-    // registry lookups and branch logic inside the hot kernel loop
-    let gs = grid_size as i32;
-    let sample_min = -RADIUS;
-    let sample_max = gs + RADIUS;
-    let sample_w = (sample_max - sample_min) as usize;
+    // look up the water id once
+    let water_id: u16 = registry.get("Apostasy:Voxel:Water").unwrap_or(0);
 
-    // Flat  arrays of already-linearized colors
-    let mut biome_foliage_r = vec![0f32; sample_w * sample_w];
-    let mut biome_foliage_g = vec![0f32; sample_w * sample_w];
-    let mut biome_foliage_b = vec![0f32; sample_w * sample_w];
-    let mut biome_water_r = vec![0f32; sample_w * sample_w];
-    let mut biome_water_g = vec![0f32; sample_w * sample_w];
-    let mut biome_water_b = vec![0f32; sample_w * sample_w];
+    // tint_type[id] — None if this voxel has no tint
+    let tint_type: Vec<Option<TintType>> = (0..n_defs)
+        .map(|i| {
+            registry.defs[i]
+                .get_component::<HasTint>()
+                .ok()
+                .map(|ht| ht.0)
+        })
+        .collect();
 
-    for sz in sample_min..sample_max {
-        for sx in sample_min..sample_max {
-            let biome_id = resolve_biome(sx, sz, 0, gs, chunk, neighbours);
-            let idx = ((sz - sample_min) as usize) * sample_w + (sx - sample_min) as usize;
-            if let Ok(biome) = biome_registry.get_def(biome_id) {
-                biome_foliage_r[idx] = to_linear(biome.foliage_color.0);
-                biome_foliage_g[idx] = to_linear(biome.foliage_color.1);
-                biome_foliage_b[idx] = to_linear(biome.foliage_color.2);
-                biome_water_r[idx] = to_linear(biome.water_color.0);
-                biome_water_g[idx] = to_linear(biome.water_color.1);
-                biome_water_b[idx] = to_linear(biome.water_color.2);
-            }
-        }
-    }
+    let t_tables = t0.elapsed();
 
-    // Check if biome is uniform across the entire sample region
-    let first_fr = biome_foliage_r[0];
-    let first_wr = biome_water_r[0];
-    let is_uniform = biome_foliage_r.iter().all(|&v| (v - first_fr).abs() < 1e-4)
-        && biome_water_r.iter().all(|&v| (v - first_wr).abs() < 1e-4);
-
-    let mut foliage = vec![(0u8, 0u8, 0u8); grid_size * grid_size];
-    let mut water = vec![(0u8, 0u8, 0u8); grid_size * grid_size];
-
-    if is_uniform {
-        // uniform biome all cells get the same color, no kernel needed
-        let fc = (
-            to_gamma(biome_foliage_r[0]),
-            to_gamma(biome_foliage_g[0]),
-            to_gamma(biome_foliage_b[0]),
-        );
-        let wc = (
-            to_gamma(biome_water_r[0]),
-            to_gamma(biome_water_g[0]),
-            to_gamma(biome_water_b[0]),
-        );
-        foliage.fill(fc);
-        water.fill(wc);
-    } else {
-        // Multi-biome chunk run the kernel with just float array
-        for gz in 0..grid_size {
-            for gx in 0..grid_size {
-                let mut fr = 0f32;
-                let mut fg = 0f32;
-                let mut fb = 0f32;
-                let mut wr = 0f32;
-                let mut wg = 0f32;
-                let mut wb = 0f32;
-                let mut fw = 0f32;
-
-                for dz in -RADIUS..=RADIUS {
-                    for dx in -RADIUS..=RADIUS {
-                        let w =
-                            kernel[((dz + RADIUS) as usize) * kernel_size + (dx + RADIUS) as usize];
-                        let sx = (gx as i32 + dx - sample_min) as usize;
-                        let sz = (gz as i32 + dz - sample_min) as usize;
-                        let bidx = sz * sample_w + sx;
-                        fr += biome_foliage_r[bidx] * w;
-                        fg += biome_foliage_g[bidx] * w;
-                        fb += biome_foliage_b[bidx] * w;
-                        wr += biome_water_r[bidx] * w;
-                        wg += biome_water_g[bidx] * w;
-                        wb += biome_water_b[bidx] * w;
-                        fw += w;
-                    }
-                }
-
-                let idx = gz * grid_size + gx;
-                foliage[idx] = (to_gamma(fr / fw), to_gamma(fg / fw), to_gamma(fb / fw));
-                water[idx] = (to_gamma(wr / fw), to_gamma(wg / fw), to_gamma(wb / fw));
-            }
-        }
-    }
-
-    let foliage_tint_map = foliage;
-    let water_tint_map = water;
+    // phase 4: build per-cell biome tint maps
+    let t0 = Instant::now();
+    let (foliage_map, water_map) = build_tint_maps(gs, chunk, neighbours, biome_registry);
     let t_tint = t0.elapsed();
 
-    // phase 4 Face iteration / vertex/index generation
+    // phase 5: iterate faces and emit vertices
     let t0 = Instant::now();
-    let max_faces = grid_size * grid_size * grid_size * 6;
+
+    // look up a voxel from the grid or border slabs; returns 0 for corners
+    let voxel_at = |gx: i32, gy: i32, gz: i32| -> u16 {
+        let in_x = (0..gs as i32).contains(&gx);
+        let in_y = (0..gs as i32).contains(&gy);
+        let in_z = (0..gs as i32).contains(&gz);
+        match (in_x, in_y, in_z) {
+            (true, true, true) => grid[gz as usize * gs * gs + gy as usize * gs + gx as usize],
+            (false, true, true) if gx < 0 => border_nx[gz as usize * gs + gy as usize],
+            (false, true, true) => border_px[gz as usize * gs + gy as usize],
+            (true, false, true) if gy < 0 => border_ny[gz as usize * gs + gx as usize],
+            (true, false, true) => border_py[gz as usize * gs + gx as usize],
+            (true, true, false) if gz < 0 => border_nz[gy as usize * gs + gx as usize],
+            (true, true, false) => border_pz[gy as usize * gs + gx as usize],
+            _ => 0,
+        }
+    };
+
+    let is_solid = |id: u16| id != 0 && !transparent[id as usize];
+
+    // should the face between current and neighbour be culled
+    let culls = |neighbour_id: u16, current_id: u16| -> bool {
+        neighbour_id != 0
+            && (!transparent[neighbour_id as usize]
+                || (current_id == water_id && neighbour_id == water_id))
+    };
+
+    // face normal and two tangent axes per face (nx,ny,nz, ux,uy,uz, vx,vy,vz)
+    const FACE_AXES: [(i32, i32, i32, i32, i32, i32, i32, i32, i32); 6] = [
+        (1, 0, 0, 0, 1, 0, 0, 0, 1),  // +X
+        (-1, 0, 0, 0, 1, 0, 0, 0, 1), // -X
+        (0, 1, 0, 1, 0, 0, 0, 0, 1),  // +Y
+        (0, -1, 0, 1, 0, 0, 0, 0, 1), // -Y
+        (0, 0, 1, 1, 0, 0, 0, 1, 0),  // +Z
+        (0, 0, -1, 1, 0, 0, 0, 1, 0), // -Z
+    ];
+
+    // ao for one corner: sample the three voxels that shade it
+    let corner_ao = |face: usize, gx: i32, gy: i32, gz: i32, su: i32, sv: i32| -> u8 {
+        let (nx, ny, nz, ux, uy, uz, vx, vy, vz) = FACE_AXES[face];
+        let s1 = is_solid(voxel_at(
+            gx + nx + su * ux,
+            gy + ny + su * uy,
+            gz + nz + su * uz,
+        ));
+        let s2 = is_solid(voxel_at(
+            gx + nx + sv * vx,
+            gy + ny + sv * vy,
+            gz + nz + sv * vz,
+        ));
+        let s3 = is_solid(voxel_at(
+            gx + nx + su * ux + sv * vx,
+            gy + ny + su * uy + sv * vy,
+            gz + nz + su * uz + sv * vz,
+        ));
+        if s1 && s2 {
+            0
+        } else {
+            3 - (s1 as u8 + s2 as u8 + s3 as u8)
+        }
+    };
+
+    let max_faces = gs * gs * gs * 6;
     let mut vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
     let mut water_vertices: Vec<VoxelVertex> = Vec::with_capacity(max_faces * 4);
     let mut water_indices: Vec<u32> = Vec::with_capacity(max_faces * 6);
 
-    let is_transparent_voxel = |id: u16| -> bool {
-        if id == 0 {
-            return true;
-        }
-        registry.defs[id as usize].has_component::<IsTransparent>()
-    };
+    // corner positions as unit offsets from the voxel origin, per face
+    const CORNER_OFFSETS: [[[u8; 3]; 4]; 6] = [
+        [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], // +X
+        [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]], // -X
+        [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], // +Y
+        [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], // -Y
+        [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]], // +Z
+        [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], // -Z
+    ];
 
-    let vertex_ao = |face: usize,
-                     gx: usize,
-                     gy: usize,
-                     gz: usize,
-                     corner_u: u8,
-                     corner_v: u8|
-     -> u8 {
-        let solid = |dx: i32, dy: i32, dz: i32| -> bool {
-            let nx = gx as i32 + dx;
-            let ny = gy as i32 + dy;
-            let nz = gz as i32 + dz;
-            let id = if nx >= 0
-                && nx < grid_size as i32
-                && ny >= 0
-                && ny < grid_size as i32
-                && nz >= 0
-                && nz < grid_size as i32
-            {
-                grid[nz as usize * grid_size * grid_size + ny as usize * grid_size + nx as usize]
-            } else if nx < 0 && ny >= 0 && ny < grid_size as i32 && nz >= 0 && nz < grid_size as i32
-            {
-                border_nx[nz as usize * grid_size + ny as usize]
-            } else if nx >= grid_size as i32
-                && ny >= 0
-                && ny < grid_size as i32
-                && nz >= 0
-                && nz < grid_size as i32
-            {
-                border_px[nz as usize * grid_size + ny as usize]
-            } else if ny < 0 && nx >= 0 && nx < grid_size as i32 && nz >= 0 && nz < grid_size as i32
-            {
-                border_ny[nz as usize * grid_size + nx as usize]
-            } else if ny >= grid_size as i32
-                && nx >= 0
-                && nx < grid_size as i32
-                && nz >= 0
-                && nz < grid_size as i32
-            {
-                border_py[nz as usize * grid_size + nx as usize]
-            } else if nz < 0 && nx >= 0 && nx < grid_size as i32 && ny >= 0 && ny < grid_size as i32
-            {
-                border_nz[ny as usize * grid_size + nx as usize]
-            } else if nz >= grid_size as i32
-                && nx >= 0
-                && nx < grid_size as i32
-                && ny >= 0
-                && ny < grid_size as i32
-            {
-                border_pz[ny as usize * grid_size + nx as usize]
-            } else {
-                0
-            };
-            id != 0 && !is_transparent_voxel(id)
-        };
+    // tangent signs (su, sv) for each corner's ao sample, per face
+    const CORNER_SIGNS: [[(i32, i32); 4]; 6] = [
+        [(-1, -1), (1, -1), (1, 1), (-1, 1)], // +X
+        [(-1, 1), (1, 1), (1, -1), (-1, -1)], // -X
+        [(-1, 1), (1, 1), (1, -1), (-1, -1)], // +Y
+        [(-1, -1), (1, -1), (1, 1), (-1, 1)], // -Y
+        [(1, -1), (1, 1), (-1, 1), (-1, -1)], // +Z
+        [(-1, -1), (-1, 1), (1, 1), (1, -1)], // -Z
+    ];
 
-        let su = if corner_u == 0 { -1i32 } else { 1 };
-        let sv = if corner_v == 0 { -1i32 } else { 1 };
-        let (s1, s2, c) = match face {
-            0 => (solid(1, su, 0), solid(1, 0, sv), solid(1, su, sv)),
-            1 => (solid(-1, su, 0), solid(-1, 0, sv), solid(-1, su, sv)),
-            2 => (solid(su, 1, 0), solid(0, 1, sv), solid(su, 1, sv)),
-            3 => (solid(su, -1, 0), solid(0, -1, sv), solid(su, -1, sv)),
-            4 => (solid(su, 0, 1), solid(0, sv, 1), solid(su, sv, 1)),
-            _ => (solid(su, 0, -1), solid(0, sv, -1), solid(su, sv, -1)),
-        };
-        if s1 && s2 {
-            0
-        } else {
-            3 - (s1 as u8 + s2 as u8 + c as u8)
-        }
-    };
-
-    let neighbour_solid = |face: usize, gx: usize, gy: usize, gz: usize, current_id: u16| -> bool {
-        let neighbor_id = match face {
-            0 => {
-                if gx + 1 < grid_size {
-                    grid[gz * grid_size * grid_size + gy * grid_size + gx + 1]
-                } else {
-                    border_px[gz * grid_size + gy]
-                }
-            }
-            1 => {
-                if gx > 0 {
-                    grid[gz * grid_size * grid_size + gy * grid_size + gx - 1]
-                } else {
-                    border_nx[gz * grid_size + gy]
-                }
-            }
-            2 => {
-                if gy + 1 < grid_size {
-                    grid[gz * grid_size * grid_size + (gy + 1) * grid_size + gx]
-                } else {
-                    border_py[gz * grid_size + gx]
-                }
-            }
-            3 => {
-                if gy > 0 {
-                    grid[gz * grid_size * grid_size + (gy - 1) * grid_size + gx]
-                } else {
-                    border_ny[gz * grid_size + gx]
-                }
-            }
-            4 => {
-                if gz + 1 < grid_size {
-                    grid[(gz + 1) * grid_size * grid_size + gy * grid_size + gx]
-                } else {
-                    border_pz[gy * grid_size + gx]
-                }
-            }
-            _ => {
-                if gz > 0 {
-                    grid[(gz - 1) * grid_size * grid_size + gy * grid_size + gx]
-                } else {
-                    border_nz[gy * grid_size + gx]
-                }
-            }
-        };
-        let is_neighbor_water = registry.get("Apostasy:Voxel:Water") == Some(neighbor_id);
-        let is_current_water = registry.get("Apostasy:Voxel:Water") == Some(current_id);
-        neighbor_id != 0
-            && (!is_transparent_voxel(neighbor_id) || (is_current_water && is_neighbor_water))
-    };
-
-    for gz in 0..grid_size {
-        for gy in 0..grid_size {
-            let row_base = gz * grid_size * grid_size + gy * grid_size;
-            for gx in 0..grid_size {
+    for gz in 0..gs {
+        for gy in 0..gs {
+            let row_base = gz * gs * gs + gy * gs;
+            for gx in 0..gs {
                 let id = grid[row_base + gx];
                 if id == 0 {
                     continue;
                 }
 
-                let vx = (gx * lod) as u32;
-                let vy = (gy * lod) as u32;
-                let vz = (gz * lod) as u32;
-                let voxel_def = &registry.defs[id as usize];
-                let is_water = registry.get("Apostasy:Voxel:Water") == Some(id);
+                let l = lod as u8;
+                let vx = (gx * lod) as u8;
+                let vy = (gy * lod) as u8;
+                let vz = (gz * lod) as u8;
 
-                let tint = match voxel_def.get_component::<HasTint>() {
-                    Ok(ht) => match ht.0 {
-                        TintType::Foliage => foliage_tint_map[gz * grid_size + gx],
-                        TintType::Water => water_tint_map[gz * grid_size + gx],
-                    },
-                    Err(_) => (0, 0, 0),
+                let is_water = id == water_id;
+                let tint = match tint_type[id as usize] {
+                    Some(TintType::Foliage) => foliage_map[gz * gs + gx],
+                    Some(TintType::Water) => water_map[gz * gs + gx],
+                    None => (0, 0, 0),
                 };
 
+                let voxel_def = &registry.defs[id as usize];
+                let (igx, igy, igz) = (gx as i32, gy as i32, gz as i32);
+
                 for face in 0..6usize {
-                    if neighbour_solid(face, gx, gy, gz, id) {
+                    let (nx, ny, nz, ..) = FACE_AXES[face];
+                    let neighbour_id = voxel_at(igx + nx, igy + ny, igz + nz);
+                    if culls(neighbour_id, id) {
                         continue;
                     }
 
-                    let texture_id = voxel_def.textures.get_for_face(face as u8, vx, vy, vz);
-                    let x = vx as u8;
-                    let y = vy as u8;
-                    let z = vz as u8;
-                    let l = lod as u8;
+                    let texture_id = voxel_def
+                        .textures
+                        .get_for_face(face as u8, vx as u32, vy as u32, vz as u32);
 
-                    let corners: [[u8; 3]; 4] = match face {
-                        0 => [
-                            [x + l, y, z],
-                            [x + l, y + l, z],
-                            [x + l, y + l, z + l],
-                            [x + l, y, z + l],
-                        ],
-                        1 => [[x, y, z + l], [x, y + l, z + l], [x, y + l, z], [x, y, z]],
-                        2 => [
-                            [x, y + l, z + l],
-                            [x + l, y + l, z + l],
-                            [x + l, y + l, z],
-                            [x, y + l, z],
-                        ],
-                        3 => [[x, y, z], [x + l, y, z], [x + l, y, z + l], [x, y, z + l]],
-                        4 => [
-                            [x + l, y, z + l],
-                            [x + l, y + l, z + l],
-                            [x, y + l, z + l],
-                            [x, y, z + l],
-                        ],
-                        _ => [[x, y, z], [x, y + l, z], [x + l, y + l, z], [x + l, y, z]],
-                    };
+                    let offsets = &CORNER_OFFSETS[face];
+                    let signs = &CORNER_SIGNS[face];
 
-                    let (ao0, ao1, ao2, ao3) = match face {
-                        0 => (
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                        ),
-                        1 => (
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                        ),
-                        2 => (
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                        ),
-                        3 => (
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                        ),
-                        4 => (
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                        ),
-                        _ => (
-                            vertex_ao(face, gx, gy, gz, 0, 0),
-                            vertex_ao(face, gx, gy, gz, 0, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 1),
-                            vertex_ao(face, gx, gy, gz, 1, 0),
-                        ),
-                    };
+                    let mut ao = [0u8; 4];
+                    for (ci, &(su, sv)) in signs.iter().enumerate() {
+                        ao[ci] = corner_ao(face, igx, igy, igz, su, sv);
+                    }
 
-                    let base = if is_water {
-                        water_vertices.len() as u32
+                    let (target_v, target_i) = if is_water {
+                        (&mut water_vertices, &mut water_indices)
                     } else {
-                        vertices.len() as u32
+                        (&mut vertices, &mut indices)
                     };
-                    let target_vertices = if is_water {
-                        &mut water_vertices
-                    } else {
-                        &mut vertices
-                    };
-                    let top0 = corners[0][1] == y + l;
-                    let top1 = corners[1][1] == y + l;
-                    let top2 = corners[2][1] == y + l;
-                    let top3 = corners[3][1] == y + l;
-                    target_vertices.push(VoxelVertex::pack(
-                        corners[0][0],
-                        corners[0][1],
-                        corners[0][2],
-                        face as u8,
-                        0,
-                        0,
-                        top0,
-                        texture_id as u16,
-                        ao0,
-                        tint.0,
-                        tint.1,
-                        tint.2,
-                    ));
-                    target_vertices.push(VoxelVertex::pack(
-                        corners[1][0],
-                        corners[1][1],
-                        corners[1][2],
-                        face as u8,
-                        1,
-                        0,
-                        top1,
-                        texture_id as u16,
-                        ao1,
-                        tint.0,
-                        tint.1,
-                        tint.2,
-                    ));
-                    target_vertices.push(VoxelVertex::pack(
-                        corners[2][0],
-                        corners[2][1],
-                        corners[2][2],
-                        face as u8,
-                        1,
-                        1,
-                        top2,
-                        texture_id as u16,
-                        ao2,
-                        tint.0,
-                        tint.1,
-                        tint.2,
-                    ));
-                    target_vertices.push(VoxelVertex::pack(
-                        corners[3][0],
-                        corners[3][1],
-                        corners[3][2],
-                        face as u8,
-                        0,
-                        1,
-                        top3,
-                        texture_id as u16,
-                        ao3,
-                        tint.0,
-                        tint.1,
-                        tint.2,
-                    ));
 
-                    let target_indices = if is_water {
-                        &mut water_indices
-                    } else {
-                        &mut indices
-                    };
-                    if ao0 + ao2 > ao1 + ao3 {
-                        target_indices.extend_from_slice(&[
+                    let base = target_v.len() as u32;
+                    let uvs = [(0u8, 0u8), (1, 0), (1, 1), (0, 1)];
+
+                    for ci in 0..4 {
+                        let [ox, oy, oz] = offsets[ci];
+                        let cx = vx + ox * l;
+                        let cy = vy + oy * l;
+                        let cz = vz + oz * l;
+                        let is_top = cy == vy + l;
+                        target_v.push(VoxelVertex::pack(
+                            cx,
+                            cy,
+                            cz,
+                            face as u8,
+                            uvs[ci].0,
+                            uvs[ci].1,
+                            is_top,
+                            texture_id as u16,
+                            ao[ci],
+                            tint.0,
+                            tint.1,
+                            tint.2,
+                        ));
+                    }
+
+                    // flip the quad diagonal to avoid ao anisotropy artefacts
+                    if ao[0] + ao[2] > ao[1] + ao[3] {
+                        target_i.extend_from_slice(&[
                             base,
                             base + 1,
                             base + 2,
@@ -956,7 +917,7 @@ pub fn generate_mesh(
                             base + 3,
                         ]);
                     } else {
-                        target_indices.extend_from_slice(&[
+                        target_i.extend_from_slice(&[
                             base,
                             base + 1,
                             base + 3,
@@ -972,27 +933,27 @@ pub fn generate_mesh(
     let t_faces = t0.elapsed();
 
     log!(
-        "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
+        "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tables: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
         lod,
-        instant.elapsed(),
+        start.elapsed(),
         t_grid,
         t_borders,
+        t_tables,
         t_tint,
         t_faces,
         vertices.len(),
-        indices.len()
+        indices.len(),
     );
 
     (vertices, indices, water_vertices, water_indices)
 }
-fn get_representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: usize) -> u16 {
+
+// returns the first non-air voxel in the lod*lod*lod sub-block at (x, y, z)
+fn representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: usize) -> u16 {
     for dz in 0..lod {
         for dy in 0..lod {
             for dx in 0..lod {
-                let sx = x + dx;
-                let sy = y + dy;
-                let sz = z + dz;
-
+                let (sx, sy, sz) = (x + dx, y + dy, z + dz);
                 if sx >= 32 || sy >= 32 || sz >= 32 {
                     continue;
                 }
@@ -1006,92 +967,29 @@ fn get_representative_voxel(chunk: &Chunk, x: usize, y: usize, z: usize, lod: us
     0
 }
 
-fn sample_blended_tint(
-    gx: usize,
-    gy: usize,
-    gz: usize,
-    chunk: &Chunk,
-    neighbours: &ChunkNeighbours,
-    biome_registry: &BiomeRegistry,
-    tint_type: TintType,
-    grid_size: usize,
-    _lod: usize,
-) -> (u8, u8, u8) {
-    const RADIUS: i32 = 16;
-    let sigma = RADIUS as f32 / 2.0;
+// resolves the biome id for a sample that may be in a neighbouring chunk
+fn resolve_biome(sx: i32, sz: i32, gs: i32, chunk: &Chunk, neighbours: &ChunkNeighbours) -> u16 {
+    let in_x = (0..gs).contains(&sx);
+    let in_z = (0..gs).contains(&sz);
 
-    let mut r_sum = 0f32;
-    let mut g_sum = 0f32;
-    let mut b_sum = 0f32;
-    let mut w_sum = 0f32;
-
-    for dz in -RADIUS..=RADIUS {
-        for dx in -RADIUS..=RADIUS {
-            let dist_sq = (dx * dx + dz * dz) as f32;
-            let weight = (-dist_sq / (2.0 * sigma * sigma)).exp();
-
-            let sx = gx as i32 + dx;
-            let sz = gz as i32 + dz;
-            let biome_id = resolve_biome(sx, sz, gy as i32, grid_size as i32, chunk, neighbours);
-
-            if let Ok(biome) = biome_registry.get_def(biome_id) {
-                let color = match tint_type {
-                    TintType::Water => biome.water_color,
-                    TintType::Foliage => biome.foliage_color,
-                };
-                r_sum += to_linear(color.0) * weight;
-                g_sum += to_linear(color.1) * weight;
-                b_sum += to_linear(color.2) * weight;
-                w_sum += weight;
+    let neighbour = match (in_x, in_z) {
+        (true, true) => return chunk.biome,
+        (false, true) => {
+            if sx < 0 {
+                neighbours.nx.as_ref()
+            } else {
+                neighbours.px.as_ref()
             }
         }
-    }
-
-    let tint = if w_sum > 0.0 {
-        (
-            to_gamma(r_sum / w_sum),
-            to_gamma(g_sum / w_sum),
-            to_gamma(b_sum / w_sum),
-        )
-    } else {
-        (0, 0, 0)
+        (true, false) => {
+            if sz < 0 {
+                neighbours.nz.as_ref()
+            } else {
+                neighbours.pz.as_ref()
+            }
+        }
+        (false, false) => neighbours.px.as_ref().or(neighbours.pz.as_ref()), // corner, pick any
     };
 
-    tint
-}
-
-fn to_linear(c: u8) -> f32 {
-    (c as f32 / 255.0).powf(2.2)
-}
-
-fn to_gamma(c: f32) -> u8 {
-    (c.powf(1.0 / 2.2) * 255.0).clamp(0.0, 255.0) as u8
-}
-
-fn resolve_biome(
-    sx: i32,
-    sz: i32,
-    _gy: i32,
-    grid_size: i32,
-    chunk: &Chunk,
-    neighbours: &ChunkNeighbours,
-) -> u16 {
-    // Determine which chunk owns this grid coordinate
-    let neighbour = if sx < 0 && sz >= 0 && sz < grid_size {
-        neighbours.nx.as_ref()
-    } else if sx >= grid_size && sz >= 0 && sz < grid_size {
-        neighbours.px.as_ref()
-    } else if sz < 0 && sx >= 0 && sx < grid_size {
-        neighbours.nz.as_ref()
-    } else if sz >= grid_size && sx >= 0 && sx < grid_size {
-        neighbours.pz.as_ref()
-    } else if sx >= 0 && sx < grid_size && sz >= 0 && sz < grid_size {
-        // In current chunk
-        return chunk.biome;
-    } else {
-        // Corner — pick whichever neighbour is available, or fallback
-        neighbours.px.as_ref().or(neighbours.pz.as_ref())
-    };
-
-    neighbour.map(|n| n.biome).unwrap_or(chunk.biome)
+    neighbour.map_or(chunk.biome, |n| n.biome)
 }

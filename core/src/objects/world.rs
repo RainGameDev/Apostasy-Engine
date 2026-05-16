@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use anyhow::Result;
 use hashbrown::HashMap;
 
@@ -48,14 +50,14 @@ impl World {
     /// Collects and sorts the Iterator
     fn collect_sorted<T: HasPriority>(iter: impl Iterator<Item = &'static T>) -> Vec<&'static T> {
         let mut systems: Vec<_> = iter.collect();
-        systems.sort_by(|a, b| b.priority().cmp(&a.priority()));
-
+        systems.sort_by_key(|s| Reverse(s.priority()));
         systems
     }
     /// Runs all start systems
     pub(crate) fn start(&mut self) {
         let mut systems = inventory::iter::<StartSystem>().collect::<Vec<_>>();
-        systems.sort_by(|a, b| a.priority.cmp(&b.priority));
+
+        systems.sort_by_key(|s| Reverse(s.priority));
         systems.reverse();
         for system in systems.iter_mut() {
             (system.func)(self);
@@ -83,13 +85,12 @@ impl World {
             dt.0 = delta;
         }
 
-        // run regular update systems immediately, no waiting
-        let mut systems: Vec<&UpdateSystem> = inventory::iter::<UpdateSystem>().collect();
-        systems.sort_by(|a, b| b.priority().cmp(&a.priority()));
-
-        for system in systems {
+        let systems = std::mem::take(&mut self.update_systems);
+        for system in &systems {
             (system.func)(self).unwrap();
         }
+
+        self.update_systems = systems;
     }
 
     pub(crate) fn fixed_update(&mut self) {
@@ -110,13 +111,11 @@ impl World {
                 .unwrap()
                 .accumulator -= timestep;
 
-            let mut systems: Vec<&FixedUpdateSystem> =
-                inventory::iter::<FixedUpdateSystem>().collect();
-            systems.sort_by(|a, b| b.priority().cmp(&a.priority()));
-
-            for system in systems {
+            let systems = std::mem::take(&mut self.fixed_update_systems);
+            for system in &systems {
                 (system.func)(self, timestep).unwrap();
             }
+            self.fixed_update_systems = systems;
         }
     }
 
@@ -250,6 +249,11 @@ impl World {
         self.resources.get::<T>()
     }
 
+    // Does the map have a resource
+    pub fn has_resource<T: Resource + 'static>(&self) -> bool {
+        self.resources.get::<T>().is_ok()
+    }
+
     /// Get a resource mutably from the map
     pub fn get_resource_mut<T: Resource + 'static>(&mut self) -> Result<&mut T> {
         self.resources.get_mut::<T>()
@@ -264,11 +268,11 @@ impl World {
     // ========== ========== Voxel Specific ========== ==========
 
     pub fn register_chunk(&mut self, id: ObjectId) {
-        if let Some(obj) = self.scene.objects.get(id) {
-            if let Ok(t) = obj.get_component::<VoxelTransform>() {
-                self.chunk_position_index
-                    .insert((t.position.x, t.position.y, t.position.z), id);
-            }
+        if let Some(obj) = self.scene.objects.get(id)
+            && let Ok(t) = obj.get_component::<VoxelTransform>()
+        {
+            self.chunk_position_index
+                .insert((t.position.x, t.position.y, t.position.z), id);
         }
     }
 
