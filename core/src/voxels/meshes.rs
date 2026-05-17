@@ -775,12 +775,10 @@ pub fn generate_mesh(
     neighbours: &ChunkNeighbours,
     biome_registry: &BiomeRegistry,
 ) -> (Vec<VoxelVertex>, Vec<u32>, Vec<VoxelVertex>, Vec<u32>) {
-    let start = Instant::now();
     let lod = chunk.lod as usize;
     let gs = 32 / lod;
 
     // phase 1: fill the voxel grid at this lod
-    let t0 = Instant::now();
     let mut grid = vec![0u16; gs * gs * gs];
     for gz in 0..gs {
         for gy in 0..gs {
@@ -790,11 +788,9 @@ pub fn generate_mesh(
             }
         }
     }
-    let t_grid = t0.elapsed();
 
     // phase 2: fill one-voxel-deep border slabs from each neighbour chunk
     // each border is a gs*gs slab indexed [v * gs + u]
-    let t0 = Instant::now();
     let mut border_px = vec![0u16; gs * gs];
     let mut border_nx = vec![0u16; gs * gs];
     let mut border_py = vec![0u16; gs * gs];
@@ -847,11 +843,9 @@ pub fn generate_mesh(
             }
         }
     }
-    let t_borders = t0.elapsed();
 
     // phase 3: precompute per-id property tables
     // avoids repeated registry lookups inside the hot face loop
-    let t0 = Instant::now();
     let n_defs = registry.defs.len();
 
     // transparent[id] id 0 (air) is always transparent
@@ -872,15 +866,9 @@ pub fn generate_mesh(
         })
         .collect();
 
-    let t_tables = t0.elapsed();
-
     // phase 4: build per-cell biome tint maps
-    let t0 = Instant::now();
     let (foliage_map, water_map) = build_tint_maps(gs, chunk, neighbours, biome_registry);
-    let t_tint = t0.elapsed();
-
     // phase 5: iterate faces and emit vertices
-    let t0 = Instant::now();
 
     // look up a voxel from the grid or border slabs; returns 0 for corners
     let voxel_at = |gx: i32, gy: i32, gz: i32| -> u16 {
@@ -1067,20 +1055,6 @@ pub fn generate_mesh(
             }
         }
     }
-    let t_faces = t0.elapsed();
-
-    log!(
-        "Chunk mesh LOD{} | total: {:.2?} | grid: {:.2?} | borders: {:.2?} | tables: {:.2?} | tint: {:.2?} | faces: {:.2?} | V: {} I: {}",
-        lod,
-        start.elapsed(),
-        t_grid,
-        t_borders,
-        t_tables,
-        t_tint,
-        t_faces,
-        vertices.len(),
-        indices.len(),
-    );
 
     (vertices, indices, water_vertices, water_indices)
 }

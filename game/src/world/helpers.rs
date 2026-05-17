@@ -1,10 +1,7 @@
 use apostasy_core::{
     noise::{NoiseFn, Perlin},
     utils::flatten::flatten,
-    voxels::biome::{
-        BiomeRegistry, CONTINENTAL_NOISE, HUMIDITY_NOISE, TEMPERATURE_NOISE,
-        sample_biome_weights_at_climate,
-    },
+    voxels::biome::{BiomeRegistry, sample_biome_weights_at_climate},
 };
 
 use crate::world::{
@@ -13,6 +10,7 @@ use crate::world::{
 };
 
 /// Pure computation for a single column
+#[allow(clippy::too_many_arguments)]
 pub fn compute_column(
     world_x: f64,
     world_z: f64,
@@ -90,6 +88,7 @@ pub fn random_range(x: i32, z: i32, seed: u32, min: u32, max: u32) -> u32 {
     min + (h % (max - min + 1))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_voxel_global(
     voxels: &mut [u16],
     global_x: i32,
@@ -109,6 +108,7 @@ pub fn set_voxel_global(
     voxels[flatten(lx as u32, ly as u32, lz as u32, 32)] = voxel_id;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_voxel_global_non_floating(
     voxels: &mut [u16],
     global_x: i32,
@@ -143,6 +143,7 @@ pub fn set_voxel_global_non_floating(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_voxel_global_if_empty(
     voxels: &mut [u16],
     global_x: i32,

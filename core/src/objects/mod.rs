@@ -70,7 +70,7 @@ impl Object {
             .iter()
             .find(|c| c.as_any().type_id() == TypeId::of::<T>())
             .and_then(|c| c.as_any().downcast_ref())
-            .ok_or(Error::msg("No tag of type"))
+            .ok_or_else(|| Error::msg(format!("No Tag of type: {}", T::name())))
     }
 
     pub fn add_tag<T: Tag + 'static>(&mut self, tag: T) -> Self {
@@ -110,21 +110,19 @@ impl Object {
     }
 
     pub fn get_component<T: Component + 'static>(&self) -> Result<&T> {
-        let msg = format!("No Component of type: {}", T::name());
         self.components
             .iter()
             .find(|c| c.as_any().type_id() == TypeId::of::<T>())
             .and_then(|c| c.as_any().downcast_ref())
-            .ok_or(Error::msg(msg))
+            .ok_or_else(|| Error::msg(format!("No Component of type: {}", T::name())))
     }
 
     pub fn get_component_mut<T: Component + 'static>(&mut self) -> Result<&mut T> {
-        let msg = format!("No Component of type: {}", T::name());
         self.components
             .iter_mut()
             .find(|c| c.as_any().type_id() == TypeId::of::<T>())
             .and_then(|c| c.as_any_mut().downcast_mut())
-            .ok_or(Error::msg(msg))
+            .ok_or_else(|| Error::msg(format!("No Component of type: {}", T::name())))
     }
 
     pub fn add_component<T: Component + 'static>(&mut self, component: T) -> Self {

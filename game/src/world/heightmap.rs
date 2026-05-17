@@ -14,10 +14,12 @@ pub fn upsample_cell_size(lod: u8) -> usize {
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Upsample {
+    X1,
     X2,
     X4,
     X8,
     X16,
+    X32,
 }
 
 pub struct UpsampledHeightmap {
@@ -30,7 +32,7 @@ impl UpsampledHeightmap {
     pub fn new(
         world_x: f64,
         world_z: f64,
-        cell_size: usize,
+        upsample: Upsample,
         noise: &Perlin,
         biome_registry: &BiomeRegistry,
         cache: &mut NoiseColumnCache,
@@ -40,7 +42,14 @@ impl UpsampledHeightmap {
         humid_noise: &Perlin,
         continental_noise: &Perlin,
     ) -> Self {
-        debug_assert!(32 % cell_size == 0, "cell_size must divide 32 evenly");
+        let cell_size = match upsample {
+            Upsample::X1 => 1,
+            Upsample::X2 => 2,
+            Upsample::X4 => 4,
+            Upsample::X8 => 8,
+            Upsample::X16 => 16,
+            Upsample::X32 => 32,
+        };
 
         let grid_size = 32 / cell_size;
         let corner_count = grid_size + 1;

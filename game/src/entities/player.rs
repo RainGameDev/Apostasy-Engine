@@ -100,9 +100,7 @@ pub fn player_init(world: &mut World) -> Result<()> {
 
 #[update(priority = 1)]
 pub fn update(world: &mut World) -> Result<()> {
-    if world.get_resource::<IsPaused>().is_ok()
-        && !world.get_resource::<HasInitGeneration>().is_ok()
-    {
+    if world.has_resource::<IsPaused>() && !world.has_resource::<HasInitGeneration>() {
         return Ok(());
     }
     if world.get_resource::<IsPaused>().is_ok() {
@@ -187,8 +185,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .get_objects_with_tag_with_ids::<VoxelOutline>()
         .first()
         .unwrap()
-        .0
-        .clone();
+        .0;
 
     // if let Some(hit) = voxel_raycast_camera(world, 4.0) {
     //     new_pos = Vector3::new(
@@ -200,7 +197,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
     //     new_pos = Vector3::new(0.0 + 0.5, -6000.0 + 0.5, 0.0 + 0.5);
     // }
     //
-    let outline_transform = world
+    let _outline_transform = world
         .get_object_mut(outline)
         .unwrap()
         .get_component_mut::<Transform>()?;
@@ -209,8 +206,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
             .get_objects_with_tag_with_ids::<Player>()
             .first()
             .unwrap()
-            .0
-            .clone();
+            .0;
 
         let player = world.get_object_mut(player_id).unwrap();
         let player_data = player.get_component_mut::<PlayerData>()?;
@@ -227,8 +223,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .get_objects_with_tag_with_ids::<Player>()
         .first()
         .unwrap()
-        .0
-        .clone();
+        .0;
 
     let place_action: Option<(u64, u64)> = if to_place && can_build {
         let player = world.get_object_mut(player_id).unwrap();
@@ -241,7 +236,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
                     let voxel_key = voxel.name.clone();
 
                     if let Some(voxel_id) = voxel_registry.name_to_id.get(&voxel_key) {
-                        Some((inventory.selected_item as u64, voxel_id.clone() as u64))
+                        Some((inventory.selected_item as u64, *voxel_id as u64))
                     } else {
                         log_warn!(
                             "Voxel with the name: {} does not exist in the registry",
@@ -262,76 +257,75 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         None
     };
 
-    if let Some((selected_index, voxel_id)) = place_action {
-        if let Some(raycast) = voxel_raycast_camera(world, 4.0) {
-            let player_id = world
-                .get_objects_with_tag_with_ids::<Player>()
-                .first()
-                .unwrap()
-                .0
-                .clone();
+    if let Some((selected_index, voxel_id)) = place_action
+        && let Some(raycast) = voxel_raycast_camera(world, 4.0)
+    {
+        let player_id = world
+            .get_objects_with_tag_with_ids::<Player>()
+            .first()
+            .unwrap()
+            .0;
 
-            let player = world.get_object(player_id).unwrap();
+        let player = world.get_object(player_id).unwrap();
 
-            let transform = player.get_component::<Transform>()?;
-            let collider = player.get_component::<Collider>()?;
+        let transform = player.get_component::<Transform>()?;
+        let collider = player.get_component::<Collider>()?;
 
-            let min = Vector3::new(
-                (transform.global_position.x - collider.half_extents.x).floor() as i32,
-                (transform.global_position.y - collider.half_extents.y).floor() as i32,
-                (transform.global_position.z - collider.half_extents.z).floor() as i32,
-            );
-            let max = Vector3::new(
-                (transform.global_position.x + collider.half_extents.x).floor() as i32,
-                (transform.global_position.y + collider.half_extents.y).floor() as i32,
-                (transform.global_position.z + collider.half_extents.z).floor() as i32,
-            );
-            let face_offset = match raycast.face {
-                0 => (1, 0, 0),  // +X
-                1 => (-1, 0, 0), // -X
-                2 => (0, 1, 0),  // +Y
-                3 => (0, -1, 0), // -Y
-                4 => (0, 0, 1),  // +Z
-                5 => (0, 0, -1), // -Z
-                _ => (0, 0, 0),
-            };
+        let min = Vector3::new(
+            (transform.global_position.x - collider.half_extents.x).floor() as i32,
+            (transform.global_position.y - collider.half_extents.y).floor() as i32,
+            (transform.global_position.z - collider.half_extents.z).floor() as i32,
+        );
+        let max = Vector3::new(
+            (transform.global_position.x + collider.half_extents.x).floor() as i32,
+            (transform.global_position.y + collider.half_extents.y).floor() as i32,
+            (transform.global_position.z + collider.half_extents.z).floor() as i32,
+        );
+        let face_offset = match raycast.face {
+            0 => (1, 0, 0),  // +X
+            1 => (-1, 0, 0), // -X
+            2 => (0, 1, 0),  // +Y
+            3 => (0, -1, 0), // -Y
+            4 => (0, 0, 1),  // +Z
+            5 => (0, 0, -1), // -Z
+            _ => (0, 0, 0),
+        };
 
-            let place_pos = Vector3::new(
-                raycast.voxel_pos.x + face_offset.0,
-                raycast.voxel_pos.y + face_offset.1,
-                raycast.voxel_pos.z + face_offset.2,
-            );
+        let place_pos = Vector3::new(
+            raycast.voxel_pos.x + face_offset.0,
+            raycast.voxel_pos.y + face_offset.1,
+            raycast.voxel_pos.z + face_offset.2,
+        );
 
-            if place_pos.x >= min.x
-                && place_pos.x <= max.x
-                && place_pos.y >= min.y
-                && place_pos.y <= max.y
-                && place_pos.z >= min.z
-                && place_pos.z <= max.z
-            {
-                return Ok(());
-            }
-
-            if place_pos.x >= min.x
-                && place_pos.x <= max.x
-                && place_pos.y >= min.y
-                && place_pos.y <= max.y
-                && place_pos.z >= min.z
-                && place_pos.z <= max.z
-            {
-                return Ok(());
-            }
-
-            voxel_raycast_system(world, Some(voxel_id as u16), 4.0)?;
-            let player = world.get_object_mut(player_id).unwrap();
-            let inventory = player.get_component_mut::<Container>()?;
-
-            inventory.remove_item_index(selected_index as usize);
-
-            let player = world.get_object_mut(player_id).unwrap();
-            let player_data = player.get_component_mut::<PlayerData>()?;
-            player_data.current_build_ticks = 0;
+        if place_pos.x >= min.x
+            && place_pos.x <= max.x
+            && place_pos.y >= min.y
+            && place_pos.y <= max.y
+            && place_pos.z >= min.z
+            && place_pos.z <= max.z
+        {
+            return Ok(());
         }
+
+        if place_pos.x >= min.x
+            && place_pos.x <= max.x
+            && place_pos.y >= min.y
+            && place_pos.y <= max.y
+            && place_pos.z >= min.z
+            && place_pos.z <= max.z
+        {
+            return Ok(());
+        }
+
+        voxel_raycast_system(world, Some(voxel_id as u16), 4.0)?;
+        let player = world.get_object_mut(player_id).unwrap();
+        let inventory = player.get_component_mut::<Container>()?;
+
+        inventory.remove_item_index(selected_index as usize);
+
+        let player = world.get_object_mut(player_id).unwrap();
+        let player_data = player.get_component_mut::<PlayerData>()?;
+        player_data.current_build_ticks = 0;
     }
 
     Ok(())
@@ -341,7 +335,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
 pub fn hud(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 
-    if !world.get_resource::<HasInitGeneration>().is_ok() {
+    if !world.has_resource::<HasInitGeneration>() {
         return Ok(());
     }
 
@@ -388,10 +382,10 @@ pub fn hotbar_update(world: &mut World) -> Result<()> {
     let player = world.get_object_mut(player_id).unwrap();
     let inventory = player.get_component_mut::<Container>()?;
 
-    if let Some(slot) = pressed_slot {
-        if inventory.items.len() > slot {
-            inventory.selected_item = slot as u32;
-        }
+    if let Some(slot) = pressed_slot
+        && inventory.items.len() > slot
+    {
+        inventory.selected_item = slot as u32;
     }
 
     Ok(())

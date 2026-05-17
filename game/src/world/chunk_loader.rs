@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use apostasy_core::noise::Perlin;
@@ -293,10 +293,10 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         for pos in &new_pos_set {
             for offset in &NEIGHBOUR_OFFSETS {
                 let neighbour = pos + offset;
-                if !new_pos_set.contains(&neighbour) {
-                    if let Some(&id) = map.position_to_id.get(&neighbour) {
-                        remesh_ids.push(id);
-                    }
+                if !new_pos_set.contains(&neighbour)
+                    && let Some(&id) = map.position_to_id.get(&neighbour)
+                {
+                    remesh_ids.push(id);
                 }
             }
         }
@@ -377,10 +377,10 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
         for offset in &NEIGHBOUR_OFFSETS {
             let neighbour = pos + offset;
             // skip neighbours that were just added (already tagged NeedsRemeshing)
-            if !added_positions.contains(&neighbour) {
-                if let Some(&id) = map.position_to_id.get(&neighbour) {
-                    remesh_ids.push(id);
-                }
+            if !added_positions.contains(&neighbour)
+                && let Some(&id) = map.position_to_id.get(&neighbour)
+            {
+                remesh_ids.push(id);
             }
         }
     }

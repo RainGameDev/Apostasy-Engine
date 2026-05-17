@@ -7,7 +7,6 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use hashbrown::HashMap;
 use rayon::ThreadPool;
 
-use crate::log;
 use crate::{
     utils::flatten::flatten,
     voxels::{

@@ -23,6 +23,7 @@ impl NoiseColumnCache {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn get_or_insert(
         &mut self,
         wx: i32,
@@ -30,7 +31,7 @@ impl NoiseColumnCache {
         noise: &Perlin,
         biome_registry: &BiomeRegistry,
         lod: u8,
-        seed: u32,
+        _seed: u32,
         temp_noise: &Perlin,
         humid_noise: &Perlin,
         continental_noise: &Perlin,

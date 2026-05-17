@@ -7,8 +7,7 @@ edition = "2024"
 
 ash = "0.38.0"
 ash-window = "0.13.0"
-
-anyhow = { version = "1.0.100", default-features = false }
+anyhow = "1.0.100"
 bytemuck = { version = "1.19.0", features = ["derive"]}
 cgmath = "0.18.0"
 tracing = "0.1.40"
