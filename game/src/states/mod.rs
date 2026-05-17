@@ -42,7 +42,7 @@ pub fn paused_update(world: &mut World) -> Result<()> {
         let cursor_manager = world.get_resource_mut::<CursorManager>()?;
 
         if !is_paused {
-            cursor_manager.set_mode(CursorLockMode::LockedHidden);
+            cursor_manager.set_mode(CursorLockMode::ConfinedHidden);
         } else {
             cursor_manager.set_mode(CursorLockMode::NoneVisible);
         }

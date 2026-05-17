@@ -9,6 +9,7 @@ use cgmath::Vector3;
 use hashbrown::HashMap;
 
 use crate::log;
+use crate::objects::Object;
 use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
 use crate::rendering::shared::model::GpuMesh;
@@ -187,23 +188,13 @@ impl ChunkNeighbours {
         }
     }
 }
-pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
-    const MAX_MESH_JOBS_PER_FRAME: usize = 6;
 
-    let registry = Arc::new(
-        world
-            .get_resource::<VoxelRegistry>()
-            .expect("No VoxelRegistry resource")
-            .clone(),
-    );
-    let biome_registry = Arc::new(
-        world
-            .get_resource::<BiomeRegistry>()
-            .expect("No BiomeRegistry resource")
-            .clone(),
-    );
+const MAX_MESH_JOBS_PER_FRAME: usize = 6;
+const MAX_MESH_RESULTS_PER_FRAME: usize = 2;
 
-    let chunk_positions: HashMap<(i32, i32, i32), ObjectId> = world
+// builds a flat position -> id lookup for every loaded chunk
+fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), ObjectId> {
+    world
         .get_objects_with_component_with_ids::<VoxelTransform>()
         .into_iter()
         .filter_map(|(id, obj)| {
@@ -211,9 +202,12 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             obj.has_component::<Chunk>()
                 .then_some(((t.position.x, t.position.y, t.position.z), id))
         })
-        .collect();
+        .collect()
+}
 
-    let mut needs_remesh: Vec<(ObjectId, Vector3<i32>)> = world
+// collects all chunks needing a remesh, voxel-break jobs sorted first
+fn sorted_remesh_candidates(world: &World) -> Vec<(ObjectId, Vector3<i32>)> {
+    let mut candidates: Vec<(ObjectId, Vector3<i32>)> = world
         .get_objects_with_tag_with_ids::<NeedsRemeshing>()
         .into_iter()
         .filter_map(|(id, _)| {
@@ -226,11 +220,101 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         })
         .collect();
 
-    needs_remesh.sort_by_key(|(id, _)| {
+    candidates.sort_by_key(|(id, _)| {
         !world
             .get_object(*id)
             .is_some_and(|o| o.has_tag::<VoxelBreakRemesh>())
     });
+
+    candidates
+}
+
+// clones the chunk at pos + offset if it exists
+fn get_neighbour(
+    pos: Vector3<i32>,
+    offset: Vector3<i32>,
+    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    world: &World,
+) -> Option<Chunk> {
+    let key = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
+    chunk_positions
+        .get(&key)
+        .and_then(|&id| world.get_object(id))
+        .and_then(|obj| obj.get_component::<Chunk>().ok().cloned())
+}
+
+fn gather_neighbours(
+    pos: Vector3<i32>,
+    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    world: &World,
+) -> ChunkNeighbours {
+    ChunkNeighbours {
+        px: get_neighbour(pos, Vector3::new(1, 0, 0), chunk_positions, world),
+        nx: get_neighbour(pos, Vector3::new(-1, 0, 0), chunk_positions, world),
+        py: get_neighbour(pos, Vector3::new(0, 1, 0), chunk_positions, world),
+        ny: get_neighbour(pos, Vector3::new(0, -1, 0), chunk_positions, world),
+        pz: get_neighbour(pos, Vector3::new(0, 0, 1), chunk_positions, world),
+        nz: get_neighbour(pos, Vector3::new(0, 0, -1), chunk_positions, world),
+    }
+}
+
+// a neighbour is ready if it either exists or is outside the load radius
+fn neighbour_ready(
+    neighbour_pos: Vector3<i32>,
+    neighbour: &Option<Chunk>,
+    player_pos: Vector3<i32>,
+    load_radius: i32,
+    v_load_radius: i32,
+) -> bool {
+    let dx = (neighbour_pos.x - player_pos.x).abs();
+    let dy = (neighbour_pos.y - player_pos.y).abs();
+    let dz = (neighbour_pos.z - player_pos.z).abs();
+    let in_radius = dx <= load_radius && dy <= v_load_radius && dz <= load_radius;
+    !in_radius || neighbour.is_some()
+}
+
+fn all_neighbours_ready(
+    pos: Vector3<i32>,
+    neighbours: &ChunkNeighbours,
+    player_pos: Vector3<i32>,
+    load_radius: i32,
+    v_load_radius: i32,
+) -> bool {
+    let check = |offset: Vector3<i32>, nb: &Option<Chunk>| {
+        neighbour_ready(pos + offset, nb, player_pos, load_radius, v_load_radius)
+    };
+
+    check(Vector3::new(1, 0, 0), &neighbours.px)
+        && check(Vector3::new(-1, 0, 0), &neighbours.nx)
+        && check(Vector3::new(0, 1, 0), &neighbours.py)
+        && check(Vector3::new(0, -1, 0), &neighbours.ny)
+        && check(Vector3::new(0, 0, 1), &neighbours.pz)
+        && check(Vector3::new(0, 0, -1), &neighbours.nz)
+}
+
+struct Job {
+    id: ObjectId,
+    pos: Vector3<i32>,
+    chunk: Chunk,
+    neighbours: ChunkNeighbours,
+}
+
+pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
+    let registry = Arc::new(
+        world
+            .get_resource::<VoxelRegistry>()
+            .expect("no VoxelRegistry resource")
+            .clone(),
+    );
+    let biome_registry = Arc::new(
+        world
+            .get_resource::<BiomeRegistry>()
+            .expect("no BiomeRegistry resource")
+            .clone(),
+    );
+
+    let chunk_positions = chunk_position_map(world);
+    let candidates = sorted_remesh_candidates(world);
 
     let (load_radius, v_load_radius, player_pos) = {
         let loader = world.get_resource::<ChunkLoadBounds>()?;
@@ -249,17 +333,10 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         .get_resource::<ChunkGenQueue>()?
         .mesh_result_sender
         .clone();
-
-    struct Job {
-        id: ObjectId,
-        chunk: Chunk,
-        neighbours: ChunkNeighbours,
-        pos: Vector3<i32>,
-    }
-
+    // phase 1: find chunks that are ready to mesh
     let mut ready: Vec<Job> = Vec::new();
 
-    for (id, pos) in needs_remesh {
+    for (id, pos) in candidates {
         let Some(&chunk_id) = chunk_positions.get(&(pos.x, pos.y, pos.z)) else {
             continue;
         };
@@ -270,44 +347,14 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             continue;
         };
 
-        let clone_neighbour = |offset: Vector3<i32>| -> Option<Chunk> {
-            let key = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
-            chunk_positions
-                .get(&key)
-                .and_then(|&nid| world.get_object(nid))
-                .and_then(|obj| obj.get_component::<Chunk>().ok().cloned())
-        };
+        let neighbours = gather_neighbours(pos, &chunk_positions, world);
 
-        let neighbours = ChunkNeighbours {
-            px: clone_neighbour(Vector3::new(1, 0, 0)),
-            nx: clone_neighbour(Vector3::new(-1, 0, 0)),
-            py: clone_neighbour(Vector3::new(0, 1, 0)),
-            ny: clone_neighbour(Vector3::new(0, -1, 0)),
-            pz: clone_neighbour(Vector3::new(0, 0, 1)),
-            nz: clone_neighbour(Vector3::new(0, 0, -1)),
-        };
-
-        let neighbour_ready = |offset: Vector3<i32>, neighbour: &Option<Chunk>| -> bool {
-            let neighbour_pos = pos + offset;
-            let dx = (neighbour_pos.x - player_pos.x).abs();
-            let dy = (neighbour_pos.y - player_pos.y).abs();
-            let dz = (neighbour_pos.z - player_pos.z).abs();
-            let in_radius = dx <= load_radius && dy <= v_load_radius && dz <= load_radius;
-            !in_radius || neighbour.is_some()
-        };
-
-        let all_neighbours_ready = neighbour_ready(Vector3::new(1, 0, 0), &neighbours.px)
-            && neighbour_ready(Vector3::new(-1, 0, 0), &neighbours.nx)
-            && neighbour_ready(Vector3::new(0, 1, 0), &neighbours.py)
-            && neighbour_ready(Vector3::new(0, -1, 0), &neighbours.ny)
-            && neighbour_ready(Vector3::new(0, 0, 1), &neighbours.pz)
-            && neighbour_ready(Vector3::new(0, 0, -1), &neighbours.nz);
-
-        if !all_neighbours_ready {
-            // leave NeedsRemeshing tag on, will retry next frame
+        // leave NeedsRemeshing on and retry next frame if neighbours aren't ready
+        if !all_neighbours_ready(pos, &neighbours, player_pos, load_radius, v_load_radius) {
             continue;
         }
 
+        // no visible faces means nothing to mesh
         if !chunk.has_visible_faces(&neighbours) {
             if let Some(obj) = world.get_object_mut(id) {
                 obj.remove_tag::<NeedsRemeshing>();
@@ -318,16 +365,17 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
         ready.push(Job {
             id,
+            pos,
             chunk,
             neighbours,
-            pos,
         });
+
+        if ready.len() == MAX_MESH_JOBS_PER_FRAME {
+            break;
+        }
     }
 
-    // only truncate chunks that are actually ready, not-ready ones keep their tag
-    ready.truncate(MAX_MESH_JOBS_PER_FRAME);
-
-    // remove tags only for chunks we're actually going to mesh
+    // phase 2: remove tags and submit jobs for the ready set
     for job in &ready {
         if let Some(obj) = world.get_object_mut(job.id) {
             obj.remove_tag::<NeedsRemeshing>();
@@ -349,6 +397,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         let job: MeshJobFn = Box::new(move || {
             let (opaque_vertices, opaque_indices, water_vertices, water_indices) =
                 generate_mesh(&chunk, &registry, &neighbours, &biome_registry);
+
             let _ = sender.send(GeneratedMeshData {
                 position: pos,
                 opaque_vertices,
@@ -364,22 +413,108 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     Ok(())
 }
 
+// queues a buffer pair for deferred cleanup at end of frame
+fn defer_destroy(
+    graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
+    buffer: vk::Buffer,
+    memory: vk::DeviceMemory,
+) {
+    if buffer != vk::Buffer::null() {
+        graveyard.push((buffer, memory));
+    }
+}
+
+// destroys a buffer memory immediately
+fn destroy_now(device: &ash::Device, buffer: vk::Buffer, memory: vk::DeviceMemory) {
+    unsafe {
+        if buffer != vk::Buffer::null() {
+            device.destroy_buffer(buffer, None);
+            device.free_memory(memory, None);
+        }
+    }
+}
+
+fn upload_opaque_mesh(
+    object: &mut Object,
+    ctx: &VulkanRenderingContext,
+    command_pool: CommandPool,
+    vertices: &[VoxelVertex],
+    indices: &[u32],
+    graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
+) -> Result<()> {
+    // queue old buffers for deferred cleanup
+    if let Ok(old) = object.get_component::<VoxelChunkMesh>() {
+        defer_destroy(graveyard, old.vertex_buffer, old.vertex_buffer_memory);
+        defer_destroy(graveyard, old.index_buffer, old.index_buffer_memory);
+    }
+
+    let (vb, vbm) = ctx.create_vertex_buffer(vertices, command_pool)?;
+    let (ib, ibm) = ctx.create_index_buffer(indices, command_pool)?;
+
+    if !object.has_component::<VoxelChunkMesh>() {
+        object.add_component(VoxelChunkMesh::default());
+    }
+
+    let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
+    mesh.vertex_buffer = vb;
+    mesh.vertex_buffer_memory = vbm;
+    mesh.index_buffer = ib;
+    mesh.index_buffer_memory = ibm;
+    mesh.index_count = indices.len() as u32;
+
+    Ok(())
+}
+
+fn upload_water_mesh(
+    object: &mut Object,
+    ctx: &VulkanRenderingContext,
+    command_pool: CommandPool,
+    vertices: &[VoxelVertex],
+    indices: &[u32],
+) -> Result<()> {
+    // water buffers are destroyed immediately rather than deferred
+    if let Ok(old) = object.get_component::<WaterMesh>() {
+        destroy_now(&ctx.device, old.vertex_buffer, old.vertex_buffer_memory);
+        destroy_now(&ctx.device, old.index_buffer, old.index_buffer_memory);
+    }
+
+    let (vb, vbm) = ctx.create_vertex_buffer(vertices, command_pool)?;
+    let (ib, ibm) = ctx.create_index_buffer(indices, command_pool)?;
+
+    if !object.has_component::<WaterMesh>() {
+        object.add_component(WaterMesh::default());
+    }
+
+    let mesh = object.get_component_mut::<WaterMesh>().unwrap();
+    mesh.vertex_buffer = vb;
+    mesh.vertex_buffer_memory = vbm;
+    mesh.index_buffer = ib;
+    mesh.index_buffer_memory = ibm;
+    mesh.index_count = indices.len() as u32;
+
+    Ok(())
+}
+
 pub fn receive_meshes(
     world: &mut World,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     buffer_graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
 ) -> Result<()> {
-    // collect finished mesh jobs
     let completed: Vec<GeneratedMeshData> = {
         let queue = world.get_resource::<ChunkGenQueue>()?;
-        queue.mesh_receiver.try_iter().take(2).collect()
+        queue
+            .mesh_receiver
+            .try_iter()
+            .take(MAX_MESH_RESULTS_PER_FRAME)
+            .collect()
     };
 
     if completed.is_empty() {
         return Ok(());
     }
 
+    // build position -> id map once for all results
     let pos_to_id: HashMap<Vector3<i32>, ObjectId> = world
         .get_objects_with_component_with_ids::<VoxelTransform>()
         .iter()
@@ -390,6 +525,7 @@ pub fn receive_meshes(
         .collect();
 
     for mesh_data in completed {
+        // chunk may have been unloaded while the job was in flight
         let Some(&id) = pos_to_id.get(&mesh_data.position) else {
             continue;
         };
@@ -397,60 +533,33 @@ pub fn receive_meshes(
             continue;
         };
 
-        if mesh_data.opaque_vertices.is_empty() && mesh_data.water_vertices.is_empty() {
+        let has_opaque =
+            !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty();
+        let has_water = !mesh_data.water_vertices.is_empty() && !mesh_data.water_indices.is_empty();
+
+        if !has_opaque && !has_water {
             continue;
         }
 
-        // upload opaque mesh
-        if !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty() {
-            // queue old buffers for cleanup
-            if let Ok(mesh) = object.get_component::<VoxelChunkMesh>() {
-                if mesh.vertex_buffer != vk::Buffer::null() {
-                    buffer_graveyard.push((mesh.vertex_buffer, mesh.vertex_buffer_memory));
-                    buffer_graveyard.push((mesh.index_buffer, mesh.index_buffer_memory));
-                }
-            }
-
-            let (vb, vbm) = ctx.create_vertex_buffer(&mesh_data.opaque_vertices, command_pool)?;
-            let (ib, ibm) = ctx.create_index_buffer(&mesh_data.opaque_indices, command_pool)?;
-
-            if !object.has_component::<VoxelChunkMesh>() {
-                object.add_component(VoxelChunkMesh::default());
-            }
-            let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
-            mesh.vertex_buffer = vb;
-            mesh.vertex_buffer_memory = vbm;
-            mesh.index_buffer = ib;
-            mesh.index_buffer_memory = ibm;
-            mesh.index_count = mesh_data.opaque_indices.len() as u32;
+        if has_opaque {
+            upload_opaque_mesh(
+                object,
+                ctx,
+                command_pool,
+                &mesh_data.opaque_vertices,
+                &mesh_data.opaque_indices,
+                buffer_graveyard,
+            )?;
         }
 
-        // upload water mesh
-        if !mesh_data.water_vertices.is_empty() && !mesh_data.water_indices.is_empty() {
-            // water buffers are destroyed immediately rather than deferred
-            if let Ok(mesh) = object.get_component::<WaterMesh>() {
-                if mesh.vertex_buffer != vk::Buffer::null() {
-                    unsafe {
-                        ctx.device.destroy_buffer(mesh.vertex_buffer, None);
-                        ctx.device.free_memory(mesh.vertex_buffer_memory, None);
-                        ctx.device.destroy_buffer(mesh.index_buffer, None);
-                        ctx.device.free_memory(mesh.index_buffer_memory, None);
-                    }
-                }
-            }
-
-            let (vb, vbm) = ctx.create_vertex_buffer(&mesh_data.water_vertices, command_pool)?;
-            let (ib, ibm) = ctx.create_index_buffer(&mesh_data.water_indices, command_pool)?;
-
-            if !object.has_component::<WaterMesh>() {
-                object.add_component(WaterMesh::default());
-            }
-            let mesh = object.get_component_mut::<WaterMesh>().unwrap();
-            mesh.vertex_buffer = vb;
-            mesh.vertex_buffer_memory = vbm;
-            mesh.index_buffer = ib;
-            mesh.index_buffer_memory = ibm;
-            mesh.index_count = mesh_data.water_indices.len() as u32;
+        if has_water {
+            upload_water_mesh(
+                object,
+                ctx,
+                command_pool,
+                &mesh_data.water_vertices,
+                &mesh_data.water_indices,
+            )?;
         }
     }
 
