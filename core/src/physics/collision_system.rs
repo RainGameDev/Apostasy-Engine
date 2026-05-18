@@ -121,7 +121,9 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
                     let overlap_z = (cur_max.z.min(vox_max.z) - cur_min.z.max(vox_min.z)).max(0.0);
 
                     // detect if theres no overlap
-                    if overlap_x <= 0.0 || overlap_y <= 0.01 || overlap_z <= 0.0 {
+                    // FIX: setting the overlap_y to be <= 0.01 fixes an issue where you get stuck
+                    // on voxels, but it also breaks ground detection
+                    if overlap_x <= 0.0 || overlap_y <= 0.00 || overlap_z <= 0.0 {
                         continue;
                     }
 

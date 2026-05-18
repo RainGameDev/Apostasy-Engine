@@ -68,6 +68,8 @@ pub fn hud(world: &mut World) -> Result<()> {
 
     let registry = world.get_resource::<BiomeRegistry>()?;
     let seed = world.get_resource::<ChunkLoader>()?.seed;
+    let v_load_radius = world.get_resource::<ChunkLoader>()?.v_load_radius;
+    let load_radius = world.get_resource::<ChunkLoader>()?.load_radius;
 
     let chunks = world.get_objects_with_component::<Chunk>();
     let chunk_count = chunks.len();
@@ -123,6 +125,8 @@ pub fn hud(world: &mut World) -> Result<()> {
             ui.label(format!("Chunks: {}", chunk_count));
             ui.label(format!("Biome: {}", biome));
             ui.label(format!("Seed: {}", seed));
+            ui.label(format!("Vertical Render Distance: {}", v_load_radius));
+            ui.label(format!("Render Distance: {}", load_radius));
             ui.separator();
             ui.label(format!("Player position: {:?}", transform));
             ui.label(format!(

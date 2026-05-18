@@ -1,16 +1,17 @@
 use apostasy_core::{
     anyhow::Result,
     egui,
-    objects::{ tags::Player, world::World},
+    objects::{tags::Player, world::World},
     start,
     ui::ui_context::EguiContext,
     update,
-    voxels::chunk::{ Chunk},
+    voxels::chunk::Chunk,
 };
 
 use crate::{
     entities::loading_gate::LoadingGate,
     states::{HasInitGeneration, IsPaused},
+    ui::settings_menu::IsSettingsOpen,
 };
 #[update]
 pub fn hud(world: &mut World) -> Result<()> {
@@ -76,7 +77,14 @@ pub fn hud(world: &mut World) -> Result<()> {
                 }
 
                 ui.add_space(6.0);
-                let _ = ui.button("Settings");
+
+                if ui.button("Settings").clicked() {
+                    if world.has_resource::<IsSettingsOpen>() {
+                        world.remove_resource::<IsSettingsOpen>();
+                    } else {
+                        world.insert_resource(IsSettingsOpen);
+                    }
+                }
 
                 ui.add_space(6.0);
                 if ui.button("Quit Game").clicked() {

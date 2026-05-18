@@ -222,7 +222,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .unwrap()
         .get_component_mut::<Transform>()
         .unwrap()
-        .global_position = new_pos;
+        .local_position = new_pos;
 
     if to_break {
         voxel_raycast_system(world, Some(0), 4.0)?;

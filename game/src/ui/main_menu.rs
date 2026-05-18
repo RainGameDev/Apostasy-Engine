@@ -12,6 +12,7 @@ use apostasy_macros::Resource;
 
 use crate::{
     states::{GetNewSeed, HasInitGeneration, IsPaused},
+    ui::settings_menu::IsSettingsOpen,
     world::chunk_loader::ChunkLoader,
 };
 
@@ -152,7 +153,14 @@ pub fn hud(world: &mut World) -> Result<()> {
                 }
 
                 ui.add_space(6.0);
-                let _ = ui.button("Settings");
+
+                if ui.button("Settings").clicked() {
+                    if world.has_resource::<IsSettingsOpen>() {
+                        world.remove_resource::<IsSettingsOpen>();
+                    } else {
+                        world.insert_resource(IsSettingsOpen);
+                    }
+                }
 
                 ui.add_space(6.0);
                 if ui.button("Quit Game").clicked() {
