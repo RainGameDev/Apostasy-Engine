@@ -8,6 +8,7 @@ pub trait HasPriority {
 }
 
 /// A system that happens every frame
+#[derive(Clone, Copy)]
 pub struct UpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
@@ -21,6 +22,7 @@ impl HasPriority for UpdateSystem {
 }
 
 /// A system that happens once at the start of the application
+#[derive(Clone, Copy)]
 pub struct StartSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
@@ -28,7 +30,14 @@ pub struct StartSystem {
 }
 inventory::collect!(StartSystem);
 
+impl HasPriority for StartSystem {
+    fn priority(&self) -> u32 {
+        self.priority
+    }
+}
+
 /// A system that happens x amount of times per second
+#[derive(Clone, Copy)]
 pub struct FixedUpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World, delta: f32) -> Result<()>,
@@ -56,6 +65,7 @@ pub struct FixedUpdateTimer {
 }
 
 /// A system that happens at the end over every frame
+#[derive(Clone, Copy)]
 pub struct LateUpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
@@ -64,6 +74,21 @@ pub struct LateUpdateSystem {
 inventory::collect!(LateUpdateSystem);
 
 impl HasPriority for LateUpdateSystem {
+    fn priority(&self) -> u32 {
+        self.priority
+    }
+}
+
+/// A system that happens before each frame is rendererd
+#[derive(Clone, Copy)]
+pub struct PreRenderSystem {
+    pub name: &'static str,
+    pub func: fn(&mut World) -> Result<()>,
+    pub priority: u32,
+}
+inventory::collect!(PreRenderSystem);
+
+impl HasPriority for PreRenderSystem {
     fn priority(&self) -> u32 {
         self.priority
     }

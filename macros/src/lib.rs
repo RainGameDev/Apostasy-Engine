@@ -171,6 +171,30 @@ pub fn start(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Registers a preupdate system, pre render systems run before each frame
+/// NOTE: systems with a higher priority run first
+/// NOTE: priority is non negative
+#[proc_macro_attribute]
+pub fn prerender(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as SystemArgs);
+    let input_fn = parse_macro_input!(item as ItemFn);
+    let fn_name = &input_fn.sig.ident;
+
+    let priority = args.priority.unwrap_or(0);
+
+    let expanded = quote! {
+        #input_fn
+        inventory::submit! {
+            apostasy_core::objects::systems::PreRenderSystem{
+                name: stringify!(#fn_name),
+                func: #fn_name,
+                priority: #priority,
+            }
+        }
+    };
+    TokenStream::from(expanded)
+}
+
 /// Registers an update system, Update systems run each frame
 /// NOTE: systems with a higher priority run first
 /// NOTE: priority is non negative

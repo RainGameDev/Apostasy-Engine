@@ -189,8 +189,8 @@ impl ChunkNeighbours {
     }
 }
 
-const MAX_MESH_JOBS_PER_FRAME: usize = 6;
-const MAX_MESH_RESULTS_PER_FRAME: usize = 2;
+const MAX_MESH_JOBS_PER_FRAME: usize = 32;
+const MAX_MESH_RESULTS_PER_FRAME: usize = 16;
 
 // builds a flat position -> id lookup for every loaded chunk
 fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), ObjectId> {

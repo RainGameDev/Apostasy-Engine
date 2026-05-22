@@ -11,7 +11,7 @@ use crate::{
         scene::{ObjectId, Scene},
         systems::{
             DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasPriority,
-            LateUpdateSystem, StartSystem, UpdateSystem,
+            LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
         },
         tag::Tag,
     },
@@ -25,9 +25,11 @@ pub struct World {
     pub(crate) resources: ResourceMap,
     pub(crate) chunk_position_index: HashMap<(i32, i32, i32), ObjectId>,
 
-    update_systems: Vec<&'static UpdateSystem>,
-    fixed_update_systems: Vec<&'static FixedUpdateSystem>,
-    late_update_systems: Vec<&'static LateUpdateSystem>,
+    start_systems: Vec<StartSystem>,
+    update_systems: Vec<UpdateSystem>,
+    fixed_update_systems: Vec<FixedUpdateSystem>,
+    late_update_systems: Vec<LateUpdateSystem>,
+    prerender_systems: Vec<PreRenderSystem>,
 }
 
 #[allow(unused)]
@@ -36,9 +38,11 @@ impl World {
 
     /// Collects and caches all systems
     pub fn build_systems(&mut self) {
+        self.start_systems = Self::collect_sorted(inventory::iter::<StartSystem>());
         self.update_systems = Self::collect_sorted(inventory::iter::<UpdateSystem>());
         self.fixed_update_systems = Self::collect_sorted(inventory::iter::<FixedUpdateSystem>());
         self.late_update_systems = Self::collect_sorted(inventory::iter::<LateUpdateSystem>());
+        self.prerender_systems = Self::collect_sorted(inventory::iter::<PreRenderSystem>());
         self.insert_resource(FixedUpdateTimer {
             accumulator: 0.0,
             fixed_timestep: 1.0 / 20.0,
@@ -48,20 +52,108 @@ impl World {
     }
 
     /// Collects and sorts the Iterator
-    fn collect_sorted<T: HasPriority>(iter: impl Iterator<Item = &'static T>) -> Vec<&'static T> {
-        let mut systems: Vec<_> = iter.collect();
+    fn collect_sorted<T: HasPriority + Copy + 'static>(
+        iter: impl Iterator<Item = &'static T>,
+    ) -> Vec<T> {
+        let mut systems: Vec<T> = iter.copied().collect();
         systems.sort_by_key(|s| Reverse(s.priority()));
         systems
     }
+
+    pub fn register_update_system(
+        &mut self,
+        func: fn(&mut World) -> Result<()>,
+        priority: u32,
+    ) -> &mut Self {
+        self.update_systems.push(UpdateSystem {
+            name: "",
+            func,
+            priority,
+        });
+        self.update_systems.sort_by_key(|s| Reverse(s.priority));
+        self
+    }
+
+    pub fn register_fixed_update_system(
+        &mut self,
+        func: fn(&mut World, f32) -> Result<()>,
+        priority: u32,
+    ) -> &mut Self {
+        self.fixed_update_systems.push(FixedUpdateSystem {
+            name: "",
+            func,
+            priority,
+        });
+        self.fixed_update_systems
+            .sort_by_key(|s| Reverse(s.priority));
+
+        self
+    }
+
+    pub fn register_late_update_system(
+        &mut self,
+
+        func: fn(&mut World) -> Result<()>,
+        priority: u32,
+    ) -> &mut Self {
+        self.late_update_systems.push(LateUpdateSystem {
+            name: "",
+            func,
+            priority,
+        });
+        self.late_update_systems
+            .sort_by_key(|s| Reverse(s.priority));
+
+        self
+    }
+
+    pub fn register_prerender_system(
+        &mut self,
+
+        func: fn(&mut World) -> Result<()>,
+        priority: u32,
+    ) -> &mut Self {
+        self.prerender_systems.push(PreRenderSystem {
+            name: "",
+            func,
+            priority,
+        });
+        self.prerender_systems.sort_by_key(|s| Reverse(s.priority));
+
+        self
+    }
+
+    pub fn register_start_system(
+        &mut self,
+
+        func: fn(&mut World) -> Result<()>,
+        priority: u32,
+    ) -> &mut Self {
+        self.start_systems.push(StartSystem {
+            name: "",
+            func,
+            priority,
+        });
+        self.start_systems.sort_by_key(|s| Reverse(s.priority));
+
+        self
+    }
+
     /// Runs all start systems
     pub(crate) fn start(&mut self) {
-        let mut systems = inventory::iter::<StartSystem>().collect::<Vec<_>>();
-
-        systems.sort_by_key(|s| Reverse(s.priority));
-        systems.reverse();
-        for system in systems.iter_mut() {
+        let systems = std::mem::take(&mut self.start_systems);
+        for system in &systems {
             (system.func)(self);
         }
+    }
+
+    pub(crate) fn prerender(&mut self) {
+        let systems = std::mem::take(&mut self.prerender_systems);
+        for system in &systems {
+            (system.func)(self).unwrap();
+        }
+
+        self.prerender_systems = systems;
     }
 
     pub(crate) fn update(&mut self) {

@@ -160,7 +160,9 @@ impl Core {
                         return;
                     };
 
-                    let camera = world.get_object_with_tag::<ActiveCamera>().unwrap();
+                    let Ok(camera) = world.get_object_with_tag::<ActiveCamera>() else {
+                        return;
+                    };
                     let camera_transform = camera.get_component::<Transform>().unwrap().clone();
                     let camera_pos = camera_transform.global_position;
                     let view = get_view_matrix(&camera_transform);
@@ -181,17 +183,19 @@ impl Core {
                         .is_empty()
                     {
                         dispatch_remesh_jobs(&mut world).expect("Failed to dispatch remesh jobs");
+
+                        if let Ok(command_pool) = renderer.get_command_pool() {
+                            receive_meshes(
+                                &mut world,
+                                &context,
+                                command_pool,
+                                renderer.get_buffer_graveyard(),
+                            )
+                            .expect("Failed to receive meshes");
+                        }
                     }
 
-                    if let Ok(command_pool) = renderer.get_command_pool() {
-                        receive_meshes(
-                            &mut world,
-                            &context,
-                            command_pool,
-                            renderer.get_buffer_graveyard(),
-                        )
-                        .expect("Failed to receive meshes");
-                    }
+                    world.prerender();
 
                     if let Err(e) = renderer.begin_frame(push_constants.clone()) {
                         log_error!("Failed to begin frame: {}", e);
@@ -371,7 +375,14 @@ impl Core {
     ) {
         let mut world = self.world.lock().unwrap();
         let input_manager = world.get_resource_mut::<InputManager>().unwrap();
-        input_manager.handle_device_event(event.clone());
+
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                input_manager.handle_mouse_motion(delta);
+            }
+
+            _ => (),
+        }
     }
 }
 
@@ -401,8 +412,6 @@ impl ApplicationHandler for Core {
             .context
             .clone();
 
-        let pending = world.get_resource::<PendingAtlas>().unwrap().clone();
-
         let (command_pool, descriptor_pool, descriptor_set_layout, egui_context) = {
             let ri = self.rendering_info.as_ref().unwrap().lock().unwrap();
             let renderer = ri.renderer.as_ref().unwrap();
@@ -414,19 +423,21 @@ impl ApplicationHandler for Core {
             )
         };
 
-        let atlas = upload_atlas(
-            &context,
-            command_pool,
-            descriptor_pool,
-            descriptor_set_layout,
-            &pending.image,
-            pending.tiles,
-        )
-        .expect("Failed to upload voxel atlas");
+        if let Ok(pending) = world.get_resource::<PendingAtlas>() {
+            let atlas = upload_atlas(
+                &context,
+                command_pool,
+                descriptor_pool,
+                descriptor_set_layout,
+                &pending.image,
+                pending.tiles,
+            )
+            .expect("Failed to upload voxel atlas");
+            world.insert_resource(atlas);
+        }
 
         world.insert_resource(EguiContext(egui_context));
         world.insert_resource(context);
-        world.insert_resource(atlas);
 
         world.start();
     }

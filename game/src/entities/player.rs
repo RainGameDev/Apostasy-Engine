@@ -69,6 +69,7 @@ pub fn player_init(world: &mut World) -> Result<()> {
         .add_component(Camera::default())
         .add_tag(ActiveCamera)
         .add_tag(GameCamera);
+
     let player = Object::new()
         .add_component(transform)
         .add_component(Velocity::default())
@@ -117,19 +118,16 @@ pub fn update(world: &mut World) -> Result<()> {
     let player = world.get_object_with_tag::<Player>()?;
 
     // Block movement if player is still loading
-    let has_loading_gate = player.has_tag::<LoadingGate>();
-    if has_loading_gate {
+    if player.has_tag::<LoadingGate>() {
         let player = world.get_object_with_tag_mut::<Player>()?;
         let velocity = player.get_component_mut::<Velocity>()?;
-        velocity.linear_velocity.x = 0.0;
-        velocity.linear_velocity.y = 0.0;
-        velocity.linear_velocity.z = 0.0;
+        velocity.linear_velocity = Vector3::zero();
 
         let player = world.get_object_with_tag_mut::<Player>()?;
         let transform = player.get_component_mut::<Transform>()?;
         transform.local_position.y = 400.0;
-
         transform.local_euler_angles = Vector3::zero();
+
         let camera = world.get_object_with_tag_mut::<GameCamera>()?;
         let transform = camera.get_component_mut::<Transform>()?;
         transform.local_euler_angles = Vector3::new(-90.0, 0.0, 0.0);
@@ -140,8 +138,8 @@ pub fn update(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>()?;
 
     let mouse_delta = inputs.mouse_delta;
-    let direction = inputs.input_vector_2d("Right", "Left", "Backwards", "Forwards");
-    let should_jump = inputs.is_keybind_active("Jump");
+    let direction = inputs.input_vector_2d("Left", "Right", "Backwards", "Forwards");
+    let should_jump = inputs.keybind_active("Jump")?;
 
     let player = world.get_object_with_tag_mut::<Player>()?;
     let player_transform = player.get_component_mut::<Transform>()?;
@@ -168,17 +166,18 @@ pub fn update(world: &mut World) -> Result<()> {
 
     Ok(())
 }
-#[fixed_update]
 
+#[fixed_update]
 pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
     if world.get_resource::<IsPaused>().is_ok() {
         return Ok(());
     }
+
     let inputs = world.get_resource::<InputManager>()?;
     let voxel_registry = world.get_resource::<VoxelRegistry>()?.clone();
     let item_registry = world.get_resource::<ItemRegistry>()?.clone();
-    let to_break = inputs.is_mousebind_active("Break");
-    let to_place = inputs.is_mousebind_active("Place");
+    let to_break = inputs.mousebind_active("Break")?;
+    let to_place = inputs.mousebind_active("Place")?;
     let can_build;
 
     let outline = world
@@ -187,22 +186,23 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         .unwrap()
         .0;
 
-    let new_pos;
-
-    if let Some(hit) = voxel_raycast_camera(world, 4.0) {
-        new_pos = Vector3::new(
+    let new_pos = if let Some(hit) = voxel_raycast_camera(world, 4.0) {
+        Vector3::new(
             hit.voxel_pos.x as f32 + 0.5,
             hit.voxel_pos.y as f32 + 0.5,
             hit.voxel_pos.z as f32 + 0.5,
-        );
+        )
     } else {
-        new_pos = Vector3::new(0.0 + 0.5, -6000.0 + 0.5, 0.0 + 0.5);
-    }
+        Vector3::new(0.5, -5999.5, 0.5)
+    };
 
-    let outline_transform = world
+    world
         .get_object_mut(outline)
         .unwrap()
-        .get_component_mut::<Transform>()?;
+        .get_component_mut::<Transform>()
+        .unwrap()
+        .local_position = new_pos;
+
     {
         let player_id = world
             .get_objects_with_tag_with_ids::<Player>()
@@ -213,16 +213,8 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         let player = world.get_object_mut(player_id).unwrap();
         let player_data = player.get_component_mut::<PlayerData>()?;
         player_data.current_build_ticks += 1;
-
         can_build = player_data.current_build_ticks >= player_data.build_delay;
     }
-
-    world
-        .get_object_mut(outline)
-        .unwrap()
-        .get_component_mut::<Transform>()
-        .unwrap()
-        .local_position = new_pos;
 
     if to_break {
         voxel_raycast_system(world, Some(0), 4.0)?;
@@ -243,7 +235,6 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
                 if item.has_component::<Voxel>() {
                     let voxel = item.get_component::<Voxel>().unwrap();
                     let voxel_key = voxel.name.clone();
-
                     if let Some(voxel_id) = voxel_registry.name_to_id.get(&voxel_key) {
                         Some((inventory.selected_item as u64, *voxel_id as u64))
                     } else {
@@ -269,14 +260,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
     if let Some((selected_index, voxel_id)) = place_action
         && let Some(raycast) = voxel_raycast_camera(world, 4.0)
     {
-        let player_id = world
-            .get_objects_with_tag_with_ids::<Player>()
-            .first()
-            .unwrap()
-            .0;
-
         let player = world.get_object(player_id).unwrap();
-
         let transform = player.get_component::<Transform>()?;
         let collider = player.get_component::<Collider>()?;
 
@@ -290,6 +274,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
             (transform.global_position.y + collider.half_extents.y).floor() as i32,
             (transform.global_position.z + collider.half_extents.z).floor() as i32,
         );
+
         let face_offset = match raycast.face {
             0 => (1, 0, 0),  // +X
             1 => (-1, 0, 0), // -X
@@ -306,30 +291,22 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
             raycast.voxel_pos.z + face_offset.2,
         );
 
-        if place_pos.x >= min.x
+        // Don't place a block inside the player's collider volume
+        let inside_player = place_pos.x >= min.x
             && place_pos.x <= max.x
             && place_pos.y >= min.y
             && place_pos.y <= max.y
             && place_pos.z >= min.z
-            && place_pos.z <= max.z
-        {
-            return Ok(());
-        }
+            && place_pos.z <= max.z;
 
-        if place_pos.x >= min.x
-            && place_pos.x <= max.x
-            && place_pos.y >= min.y
-            && place_pos.y <= max.y
-            && place_pos.z >= min.z
-            && place_pos.z <= max.z
-        {
+        if inside_player {
             return Ok(());
         }
 
         voxel_raycast_system(world, Some(voxel_id as u16), 4.0)?;
+
         let player = world.get_object_mut(player_id).unwrap();
         let inventory = player.get_component_mut::<Container>()?;
-
         inventory.remove_item_index(selected_index as usize);
 
         let player = world.get_object_mut(player_id).unwrap();

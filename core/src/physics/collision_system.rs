@@ -25,6 +25,12 @@ pub struct ColliderData {
 
 #[update]
 pub fn voxel_collision_system(world: &mut World) -> Result<()> {
+    if !world.has_resource::<VoxelRegistry>() {
+        return Ok(());
+    }
+
+    let registry = world.get_resource::<VoxelRegistry>()?.clone();
+
     let delta = world.get_resource::<DeltaTime>()?.0;
 
     let collider_data: Vec<ColliderData> = world
@@ -46,8 +52,6 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
             })
         })
         .collect();
-
-    let registry = world.get_resource::<VoxelRegistry>()?.clone();
 
     for data in collider_data {
         let obj = world
