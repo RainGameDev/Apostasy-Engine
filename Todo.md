@@ -1,8 +1,8 @@
 # Engine
 
-- [ ] World
-  - [ ] Ability to access renderer in systems
-  - [ ] Manual system registration
+- [-] World
+  - [-] Ability to access renderer in systems
+  - [x] Manual system registration
 
 - [ ] Rendering
   - [ ] Render settings
@@ -16,8 +16,8 @@
     - [ ] Fog
   - [ ] Particle system
 
-- [ ] Systems
-  - [ ] Prerender systems
+- [-] Systems
+  - [x] Prerender systems
   - [ ] Render systems
 
 # Editor

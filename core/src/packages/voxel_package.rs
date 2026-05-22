@@ -14,6 +14,7 @@ use crate::{
     },
     log,
     objects::world::World,
+    physics::collision_system::voxel_collision_system,
     voxels::{
         biome::BiomeRegistry,
         chunk::VoxelBreakProgress,
@@ -92,4 +93,6 @@ pub(crate) fn add_voxel_package(world: &mut World) {
         image: atlas_image,
         tiles: atlas_tiles,
     });
+
+    world.register_update_system(voxel_collision_system, 0);
 }

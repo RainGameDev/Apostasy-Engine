@@ -1,5 +1,4 @@
 use anyhow::Result;
-use apostasy_macros::update;
 use cgmath::{Vector3, Zero};
 
 use crate::{
@@ -23,7 +22,6 @@ pub struct ColliderData {
     half_extents: Vector3<f32>,
 }
 
-#[update]
 pub fn voxel_collision_system(world: &mut World) -> Result<()> {
     if !world.has_resource::<VoxelRegistry>() {
         return Ok(());
@@ -57,7 +55,7 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
         let obj = world
             .get_object(data.id)
             .and_then(|o| o.get_component::<Velocity>().ok());
-        if obj.unwrap().process == false {
+        if !obj.unwrap().process {
             break;
         }
 
@@ -69,11 +67,11 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
 
         let current_pos = data.position + velocity_snapshot * delta;
 
-        if let Some(obj) = world.get_object_mut(data.id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                t.local_position = current_pos;
-                t.global_position = current_pos;
-            }
+        if let Some(obj) = world.get_object_mut(data.id)
+            && let Ok(t) = obj.get_component_mut::<Transform>()
+        {
+            t.local_position = current_pos;
+            t.global_position = current_pos;
         }
 
         let min = current_pos - data.half_extents;
@@ -181,13 +179,13 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
                     if voxel_id == 0 {
                         continue;
                     }
-                    if let Ok(def) = registry.get_def(voxel_id) {
-                        if def.has_component::<IsSolid>() {
-                            let vox_top = foot_vox_y as f32 + 1.0;
-                            if (feet_y - vox_top).abs() < 0.1 {
-                                // if the feet are on the ground then the entity is grounded
-                                grounded = true;
-                            }
+                    if let Ok(def) = registry.get_def(voxel_id)
+                        && def.has_component::<IsSolid>()
+                    {
+                        let vox_top = foot_vox_y as f32 + 1.0;
+                        if (feet_y - vox_top).abs() < 0.1 {
+                            // if the feet are on the ground then the entity is grounded
+                            grounded = true;
                         }
                     }
                 }
@@ -196,11 +194,11 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
 
         // resolve the colisions pushing the entity out of the ground/walls
         if let Some(obj) = world.get_object_mut(data.id) {
-            if total_correction != Vector3::zero() {
-                if let Ok(t) = obj.get_component_mut::<Transform>() {
-                    t.local_position += total_correction;
-                    t.global_position += total_correction;
-                }
+            if total_correction != Vector3::zero()
+                && let Ok(t) = obj.get_component_mut::<Transform>()
+            {
+                t.local_position += total_correction;
+                t.global_position += total_correction;
             }
             if let Ok(v) = obj.get_component_mut::<Velocity>() {
                 v.is_grounded = grounded;
