@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 
-use crate::assets::shader_loader::load_shader_bytes;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, VoxelPushConstants,
 };
 use crate::rendering::vulkan::image_layout::ImageLayouts;
+use crate::rendering::vulkan::pipeline_manager::PipelineManager;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::rendering::vulkan::{frame::VulkanFrame, swapchain::VulkanSwapchain};
 use crate::rendering::{RenderingAPI, RenderingInfo};
@@ -24,6 +24,7 @@ use winit::window::Window;
 pub mod device;
 pub mod frame;
 pub mod image_layout;
+pub mod pipeline_manager;
 pub mod queue_family;
 pub mod rendering_context;
 pub mod surface;
@@ -43,7 +44,6 @@ pub struct Ubo {
     pub memory: vk::DeviceMemory,
 }
 
-#[derive(Clone)]
 pub struct VulkanRenderer {
     pub current_image_index: u32,
     pub in_flight_frames_count: usize,
@@ -68,15 +68,132 @@ pub struct VulkanRenderer {
     pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
 
     pub ubo: Ubo,
+    pub pipeline_manager: PipelineManager,
+    pub default_vertex_shader: String,
+    pub default_fragment_shader: String,
+    pub voxel_vertex_shader: String,
+    pub voxel_fragment_shader: String,
+    pub water_vertex_shader: String,
+    pub water_fragment_shader: String,
     context: Arc<VulkanRenderingContext>,
 }
 
-fn load_shader_module(
-    context: &Arc<VulkanRenderingContext>,
-    path: &str,
-) -> Result<ash::vk::ShaderModule> {
-    let code = load_shader_bytes(path)?;
-    Ok(context.create_shader_module(&code)?)
+impl VulkanRenderer {
+    fn load_shader_module(&self, path: &str) -> Result<ash::vk::ShaderModule> {
+        self.pipeline_manager
+            .create_shader_module(&self.context, path)
+    }
+
+    fn rebuild_pipelines(&mut self) -> Result<()> {
+        let vertex_shader = self.load_shader_module(&self.default_vertex_shader)?;
+        let fragment_shader = self.load_shader_module(&self.default_fragment_shader)?;
+        let voxel_vertex_shader = self.load_shader_module(&self.voxel_vertex_shader)?;
+        let voxel_fragment_shader = self.load_shader_module(&self.voxel_fragment_shader)?;
+        let water_vertex_shader = self.load_shader_module(&self.water_vertex_shader)?;
+        let water_fragment_shader = self.load_shader_module(&self.water_fragment_shader)?;
+
+        unsafe {
+            let pipeline = self.context.create_graphics_pipeline(
+                vertex_shader,
+                fragment_shader,
+                self.swapchain.extent,
+                self.swapchain.format,
+                self.swapchain.depth_format,
+                self.pipeline_layout,
+                Default::default(),
+            )?;
+
+            let wireframe_pipeline = self.context.create_wireframe_pipeline(
+                vertex_shader,
+                fragment_shader,
+                self.swapchain.extent,
+                self.swapchain.format,
+                self.swapchain.depth_format,
+                self.pipeline_layout,
+                Default::default(),
+            )?;
+
+            let voxel_pipeline = self.context.create_voxel_graphics_pipeline(
+                voxel_vertex_shader,
+                voxel_fragment_shader,
+                self.swapchain.extent,
+                self.swapchain.format,
+                self.swapchain.depth_format,
+                self.voxel_pipeline_layout,
+                Default::default(),
+            )?;
+
+            let voxel_wireframe_pipeline = self.context.create_voxel_wireframe_pipeline(
+                voxel_vertex_shader,
+                voxel_fragment_shader,
+                self.swapchain.extent,
+                self.swapchain.format,
+                self.swapchain.depth_format,
+                self.voxel_pipeline_layout,
+                Default::default(),
+            )?;
+
+            let water_pipeline = self.context.create_water_graphics_pipeline(
+                water_vertex_shader,
+                water_fragment_shader,
+                self.swapchain.extent,
+                self.swapchain.format,
+                self.swapchain.depth_format,
+                self.water_pipeline_layout,
+                Default::default(),
+            )?;
+
+            self.context
+                .device
+                .destroy_shader_module(vertex_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(voxel_vertex_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(fragment_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(voxel_fragment_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(water_vertex_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(water_fragment_shader, None);
+
+            self.context.device.destroy_pipeline(self.pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.wireframe_pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.voxel_pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.voxel_wireframe_pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.water_pipeline, None);
+
+            self.pipeline = pipeline;
+            self.wireframe_pipeline = wireframe_pipeline;
+            self.voxel_pipeline = voxel_pipeline;
+            self.voxel_wireframe_pipeline = voxel_wireframe_pipeline;
+            self.water_pipeline = water_pipeline;
+        }
+
+        Ok(())
+    }
+
+    pub fn reload_shader(&mut self, shader_name: &str) -> Result<bool> {
+        if self.pipeline_manager.reload_shader(shader_name)? {
+            self.rebuild_pipelines()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 impl RenderingAPI for VulkanRenderer {
@@ -88,18 +205,29 @@ impl RenderingAPI for VulkanRenderer {
         )?;
         swapchain.resize()?;
 
-        let vertex_shader = load_shader_module(
+        let pipeline_manager = PipelineManager::new();
+
+        let default_vertex_shader = rendering_info.settings.default_vertex_shader.clone();
+        let default_fragment_shader = rendering_info.settings.default_fragment_shader.clone();
+        let voxel_vertex_shader = "voxel.vert".to_string();
+        let voxel_fragment_shader = "voxel.frag".to_string();
+        let water_vertex_shader = "water.vert".to_string();
+        let water_fragment_shader = "water.frag".to_string();
+
+        let vertex_shader = pipeline_manager.create_shader_module(
             &rendering_info.context.clone().into(),
-            &rendering_info.settings.default_vertex_shader,
+            &default_vertex_shader,
         )?;
-        let fragment_shader = load_shader_module(
+        let fragment_shader = pipeline_manager.create_shader_module(
             &rendering_info.context.clone().into(),
-            &rendering_info.settings.default_fragment_shader,
+            &default_fragment_shader,
         )?;
-        let voxel_vertex_shader =
-            load_shader_module(&rendering_info.context.clone().into(), "voxel.vert")?;
-        let voxel_fragment_shader =
-            load_shader_module(&rendering_info.context.clone().into(), "voxel.frag")?;
+        let voxel_vertex_shader_module = pipeline_manager
+            .create_shader_module(&rendering_info.context.clone().into(), &voxel_vertex_shader)?;
+        let voxel_fragment_shader_module = pipeline_manager.create_shader_module(
+            &rendering_info.context.clone().into(),
+            &voxel_fragment_shader,
+        )?;
 
         unsafe {
             let context = rendering_info.context.clone();
@@ -164,8 +292,8 @@ impl RenderingAPI for VulkanRenderer {
             )?;
 
             let voxel_pipeline = context.create_voxel_graphics_pipeline(
-                voxel_vertex_shader,
-                voxel_fragment_shader,
+                voxel_vertex_shader_module,
+                voxel_fragment_shader_module,
                 swapchain.extent,
                 swapchain.format,
                 swapchain.depth_format,
@@ -174,8 +302,8 @@ impl RenderingAPI for VulkanRenderer {
             )?;
 
             let voxel_wireframe_pipeline = context.create_voxel_wireframe_pipeline(
-                voxel_vertex_shader,
-                voxel_fragment_shader,
+                voxel_vertex_shader_module,
+                voxel_fragment_shader_module,
                 swapchain.extent,
                 swapchain.format,
                 swapchain.depth_format,
@@ -183,10 +311,14 @@ impl RenderingAPI for VulkanRenderer {
                 Default::default(),
             )?;
 
-            let water_vertex_shader =
-                load_shader_module(&rendering_info.context.clone().into(), "water.vert")?;
-            let water_fragment_shader =
-                load_shader_module(&rendering_info.context.clone().into(), "water.frag")?;
+            let water_vertex_shader_module = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                &water_vertex_shader,
+            )?;
+            let water_fragment_shader_module = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                &water_fragment_shader,
+            )?;
 
             let water_pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default()
@@ -199,8 +331,8 @@ impl RenderingAPI for VulkanRenderer {
             )?;
 
             let water_pipeline = context.create_water_graphics_pipeline(
-                water_vertex_shader,
-                water_fragment_shader,
+                water_vertex_shader_module,
+                water_fragment_shader_module,
                 swapchain.extent,
                 swapchain.format,
                 swapchain.depth_format,
@@ -211,17 +343,17 @@ impl RenderingAPI for VulkanRenderer {
             context.device.destroy_shader_module(vertex_shader, None);
             context
                 .device
-                .destroy_shader_module(voxel_vertex_shader, None);
+                .destroy_shader_module(voxel_vertex_shader_module, None);
             context.device.destroy_shader_module(fragment_shader, None);
             context
                 .device
-                .destroy_shader_module(voxel_fragment_shader, None);
+                .destroy_shader_module(voxel_fragment_shader_module, None);
             context
                 .device
-                .destroy_shader_module(water_vertex_shader, None);
+                .destroy_shader_module(water_vertex_shader_module, None);
             context
                 .device
-                .destroy_shader_module(water_fragment_shader, None);
+                .destroy_shader_module(water_fragment_shader_module, None);
 
             let command_pool = context.device.create_command_pool(
                 &ash::vk::CommandPoolCreateInfo::default()
@@ -298,6 +430,13 @@ impl RenderingAPI for VulkanRenderer {
 
                 // push_constants: PushConstants::default(),
                 ubo,
+                pipeline_manager,
+                default_vertex_shader,
+                default_fragment_shader,
+                voxel_vertex_shader,
+                voxel_fragment_shader,
+                water_vertex_shader,
+                water_fragment_shader,
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
             };

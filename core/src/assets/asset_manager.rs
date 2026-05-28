@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use crate::assets::gltf::{ModelLoader, ModelRegistry};
 use crate::assets::loader::YamlAssetLoader;
+use crate::assets::shader_registry::ShaderRegistry;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::{log, log_warn};
 
 pub struct AssetManager {
     yaml_loaders: HashMap<String, Box<dyn YamlAssetLoader>>,
     pub model_loader: ModelLoader,
+    pub shader_registry: ShaderRegistry,
 }
 
 impl Default for AssetManager {
@@ -25,6 +27,7 @@ impl AssetManager {
         Self {
             yaml_loaders: HashMap::new(),
             model_loader: ModelLoader::default(),
+            shader_registry: ShaderRegistry::new(),
         }
     }
 
