@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cgmath::{Vector3, Zero};
+use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
     objects::{
@@ -15,14 +15,14 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
     }
 
     let registry = world.get_resource::<VoxelRegistry>()?.clone();
-    let delta = world.get_resource::<DeltaTime>()?.0;
+    let _delta = world.get_resource::<DeltaTime>()?.0;
 
     // Snapshot all collidable objects up front to avoid borrow conflicts
     struct CollidableSnapshot {
         id: ObjectId,
         position: Vector3<f32>,
         half_extents: Vector3<f32>,
-        linear_velocity: Vector3<f32>,
+        _linear_velocity: Vector3<f32>,
         process: bool,
     }
 
@@ -39,7 +39,7 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
                 id,
                 position: transform.global_position,
                 half_extents: Vector3::new(half.x * scale.x, half.y * scale.y, half.z * scale.z),
-                linear_velocity: velocity.linear_velocity,
+                _linear_velocity: velocity.linear_velocity,
                 process: velocity.process,
             })
         })
@@ -155,6 +155,12 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
                     }
                 }
             }
+        }
+
+        // Clamp voxel correction to avoid large snaps.
+        let max_voxel_correction = 0.3;
+        if total_correction.magnitude2() > max_voxel_correction * max_voxel_correction {
+            total_correction = total_correction.normalize() * max_voxel_correction;
         }
 
         // Apply correction and velocity cancellation

@@ -1,6 +1,5 @@
 use std::num::NonZeroU16;
 use std::sync::{Arc, OnceLock};
-use std::time::Instant;
 
 use anyhow::Result;
 use apostasy_macros::{Component, Tag};
@@ -8,7 +7,6 @@ use ash::vk::{self, Buffer, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::log;
 use crate::objects::Object;
 use crate::objects::scene::ObjectId;
 use crate::objects::world::World;

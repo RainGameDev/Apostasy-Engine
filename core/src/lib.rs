@@ -22,7 +22,6 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
-use crate::assets::gltf::load_model;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
 use crate::objects::resources::input_manager::InputManager;
@@ -34,7 +33,6 @@ use crate::rendering::components::camera::ActiveCamera;
 use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
-use crate::rendering::components::model_renderer;
 use crate::rendering::components::model_renderer::ModelRenderer;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;

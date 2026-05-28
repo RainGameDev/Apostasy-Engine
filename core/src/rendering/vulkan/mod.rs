@@ -12,7 +12,6 @@ use crate::rendering::{RenderingAPI, RenderingInfo};
 use crate::ui::UIRenderer;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use anyhow::Result;
-use apostasy_macros::Resource;
 use ash::vk::{
     self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
     PipelineLayoutCreateInfo,

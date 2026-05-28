@@ -1,7 +1,7 @@
 # Engine
 
-- [-] World
-  - [-] Ability to access renderer in systems
+- [x] World
+  - [x] Ability to access renderer in systems
   - [x] Manual system registration
 
 - [ ] Rendering
@@ -19,6 +19,14 @@
 - [-] Systems
   - [x] Prerender systems
   - [ ] Render systems
+
+- [-] Physics
+  - [x] Basic collisions
+    - [x] Object resolution
+    - [x] Object shapes
+    - [x] Offsets
+  - [ ] Friction
+  - [ ] Inertia
 
 # Editor
 

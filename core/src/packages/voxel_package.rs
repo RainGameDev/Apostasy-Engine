@@ -97,7 +97,7 @@ pub(crate) fn add_voxel_package(world: &mut World) {
     });
     world.insert_resource(VoxelPushConstants::default());
 
-    world.register_update_system(voxel_collision_system, 0);
+    world.register_update_system(voxel_collision_system, 5);
     world.register_prerender_system(update_voxel_atlas, 0);
 }
 

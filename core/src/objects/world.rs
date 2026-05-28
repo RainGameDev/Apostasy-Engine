@@ -4,7 +4,6 @@ use anyhow::Result;
 use hashbrown::HashMap;
 
 use crate::{
-    log,
     objects::{
         Object,
         component::Component,
