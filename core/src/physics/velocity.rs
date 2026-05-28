@@ -1,6 +1,6 @@
 use anyhow::Result;
-use apostasy_macros::{Component,  update};
-use cgmath::{Vector3, Zero};
+use apostasy_macros::{Component, update};
+use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
     log,
@@ -32,22 +32,39 @@ impl Velocity {
     pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
         Ok(())
     }
+
+    /// Recomputes angular_velocity from the tangential component of linear_velocity
+    /// given a contact normal and sphere radius.
+    pub fn sync_angular_from_linear(&mut self, radius: f32, normal: Vector3<f32>) {
+        let v_tangential = self.linear_velocity - normal * self.linear_velocity.dot(normal);
+        self.angular_velocity = v_tangential.cross(normal) * (1.0 / radius);
+    }
+
+    /// Recomputes the tangential part of linear_velocity from angular_velocity,
+    /// preserving any velocity along the normal.
+    pub fn sync_linear_from_angular(&mut self, radius: f32, normal: Vector3<f32>) {
+        let v_normal = normal * self.linear_velocity.dot(normal);
+        let v_tangential = self.angular_velocity.cross(normal) * radius;
+        self.linear_velocity = v_normal + v_tangential;
+    }
 }
+
 #[update]
 fn velocity_process(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
 
-    for node in world.get_objects_with_component_mut::<Velocity>() {
-        if !node.get_component::<Velocity>()?.process {
+    for object in world.get_objects_with_component_mut::<Velocity>() {
+        // Read-only checks first to avoid overlapping borrows
+        let process = object.get_component::<Velocity>()?.process;
+        if !process {
             continue;
         }
-        // if node.get_component::<Collider>().is_ok() {
-        //     continue;
-        // }
-        let linear = node.get_component::<Velocity>()?.linear_velocity;
-        let transform = node.get_component_mut::<Transform>()?;
+
+        let linear = object.get_component::<Velocity>()?.linear_velocity;
+        let transform = object.get_component_mut::<Transform>()?;
         transform.local_position += linear * delta;
     }
+
     Ok(())
 }
 

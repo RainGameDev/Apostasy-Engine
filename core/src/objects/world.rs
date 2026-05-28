@@ -4,6 +4,7 @@ use anyhow::Result;
 use hashbrown::HashMap;
 
 use crate::{
+    log,
     objects::{
         Object,
         component::Component,
@@ -71,6 +72,7 @@ impl World {
             priority,
         });
         self.update_systems.sort_by_key(|s| Reverse(s.priority));
+
         self
     }
 

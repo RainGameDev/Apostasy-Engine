@@ -1,0 +1,75 @@
+# Class
+name: Valley
+namespace: Apostasy
+class: Biome
+octaves: 4
+# Generation Location
+humidity: 0.3
+temperature: 0.2
+# Generation
+amplitude: 8.0
+frequency: 0.05
+# Terrain shaping
+terrain_shaping:
+  preset: rolling
+  ridge_strength: 0.2
+  peak_strength: 0.09
+  continental_scale: 10.0
+  height_curve: 1.1
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Grass"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+# Structures
+structures:
+  - type: tree
+    density: 0.05
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 5
+      max_height: 8
+      canopy_radius: 1
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Sunny"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [5.0, 15.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.05
+      - name: "Apostasy:Weather:HeavyRain"
+        chance: 0.02
+      - name: "Apostasy:Weather:Thunder"
+        chance: 0.01
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.25
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [15.0, 25.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.05
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [5.0, 10.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.1
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.05
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-5.0, 5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.05
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.1
+# Graphics
+ambient_graphics:
+  water_color: [63, 118, 228]
+  foliage_color: [88, 153, 46]

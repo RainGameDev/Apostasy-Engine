@@ -110,6 +110,8 @@ pub struct RenderingContextAttributes<'window> {
 
 #[derive(Clone, Resource)]
 pub struct VulkanRenderingContext {
+    pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
+    pub command_pool: CommandPool,
     pub queues: HashMap<u32, Queue>,
     pub device: Device,
     pub physical_device: PhysicalDevice,
@@ -226,6 +228,14 @@ impl VulkanRenderingContext {
                 .iter()
                 .map(|&index| (index, device.get_device_queue(index, 0)))
                 .collect::<HashMap<_, _>>();
+
+            let command_pool = device.create_command_pool(
+                &ash::vk::CommandPoolCreateInfo::default()
+                    .queue_family_index(queue_family.graphics)
+                    .flags(ash::vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER),
+                None,
+            )?;
+
             Ok(Self {
                 queues,
                 device,
@@ -236,6 +246,8 @@ impl VulkanRenderingContext {
                 instance,
                 entry,
                 swapchain_extension,
+                command_pool,
+                buffer_graveyard: Vec::new(),
             })
         }
     }

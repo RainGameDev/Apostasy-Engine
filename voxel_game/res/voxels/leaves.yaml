@@ -1,0 +1,9 @@
+name: Leaves
+namespace: Apostasy
+class: Voxel
+
+textures:
+  all: textures/missing.png
+
+components:
+  IsTransparent: true

@@ -1,5 +1,0 @@
-name: FrostedDirt
-namespace: Apostasy
-class: Item
-components:
-  Voxel: Apostasy:VoxelFrostedDirt

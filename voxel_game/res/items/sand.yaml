@@ -1,0 +1,6 @@
+name: Sand
+namespace: Apostasy
+class: Item
+
+components:
+  Voxel: "Apostasy:Voxel:Sand"

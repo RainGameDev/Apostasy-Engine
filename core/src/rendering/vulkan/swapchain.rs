@@ -6,6 +6,7 @@ use winit::window::Window;
 
 use crate::rendering::vulkan::{rendering_context::VulkanRenderingContext, surface::Surface};
 
+#[derive(Clone)]
 pub struct VulkanSwapchain {
     pub desired_image_count: u32,
     pub format: Format,

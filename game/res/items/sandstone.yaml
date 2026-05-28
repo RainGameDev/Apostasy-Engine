@@ -1,6 +1,0 @@
-name: Sandstone
-namespace: Apostasy
-class: Item
-
-components:
-  Voxel: "Apostasy:Voxel:Sandstone"

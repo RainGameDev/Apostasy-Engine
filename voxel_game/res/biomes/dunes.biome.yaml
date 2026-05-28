@@ -1,0 +1,56 @@
+# Class
+name: Dunes
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 12.0
+frequency: 0.02
+octaves: 5
+# Generation Location
+humidity: 0.2
+temperature: 0.9
+# Terrain shaping
+terrain_shaping:
+  ridge_strength: 0.08
+  peak_strength: 0.35
+  valley_strength: 0.0
+  continental_scale: 10.0
+  height_curve: 1.15
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Sand"
+  subsurface:
+    - "Apostasy:Voxel:Sand"
+  underground:
+    - "Apostasy:Voxel:Sandstone"
+# Structures
+structures:
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Sunny"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [20.0, 35.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.9
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [25.0, 40.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.95
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [15.0, 30.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.15
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [5.0, 20.0]
+    available_weather:
+      - name: "Apostasy:Weather:Sunny"
+        chance: 0.9
+# Graphics
+ambient_graphics:
+  water_color: [235, 210, 150]
+  foliage_color: [200, 180, 140]

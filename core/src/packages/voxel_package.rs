@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use anyhow::Result;
 use cgmath::{Vector3, Zero};
 
 use crate::{
@@ -15,12 +16,13 @@ use crate::{
     log,
     objects::world::World,
     physics::collision_system::voxel_collision_system,
+    rendering::shared::push_constants::VoxelPushConstants,
     voxels::{
         biome::BiomeRegistry,
         chunk::VoxelBreakProgress,
         chunk_loader::{ChunkLoadBounds, ChunkPositionMap},
         structure::StructureRegistry,
-        texture_atlas::{AtlasBuilder, PendingAtlas},
+        texture_atlas::{AtlasBuilder, PendingAtlas, VoxelTextureAtlas},
         voxel::VoxelRegistry,
     },
 };
@@ -93,6 +95,16 @@ pub(crate) fn add_voxel_package(world: &mut World) {
         image: atlas_image,
         tiles: atlas_tiles,
     });
+    world.insert_resource(VoxelPushConstants::default());
 
     world.register_update_system(voxel_collision_system, 0);
+    world.register_prerender_system(update_voxel_atlas, 0);
+}
+
+fn update_voxel_atlas(world: &mut World) -> Result<()> {
+    let atlas = world.get_resource::<VoxelTextureAtlas>().unwrap().clone();
+    let voxel_push_constants = world.get_resource_mut::<VoxelPushConstants>().unwrap();
+    voxel_push_constants.set_atlas_tiles(atlas.atlas_size);
+
+    Ok(())
 }

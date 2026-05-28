@@ -1,0 +1,9 @@
+name: Water
+namespace: Apostasy
+class: Voxel
+textures:
+  all: textures/water.png
+components:
+  BreakTicks: 30
+  HasTint: 1
+  IsTransparent: true

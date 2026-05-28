@@ -12,6 +12,7 @@ use crate::rendering::{RenderingAPI, RenderingInfo};
 use crate::ui::UIRenderer;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use anyhow::Result;
+use apostasy_macros::Resource;
 use ash::vk::{
     self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
     PipelineLayoutCreateInfo,
@@ -37,18 +38,19 @@ pub struct Descriptor {
 }
 
 /// A container for a UBO
+#[derive(Clone)]
 pub struct Ubo {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
 }
 
+#[derive(Clone)]
 pub struct VulkanRenderer {
     pub current_image_index: u32,
     pub in_flight_frames_count: usize,
     pub swapchain: VulkanSwapchain,
     pub frames: Vec<VulkanFrame>,
     pub current_frame: usize,
-    pub command_pool: CommandPool,
     pub image_layouts: ImageLayouts,
 
     pub pipeline: Pipeline,
@@ -63,11 +65,8 @@ pub struct VulkanRenderer {
     pub voxel_descriptor_pool: vk::DescriptorPool,
     pub voxel_descriptor_set_layout: vk::DescriptorSetLayout,
 
-    pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
-
     pub ui_renderer: UIRenderer,
-
-    pub push_constants: PushConstants,
+    pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
 
     pub ubo: Ubo,
     context: Arc<VulkanRenderingContext>,
@@ -280,15 +279,13 @@ impl RenderingAPI for VulkanRenderer {
                 in_flight_frames_count,
                 current_frame: 0,
                 frames,
-                command_pool,
+                // command_pool,
                 image_layouts: ImageLayouts::default(),
 
                 pipeline,
                 wireframe_pipeline,
                 pipeline_layout,
                 voxel_pipeline_layout,
-
-                buffer_graveyard: Vec::new(),
 
                 ui_renderer,
 
@@ -298,8 +295,9 @@ impl RenderingAPI for VulkanRenderer {
                 voxel_descriptor_set_layout: descriptor_set_layout,
                 water_pipeline,
                 water_pipeline_layout,
+                buffer_graveyard: Vec::new(),
 
-                push_constants: PushConstants::default(),
+                // push_constants: PushConstants::default(),
                 ubo,
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
@@ -311,7 +309,7 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
-    fn begin_frame(&mut self, _push_constants: PushConstants) -> Result<()> {
+    fn begin_frame(&mut self) -> Result<()> {
         let frame = &self.frames[self.current_frame];
 
         // Recreate swapchain if it was marked dirty
@@ -325,6 +323,7 @@ impl RenderingAPI for VulkanRenderer {
         unsafe {
             // Use a 5-second timeout instead of infinite to prevent device hangs
             const FENCE_TIMEOUT_NS: u64 = 5_000_000_000; // 5 seconds in nanoseconds
+            //
 
             match self.context.device.wait_for_fences(
                 &[frame.in_flight_fence],
@@ -700,19 +699,18 @@ impl RenderingAPI for VulkanRenderer {
     }
 
     fn begin_ui(&mut self) {
-        let raw_input = self
-            .ui_renderer
-            .state
-            .take_egui_input(&self.ui_renderer.window);
+        let mut state = self.ui_renderer.state.lock().unwrap();
+
+        let raw_input = state.take_egui_input(&self.ui_renderer.window);
         self.ui_renderer.context.begin_pass(raw_input);
     }
 
     fn end_ui(&mut self) -> Result<()> {
         let full_output = self.ui_renderer.context.end_pass();
+        let mut state = self.ui_renderer.state.lock().unwrap();
+        let mut renderer = self.ui_renderer.renderer.lock().unwrap();
 
-        self.ui_renderer
-            .state
-            .handle_platform_output(&self.ui_renderer.window, full_output.platform_output);
+        state.handle_platform_output(&self.ui_renderer.window, full_output.platform_output);
 
         let clipped_primitives = self
             .ui_renderer
@@ -727,14 +725,14 @@ impl RenderingAPI for VulkanRenderer {
             .collect();
 
         if !texture_updates.is_empty() {
-            self.ui_renderer.renderer.set_textures(
+            renderer.set_textures(
                 self.context.queues[&self.context.queue_families.graphics],
-                self.command_pool,
+                self.context.command_pool,
                 &texture_updates,
             )?;
         }
 
-        self.ui_renderer.renderer.cmd_draw(
+        renderer.cmd_draw(
             self.frames[self.current_frame].command_buffer,
             self.swapchain.extent,
             full_output.pixels_per_point,
@@ -745,8 +743,8 @@ impl RenderingAPI for VulkanRenderer {
     }
 
     fn handle_ui_event(&mut self, event: &WindowEvent) -> bool {
-        self.ui_renderer
-            .state
+        let mut state = self.ui_renderer.state.lock().unwrap();
+        state
             .on_window_event(&self.ui_renderer.window, event)
             .consumed
     }
@@ -771,7 +769,7 @@ impl RenderingAPI for VulkanRenderer {
         &mut self.buffer_graveyard
     }
     fn get_command_pool(&self) -> Result<CommandPool> {
-        Ok(self.command_pool)
+        Ok(self.context.command_pool)
     }
     fn get_aspect(&self) -> f32 {
         self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32

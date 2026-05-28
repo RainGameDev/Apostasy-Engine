@@ -4,7 +4,7 @@ use anyhow::{Error, Result};
 use hashbrown::HashMap;
 
 use crate::{
-    assets::loader::AssetLoader,
+    assets::loader::YamlAssetLoader,
     voxels::biome::{BiomeDefinition, BiomeRegistry, StructureDefinition, TerrainShaping},
 };
 
@@ -12,7 +12,7 @@ pub struct BiomeLoader {
     pub registry: Arc<RwLock<BiomeRegistry>>,
 }
 
-impl AssetLoader for BiomeLoader {
+impl YamlAssetLoader for BiomeLoader {
     fn class_name(&self) -> &'static str {
         "Biome"
     }

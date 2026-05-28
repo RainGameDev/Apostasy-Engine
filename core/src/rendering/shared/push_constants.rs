@@ -1,5 +1,6 @@
 use std::mem::transmute;
 
+use apostasy_macros::Resource;
 use cgmath::{Matrix4, Quaternion, SquareMatrix, Vector3, Zero};
 
 use crate::{
@@ -7,7 +8,7 @@ use crate::{
     rendering::components::camera::{Camera, get_perspective_projection, get_view_matrix},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Resource, Clone, Debug)]
 pub struct PushConstants {
     pub view_matrix: Matrix4<f32>,
     pub projection_matrix: Matrix4<f32>,
@@ -46,7 +47,7 @@ impl PushConstants {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Resource, Clone, Debug)]
 pub struct ModelPushConstants {
     pub world_position: Vector3<f32>,
     pub world_scale: Vector3<f32>,
@@ -82,7 +83,7 @@ impl ModelPushConstants {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Resource, Clone, Debug)]
 pub struct VoxelPushConstants {
     pub atlas_tiles: u32, // how many tiles per row in the atlas
     pub world_position: Vector3<i32>,

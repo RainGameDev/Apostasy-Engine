@@ -1,0 +1,6 @@
+name: Snow
+namespace: Apostasy
+class: Item
+
+components:
+  Voxel: "Apostasy:Voxel:Snow"

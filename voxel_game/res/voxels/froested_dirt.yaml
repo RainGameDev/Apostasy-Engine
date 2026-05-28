@@ -1,0 +1,10 @@
+name: FrostedDirt
+namespace: Apostasy
+class: Voxel
+textures:
+  all:
+    - textures/frosted_dirt.png
+components:
+  IsSolid: true
+  BreakTicks: 7
+  Drops: "Apostasy:Item:FrostedDirt"

@@ -1,0 +1,31 @@
+# Class
+name: SurfaceMonolith
+namespace: Apostasy
+class: Structure
+origin: [0, 0, 0]
+size: [3, 5, 3]
+blocks:
+  - position: [1, 0, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 1, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 2, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 3, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 4, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 5, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 6, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 7, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 8, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 9, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 10, 1]
+    voxel: "Apostasy:Voxel:Stone"
+  - position: [1, 11, 1]
+    voxel: "Apostasy:Voxel:Stone"

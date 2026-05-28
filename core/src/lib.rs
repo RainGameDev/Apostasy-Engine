@@ -9,6 +9,7 @@ use winit::event::DeviceEvent;
 use winit::event::DeviceId;
 
 use std::path::Path;
+use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -19,6 +20,8 @@ use winit::{
 };
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::gltf::ModelLoader;
+use crate::assets::gltf::ModelRegistry;
 use crate::assets::gltf::load_model;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
@@ -31,9 +34,11 @@ use crate::rendering::components::camera::ActiveCamera;
 use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
+use crate::rendering::components::model_renderer;
 use crate::rendering::components::model_renderer::ModelRenderer;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
 use crate::states::ShouldExit;
 use crate::ui::ui_context::EguiContext;
@@ -82,6 +87,7 @@ pub struct Core {
     pub rendering_info: Option<Arc<Mutex<RenderingInfo>>>,
     pub world: Arc<Mutex<World>>,
     pub asset_loader: AssetManager,
+    pub packages: Vec<Packages>,
 }
 
 impl Core {
@@ -90,10 +96,13 @@ impl Core {
         world.insert_resource(InputManager::default());
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
+
+        world.insert_resource(PushConstants::default());
+        world.insert_resource(ModelPushConstants::default());
         world.insert_resource(ObjectsDrawing(0));
         world.insert_resource(EngineTimer(0.0));
 
-        for package in packages {
+        for package in packages.clone() {
             add_package(&mut world, package);
         }
 
@@ -103,6 +112,7 @@ impl Core {
             rendering_info: None,
             world: Arc::new(Mutex::new(world)),
             asset_loader: AssetManager::new(),
+            packages,
         }
     }
 
@@ -140,6 +150,7 @@ impl Core {
                 WindowEvent::RedrawRequested => {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
+                    let model_registry = world.get_resource::<ModelRegistry>().unwrap().clone();
 
                     if world.get_resource::<ShouldExit>().is_ok() {
                         log!("Recieved ShouldExit resource, closing");
@@ -147,13 +158,14 @@ impl Core {
                     }
 
                     let context = Arc::new(rendering_info.context.clone());
-                    let push_constants = rendering_info.push_constants.clone();
-                    let mut voxel_push_constants = rendering_info.voxel_push_constants.clone();
-                    let model_push = rendering_info.model_push_constants.clone();
 
-                    if let Ok(atlas) = world.get_resource::<VoxelTextureAtlas>() {
-                        voxel_push_constants.set_atlas_tiles(atlas.atlas_size);
-                    }
+                    // Clone out the push constants immediately so the mutable borrows are dropped
+                    let mut push_constants =
+                        world.get_resource_mut::<PushConstants>().unwrap().clone();
+                    let model_push_constants = world
+                        .get_resource_mut::<ModelPushConstants>()
+                        .unwrap()
+                        .clone();
 
                     let Some(renderer) = &mut rendering_info.renderer else {
                         log_error!("No renderer found!");
@@ -175,7 +187,6 @@ impl Core {
 
                     let view_proj = proj * view;
 
-                    let mut push_constants = push_constants;
                     push_constants.set_camera_constants(camera.to_owned(), aspect);
 
                     if !world
@@ -197,7 +208,7 @@ impl Core {
 
                     world.prerender();
 
-                    if let Err(e) = renderer.begin_frame(push_constants.clone()) {
+                    if let Err(e) = renderer.begin_frame() {
                         log_error!("Failed to begin frame: {}", e);
                         return;
                     }
@@ -229,16 +240,11 @@ impl Core {
                                 .model_path
                                 .clone();
 
-                            let Some(command_pool) = renderer.get_command_pool().ok() else {
-                                continue;
-                            };
-
-                            let model =
-                                load_model(Path::new(&model_path), context.clone(), command_pool)
-                                    .unwrap();
-
+                            let model = model_registry.paths.get(&model_path).unwrap();
                             object.get_component_mut::<ModelRenderer>().unwrap().model =
-                                Some(Box::new(model));
+                                Some(Box::new(model.clone()));
+
+                            log!("loaded model");
                         }
 
                         let model_renderer = object.get_component::<ModelRenderer>().unwrap();
@@ -251,17 +257,17 @@ impl Core {
 
                         let transform = object.get_component::<Transform>().unwrap();
 
-                        let mut frame_model_push = model_push.clone();
-                        frame_model_push.world_position = transform.global_position;
-                        frame_model_push.world_scale = transform.global_scale;
-                        frame_model_push.world_rotation = transform.global_rotation;
+                        let mut model_push = model_push_constants.clone();
+                        model_push.world_position = transform.global_position;
+                        model_push.world_scale = transform.global_scale;
+                        model_push.world_rotation = transform.global_rotation;
 
                         for mesh in &model.meshes {
                             if model_renderer.is_wireframe {
                                 if let Err(e) = renderer.wireframe_render(
                                     Box::new(mesh.clone()),
                                     push_constants.clone(),
-                                    &frame_model_push,
+                                    &model_push,
                                 ) {
                                     log_error!("Failed to render wireframe: {}", e);
                                 }
@@ -269,7 +275,7 @@ impl Core {
                                 if let Err(e) = renderer.render(
                                     Box::new(mesh.clone()),
                                     push_constants.clone(),
-                                    &frame_model_push,
+                                    &model_push,
                                 ) {
                                     log_error!("Failed to render model: {}", e);
                                 }
@@ -277,7 +283,11 @@ impl Core {
                         }
                     }
 
-                    if let Ok(texture_atlas) = world.get_resource::<VoxelTextureAtlas>() {
+                    // TODO: make this a render function so its not in the main render
+                    if self.packages.contains(&Packages::Voxel) {
+                        let voxel_push_constants =
+                            world.get_resource::<VoxelPushConstants>().unwrap();
+                        let texture_atlas = world.get_resource::<VoxelTextureAtlas>().unwrap();
                         let frustum = Frustum::from_view_proj(&view_proj);
                         let mut water_draws: Vec<(
                             f32,
@@ -349,6 +359,7 @@ impl Core {
                             }
                         }
                     }
+
                     world.get_resource_mut::<ObjectsDrawing>().unwrap().0 = objects_dawn;
                     if let Err(e) = renderer.end_ui() {
                         log_error!("Failed to end UI: {}", e);
@@ -422,6 +433,46 @@ impl ApplicationHandler for Core {
                 renderer.get_egui_context(),
             )
         };
+
+        let model_registry = ModelRegistry::default();
+        let model_loader = ModelLoader {
+            registry: Arc::new(RwLock::new(model_registry)),
+        };
+
+        // TODO: clean this up
+        {
+            let mut asset_manager = AssetManager::new();
+            asset_manager.model_loader = model_loader;
+
+            let a = asset_manager
+                .load_models(Path::new("res/"), Arc::new(context.clone()), command_pool)
+                .unwrap();
+
+            let model_loader = ModelLoader {
+                registry: Arc::new(RwLock::new(a)),
+            };
+
+            let mut asset_manager = AssetManager::new();
+            asset_manager.model_loader = model_loader;
+            let b = asset_manager
+                .load_models(
+                    Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
+                    Arc::new(context),
+                    command_pool,
+                )
+                .unwrap();
+
+            world.insert_resource(b);
+        }
+
+        let context = self
+            .rendering_info
+            .clone()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .context
+            .clone();
 
         if let Ok(pending) = world.get_resource::<PendingAtlas>() {
             let atlas = upload_atlas(

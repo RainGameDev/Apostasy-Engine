@@ -6,7 +6,7 @@ use crate::{
 pub mod item_system_package;
 pub mod voxel_package;
 
-#[derive(Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Packages {
     Voxel,
     ItemSystem,

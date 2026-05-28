@@ -37,15 +37,12 @@ pub struct RenderingInfo {
     pub window: Arc<Window>,
     pub settings: RenderingSettings,
     pub renderer: Option<Box<dyn RenderingAPI>>,
-    pub push_constants: PushConstants,
-    pub model_push_constants: ModelPushConstants,
-    pub voxel_push_constants: VoxelPushConstants,
 }
 
 /// A trait assigned to any Rendering API
 /// Used for Vulkan and Opengl
 pub trait RenderingAPI {
-    fn begin_frame(&mut self, push_constants: PushConstants) -> Result<()>;
+    fn begin_frame(&mut self) -> Result<()>;
     fn end_frame(&mut self) -> Result<()>;
 
     fn render(
@@ -110,9 +107,6 @@ impl RenderingInfo {
             window: window.clone(),
             settings: RenderingSettings::default(),
             renderer: None,
-            push_constants: PushConstants::default(),
-            voxel_push_constants: VoxelPushConstants::default(),
-            model_push_constants: ModelPushConstants::default(),
         }));
 
         match rendering_api {

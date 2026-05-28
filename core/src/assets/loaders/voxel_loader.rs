@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{Error, Result};
 
 use crate::{
-    assets::loader::AssetLoader,
+    assets::loader::YamlAssetLoader,
     log_warn,
     objects::component::{BoxedComponent, get_component_registration},
     voxels::{
@@ -17,7 +17,7 @@ pub struct VoxelLoader {
     pub atlas_builder: Arc<RwLock<AtlasBuilder>>,
 }
 
-impl AssetLoader for VoxelLoader {
+impl YamlAssetLoader for VoxelLoader {
     fn class_name(&self) -> &'static str {
         "Voxel"
     }

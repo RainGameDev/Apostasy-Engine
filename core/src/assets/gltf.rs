@@ -1,7 +1,13 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
 use anyhow::Result;
+use apostasy_macros::Resource;
 use ash::vk::CommandPool;
+use hashbrown::HashMap;
+use walkdir::WalkDir;
 
 use crate::rendering::{
     shared::{
@@ -10,6 +16,52 @@ use crate::rendering::{
     },
     vulkan::rendering_context::VulkanRenderingContext,
 };
+
+#[derive(Resource, Default, Clone, Debug)]
+pub struct ModelRegistry {
+    pub paths: HashMap<String, GpuModel>, // name to gltf
+}
+
+#[derive(Default)]
+pub struct ModelLoader {
+    pub registry: Arc<RwLock<ModelRegistry>>,
+}
+
+impl ModelLoader {
+    pub fn load_all_models(
+        dir_path: &Path,
+        context: Arc<VulkanRenderingContext>,
+        command_pool: CommandPool,
+    ) -> Result<HashMap<String, GpuModel>> {
+        let mut models = HashMap::new();
+
+        for entry in WalkDir::new(dir_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().is_file()
+                    && matches!(
+                        e.path().extension().and_then(|s| s.to_str()),
+                        Some("gltf") | Some("glb")
+                    )
+            })
+        {
+            let path = entry.path();
+
+            match load_model(path, Arc::clone(&context), command_pool) {
+                Ok(model) => {
+                    println!("Loaded model: {} ({:?})", model.name, path);
+                    models.insert(model.name.clone(), model);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load model {:?}: {}", path, e);
+                }
+            }
+        }
+
+        Ok(models)
+    }
+}
 
 pub fn load_model(
     path: &Path,
@@ -75,7 +127,7 @@ pub fn load_model(
                 index_buffer: index_buffer.0,
                 index_buffer_memory: index_buffer.1,
                 index_count: indices.len() as u32,
-                material_name: material_name,
+                material_name,
             });
         }
     }

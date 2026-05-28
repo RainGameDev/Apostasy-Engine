@@ -11,10 +11,12 @@ use crate::rendering::vulkan::{
 };
 
 pub mod ui_context;
+use std::sync::Mutex;
 
+#[derive(Clone)]
 pub struct UIRenderer {
-    pub state: State,
-    pub renderer: Renderer,
+    pub state: Arc<Mutex<State>>,
+    pub renderer: Arc<Mutex<Renderer>>,
     pub context: Context,
     pub window: Arc<Window>,
 }
@@ -82,8 +84,8 @@ impl UIRenderer {
         );
 
         Ok(Self {
-            state,
-            renderer,
+            state: Arc::new(Mutex::new(state)),
+            renderer: Arc::new(Mutex::new(renderer)),
             context,
             window,
         })

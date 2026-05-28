@@ -1,0 +1,6 @@
+name: Leaves
+namespace: Apostasy
+class: Item
+
+components:
+  Voxel: "Apostasy:Voxel:Leaves"

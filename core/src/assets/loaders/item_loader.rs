@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{Error, Result};
 
 use crate::{
-    assets::loader::AssetLoader,
+    assets::loader::YamlAssetLoader,
     items::{ItemDefinition, ItemId, ItemRegistry},
     log_warn,
     objects::component::{BoxedComponent, get_component_registration},
@@ -13,7 +13,7 @@ pub struct ItemLoader {
     pub registry: Arc<RwLock<ItemRegistry>>,
 }
 
-impl AssetLoader for ItemLoader {
+impl YamlAssetLoader for ItemLoader {
     fn class_name(&self) -> &'static str {
         "Item"
     }

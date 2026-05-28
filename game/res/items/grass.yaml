@@ -1,6 +1,0 @@
-name: Grass
-namespace: Apostasy
-class: Item
-
-components:
-  Voxel: "Apostasy:Voxel:Dirt"

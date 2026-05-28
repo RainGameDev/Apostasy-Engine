@@ -1,5 +1,6 @@
 use ash::vk::{CommandBuffer, Fence, Semaphore};
 
+#[derive(Clone)]
 pub struct VulkanFrame {
     pub command_buffer: CommandBuffer,
     pub image_available_semaphore: Semaphore,

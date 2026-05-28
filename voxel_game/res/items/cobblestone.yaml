@@ -1,0 +1,6 @@
+name: Cobblestone
+namespace: Apostasy
+class: Item
+
+components:
+  Voxel: "Apostasy:Voxel:Cobblestone"

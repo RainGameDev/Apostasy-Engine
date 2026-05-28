@@ -1,0 +1,83 @@
+# Class
+name: Tundra
+namespace: Apostasy
+class: Biome
+
+# Generation
+amplitude: 15.0
+frequency: 0.01
+octaves: 5
+
+# Generation Location
+humidity: 0.35
+temperature: 0.2
+
+# Terrain shaping
+terrain_shaping:
+  preset: flat
+  ridge_strength: 0.04
+  peak_strength:  0.03
+  continental_scale: 12.0
+  height_curve: 1.0
+
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Snow"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Stone"
+
+# Structures
+structures:
+  - type: tree
+    density: 0.2
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 4
+      max_height: 7
+      canopy_radius: 1
+  - type: boulder
+    density: 1.0
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 2
+      max_radius: 3
+
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Cloudy"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [-5.0, 5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.3
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.4
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [0.0, 10.0]
+    available_weather:
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [-5.0, 5.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.2
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.5
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [-15.0, -2.0]
+    available_weather:
+      - name: "Apostasy:Weather:Snow"
+        chance: 0.6
+
+# Graphics
+ambient_graphics:
+  water_color: [200, 220, 240]
+  foliage_color: [220, 220, 220]

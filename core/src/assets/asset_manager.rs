@@ -1,23 +1,35 @@
 use anyhow::Result;
+use ash::vk::CommandPool;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
-use crate::assets::loader::AssetLoader;
+use crate::assets::gltf::{ModelLoader, ModelRegistry};
+use crate::assets::loader::YamlAssetLoader;
+use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::{log, log_warn};
 
 pub struct AssetManager {
-    loaders: HashMap<String, Box<dyn AssetLoader>>,
+    yaml_loaders: HashMap<String, Box<dyn YamlAssetLoader>>,
+    pub model_loader: ModelLoader,
+}
+
+impl Default for AssetManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         Self {
-            loaders: HashMap::new(),
+            yaml_loaders: HashMap::new(),
+            model_loader: ModelLoader::default(),
         }
     }
 
-    pub fn register_loader<L: AssetLoader + 'static>(&mut self, loader: L) {
-        self.loaders
+    pub fn register_loader<L: YamlAssetLoader + 'static>(&mut self, loader: L) {
+        self.yaml_loaders
             .insert(loader.class_name().to_string(), Box::new(loader));
     }
 
@@ -36,7 +48,7 @@ impl AssetManager {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing 'class' field in {:?}", path))?;
 
-        match self.loaders.get_mut(class) {
+        match self.yaml_loaders.get_mut(class) {
             Some(loader) => {
                 loader.load(&raw)?;
                 log!("Loaded {:?}:{:?} as class '{}'", namespace, name, class);
@@ -49,6 +61,21 @@ impl AssetManager {
         Ok(())
     }
 
+    pub fn load_models(
+        &mut self,
+        path: &Path,
+        context: Arc<VulkanRenderingContext>,
+        command_pool: CommandPool,
+    ) -> Result<ModelRegistry> {
+        let models = ModelLoader::load_all_models(path, context, command_pool)?;
+
+        let mut registry = self.model_loader.registry.write().unwrap();
+        for (name, model) in models {
+            registry.paths.insert(name, model);
+        }
+
+        Ok(registry.clone())
+    }
     /// Recursively load all .yaml files in a directory
     pub fn load_directory(&mut self, path: &Path) -> Result<()> {
         for entry in std::fs::read_dir(path)? {
@@ -57,10 +84,10 @@ impl AssetManager {
 
             if path.is_dir() {
                 self.load_directory(&path)?;
-            } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-                if let Err(e) = self.load_file(&path) {
-                    log_warn!("Failed to load {:?}: {}", path, e);
-                }
+            } else if path.extension().and_then(|e| e.to_str()) == Some("yaml")
+                && let Err(e) = self.load_file(&path)
+            {
+                log_warn!("Failed to load {:?}: {}", path, e);
             }
         }
 

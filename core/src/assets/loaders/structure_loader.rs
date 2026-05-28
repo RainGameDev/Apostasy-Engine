@@ -2,13 +2,16 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{Error, Result};
 
-use crate::{assets::loader::AssetLoader, voxels::structure::{StructureAsset, StructureId, StructureRegistry}};
+use crate::{
+    assets::loader::YamlAssetLoader,
+    voxels::structure::{StructureAsset, StructureId, StructureRegistry},
+};
 
 pub struct StructureLoader {
     pub registry: Arc<RwLock<StructureRegistry>>,
 }
 
-impl AssetLoader for StructureLoader {
+impl YamlAssetLoader for StructureLoader {
     fn class_name(&self) -> &'static str {
         "Structure"
     }
@@ -83,7 +86,9 @@ impl AssetLoader for StructureLoader {
                     .map(|v| v as i32)
                     .collect::<Vec<_>>();
                 if position.len() != 3 {
-                    return Err(anyhow::anyhow!("Structure block position must have 3 values"));
+                    return Err(anyhow::anyhow!(
+                        "Structure block position must have 3 values"
+                    ));
                 }
 
                 let voxel = block_value["voxel"]

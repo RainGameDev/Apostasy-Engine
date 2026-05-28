@@ -1,0 +1,75 @@
+# Class
+name: Swamp
+namespace: Apostasy
+class: Biome
+# Generation
+amplitude: 4.0
+frequency: 0.018
+octaves: 5
+# Generation Location
+humidity: 0.85
+temperature: 0.55
+# Terrain shaping
+terrain_shaping:
+  preset: flat
+  valley_strength: 0.06
+  continental_scale: 8.0
+  height_curve: 0.8
+# Voxels
+voxel:
+  surface:
+    - "Apostasy:Voxel:Grass"
+  subsurface:
+    - "Apostasy:Voxel:Dirt"
+  underground:
+    - "Apostasy:Voxel:Dirt"
+# Structures
+structures:
+  - type: tree
+    density: 6.0
+    voxels:
+      trunk: "Apostasy:Voxel:Log"
+      canopy: "Apostasy:Voxel:Leaves"
+    parameters:
+      min_height: 5
+      max_height: 9
+      canopy_radius: 2
+  - type: boulder
+    density: 0.2
+    voxels:
+      boulder: "Apostasy:Voxel:Stone"
+    parameters:
+      min_radius: 1
+      max_radius: 2
+# Weather and Seasons
+default_weather:
+  - name: "Apostasy:Weather:Rain"
+seasons:
+  - name: "Apostasy:Seasons:Spring"
+    temperature: [10.0, 20.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.35
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.25
+  - name: "Apostasy:Seasons:Summer"
+    temperature: [15.0, 28.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.3
+  - name: "Apostasy:Seasons:Autumn"
+    temperature: [8.0, 18.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.4
+  - name: "Apostasy:Seasons:Winter"
+    temperature: [0.0, 10.0]
+    available_weather:
+      - name: "Apostasy:Weather:Rain"
+        chance: 0.2
+      - name: "Apostasy:Weather:Cloudy"
+        chance: 0.4
+# Graphics
+ambient_graphics:
+  water_color: [38, 48, 39]
+  foliage_color: [44, 44, 22]
