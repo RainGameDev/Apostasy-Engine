@@ -75,11 +75,11 @@ impl Velocity {
             process: true,
 
             inertia_tensor: compute_inertia_sphere(1.0, 1.0),
-            restitution: 0.3,
-            mu_static: 0.3,
-            mu_kinetic: 0.2,
-            linear_damping: 0.999,
-            angular_damping: 0.995,
+            restitution: 0.0,
+            mu_static: 1.0,
+            mu_kinetic: 1.0,
+            linear_damping: 1.0,
+            angular_damping: 1.0,
         }
     }
     pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
