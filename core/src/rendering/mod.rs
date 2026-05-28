@@ -82,6 +82,7 @@ pub trait RenderingAPI {
     fn resize(&mut self) -> Result<()>;
     fn update_command_buffer(&mut self);
     fn recreate_swapchain(&mut self);
+    fn reload_shaders(&mut self) -> Result<bool>;
 
     fn get_buffer_graveyard(&mut self) -> &mut Vec<(vk::Buffer, vk::DeviceMemory)>;
     fn get_command_pool(&self) -> Result<CommandPool>;

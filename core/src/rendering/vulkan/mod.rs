@@ -1,6 +1,6 @@
-use std::mem::swap;
 use std::sync::{Arc, Mutex};
 
+use crate::log;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, VoxelPushConstants,
@@ -944,5 +944,19 @@ impl RenderingAPI for VulkanRenderer {
     }
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.voxel_descriptor_set_layout
+    }
+
+    fn reload_shaders(&mut self) -> Result<bool> {
+        let reloaded = self
+            .pipeline_manager
+            .shader_registry
+            .reload_changed_shaders()?;
+        if reloaded.is_empty() {
+            return Ok(false);
+        }
+
+        log!("Reloaded shaders: {}", reloaded.join(", "));
+        self.rebuild_pipelines()?;
+        Ok(true)
     }
 }

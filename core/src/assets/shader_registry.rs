@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
@@ -104,6 +103,17 @@ impl ShaderRegistry {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn reload_changed_shaders(&self) -> Result<Vec<String>> {
+        let mut reloaded = Vec::new();
+        for (name, asset) in self.shaders.read().unwrap().iter() {
+            let mut asset = asset.write().unwrap();
+            if asset.reload_if_needed()? {
+                reloaded.push(name.clone());
+            }
+        }
+        Ok(reloaded)
     }
 
     pub fn load_directory(&self, directory: &Path) -> Result<()> {

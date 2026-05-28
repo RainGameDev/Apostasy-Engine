@@ -3,12 +3,8 @@ use apostasy_core::{
     cgmath::{Vector3, Zero},
     init_core,
     objects::{
-        Object,
-        components::transform::Transform,
-        resources::input_manager::InputManager,
-        systems::DeltaTime,
-        tags::Player,
-        world::World,
+        Object, components::transform::Transform, resources::input_manager::InputManager,
+        systems::DeltaTime, tags::Player, world::World,
     },
     packages::Packages,
     physics::{
@@ -23,9 +19,8 @@ use apostasy_core::{
             model_renderer::ModelRenderer,
         },
     },
-    start,
-    update,
-    winit::keyboard::{PhysicalKey, KeyCode},
+    start, update,
+    winit::keyboard::{KeyCode, PhysicalKey},
 };
 use apostasy_macros::Resource;
 
@@ -35,7 +30,6 @@ pub struct CoyoteTime(pub f32);
 const COYOTE_TIME_WINDOW: f32 = 0.15;
 const JUMP_VELOCITY: f32 = 8.0;
 const SIDE_SPEED: f32 = 5.0;
-
 
 fn main() {
     init_core(
@@ -129,7 +123,9 @@ pub fn sphere_player_input(world: &mut World) -> Result<()> {
 
     let move_left = inputs.keys_held.contains(&PhysicalKey::Code(KeyCode::KeyA));
     let move_right = inputs.keys_held.contains(&PhysicalKey::Code(KeyCode::KeyD));
-    let jump_pressed = inputs.keys_pressed.contains(&PhysicalKey::Code(KeyCode::Space));
+    let jump_pressed = inputs
+        .keys_pressed
+        .contains(&PhysicalKey::Code(KeyCode::Space));
 
     let is_grounded = {
         let player = world.get_object_with_tag::<Player>()?;

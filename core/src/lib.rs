@@ -1,5 +1,6 @@
 extern crate self as apostasy_core;
 pub use apostasy_macros::Component;
+use apostasy_macros::Resource;
 pub use apostasy_macros::fixed_update;
 pub use apostasy_macros::late_update;
 pub use apostasy_macros::start;
@@ -7,6 +8,8 @@ pub use apostasy_macros::update;
 
 use winit::event::DeviceEvent;
 use winit::event::DeviceId;
+use winit::keyboard::KeyCode;
+use winit::keyboard::PhysicalKey;
 
 use std::path::Path;
 use std::sync::RwLock;
@@ -25,6 +28,8 @@ use crate::assets::gltf::ModelRegistry;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
 use crate::objects::resources::input_manager::InputManager;
+use crate::objects::resources::input_manager::KeyAction;
+use crate::objects::resources::input_manager::KeyBind;
 use crate::objects::resources::window_manager::WindowManager;
 use crate::objects::systems::EngineTimer;
 use crate::packages::Packages;
@@ -64,6 +69,9 @@ pub mod states;
 pub mod ui;
 pub mod utils;
 pub mod voxels;
+
+#[derive(Clone, Resource, Default)]
+pub struct ReloadShadersRequest(pub bool);
 
 pub use anyhow;
 pub use cgmath;
@@ -510,8 +518,30 @@ impl ApplicationHandler for Core {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        let mut world = self.world.lock().unwrap();
+
+        if world.has_resource::<ReloadShadersRequest>() {
+            world.remove_resource::<ReloadShadersRequest>();
+
+            if let Some(render_info) = &self.rendering_info {
+                let mut render_info = render_info.lock().unwrap();
+
+                if let Some(renderer) = &mut render_info.renderer {
+                    renderer.reload_shaders().unwrap();
+                }
+            }
+        }
+
         if let Some(render_info) = &self.rendering_info {
-            render_info.lock().unwrap().window.request_redraw();
+            let render_info = render_info.lock().unwrap();
+            // if let Some(renderer) = &mut render_info.renderer
+            //     && let Ok(changed) = renderer.reload_shaders()
+            //     && changed
+            // {
+            //     render_info.window.request_redraw();
+            // }
+
+            render_info.window.request_redraw();
         }
     }
 }
@@ -533,5 +563,27 @@ pub fn init_core(rendering_api: RenderingBackend, packages: Vec<Packages>) -> Re
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut core)?;
 
+    Ok(())
+}
+
+#[start]
+pub fn editor_start(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource_mut::<InputManager>()?;
+
+    inputs
+        .register_keybind(
+            "Reload Shaders",
+            KeyBind::new(PhysicalKey::Code(KeyCode::F5), KeyAction::Press),
+        )
+        .unwrap();
+    Ok(())
+}
+
+#[update]
+pub fn editor_update(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource::<InputManager>()?;
+    if inputs.is_keybind_active("Reload Shaders") {
+        world.insert_resource(ReloadShadersRequest(true));
+    }
     Ok(())
 }

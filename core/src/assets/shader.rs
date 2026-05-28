@@ -17,37 +17,33 @@ pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
         resolve_shader_path(&format!("{}.spv", name))
     };
 
-    if let Some(spv) = &spv_path {
-        if source_path.is_none() || source_is_older_than_spv(source_path.as_deref(), spv) {
-            log!("Loading shader SPIR-V: {}", spv.display());
-            return fs::read(spv)
-                .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()));
-        }
+    if requested.extension().and_then(|e| e.to_str()) == Some("spv") {
+        let spv = source_path.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Shader '{}' was not found in app or core shader directories",
+                name
+            )
+        })?;
+
+        log!("Loading shader SPIR-V: {}", spv.display());
+        return fs::read(&spv)
+            .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()));
     }
 
-    let source_path = source_path.ok_or_else(|| {
+    if let Some(source_path) = source_path {
+        log!("Compiling shader source: {}", source_path.display());
+        return compile_shader(&source_path);
+    }
+
+    let spv = spv_path.ok_or_else(|| {
         anyhow::anyhow!(
             "Shader '{}' was not found in app or core shader directories",
             name
         )
     })?;
 
-    log!("Loading shader source: {}", source_path.display());
-
-    match compile_shader(&source_path) {
-        Ok(bytes) => Ok(bytes),
-        Err(err) if spv_path.is_some() => {
-            let spv = spv_path.unwrap();
-            log_warn!(
-                "GLSL compile failed, falling back to SPIR-V {}: {}",
-                spv.display(),
-                err
-            );
-            fs::read(&spv)
-                .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()))
-        }
-        Err(err) => Err(err),
-    }
+    log!("Loading fallback SPIR-V: {}", spv.display());
+    fs::read(&spv).with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()))
 }
 
 pub fn resolve_shader_path(name: &str) -> Option<PathBuf> {
