@@ -1,11 +1,29 @@
-use ash::vk;
+use ash::vk::{
+    self, BlendFactor, BlendOp, ColorComponentFlags, DynamicState, Extent2D, Format,
+    PipelineColorBlendAttachmentState, PrimitiveTopology, ShaderModule,
+    VertexInputAttributeDescription, VertexInputBindingDescription,
+};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
+pub struct PipelineOptions {
+    pub image_extent: Extent2D,
+    pub image_format: Format,
+    pub depth_format: Option<Format>,
+    pub vertex_shader: ShaderModule,
+    pub fragment_shader: ShaderModule,
+    pub vertex_bindings: Vec<VertexInputBindingDescription>,
+    pub vertex_attributes: Vec<VertexInputAttributeDescription>,
+}
+
+#[derive(Clone)]
 pub struct RenderingSettings {
     pub depth_settings: DepthSettings,
     pub rasterization_settings: RasterizationSettings,
     pub image_settings: ImageSettings,
     pub debug_settings: DebugSettings,
+    pub color_blend_settings: ColorBlendSettings,
+    pub dynamic_state_settings: DynamicStateSettings,
+    pub primitive_topology_settings: PrimitiveTopologySettings,
 
     pub default_vertex_shader: String,
     pub default_fragment_shader: String,
@@ -18,9 +36,62 @@ impl Default for RenderingSettings {
             rasterization_settings: RasterizationSettings::default(),
             image_settings: ImageSettings::default(),
             debug_settings: DebugSettings::default(),
+            color_blend_settings: ColorBlendSettings::default(),
+            dynamic_state_settings: DynamicStateSettings::default(),
+            primitive_topology_settings: PrimitiveTopologySettings::default(),
 
             default_vertex_shader: "shader.vert".to_string(),
             default_fragment_shader: "shader.frag".to_string(),
+        }
+    }
+}
+
+/// The settings for the primitive topology
+#[derive(Clone, Copy)]
+pub struct PrimitiveTopologySettings {
+    pub primitive_topology: PrimitiveTopology,
+}
+
+impl Default for PrimitiveTopologySettings {
+    fn default() -> Self {
+        Self {
+            primitive_topology: PrimitiveTopology::TRIANGLE_LIST,
+        }
+    }
+}
+
+/// The settings for the blending
+#[derive(Clone, Copy)]
+pub struct ColorBlendSettings {
+    pub blend_attachment: PipelineColorBlendAttachmentState,
+}
+
+impl Default for ColorBlendSettings {
+    fn default() -> Self {
+        Self {
+            blend_attachment: PipelineColorBlendAttachmentState::default()
+                .color_write_mask(ColorComponentFlags::RGBA)
+                .blend_enable(true)
+                .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+                .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
+                .color_blend_op(BlendOp::ADD)
+                .src_alpha_blend_factor(BlendFactor::ONE)
+                .dst_alpha_blend_factor(BlendFactor::ZERO)
+                .alpha_blend_op(BlendOp::ADD),
+        }
+    }
+}
+
+/// The settings for the dynamic states
+#[derive(Clone)]
+pub struct DynamicStateSettings {
+    pub dynamic_states: Vec<DynamicState>,
+}
+
+impl Default for DynamicStateSettings {
+    fn default() -> Self {
+        Self {
+            dynamic_states: vec![DynamicState::VIEWPORT, DynamicState::SCISSOR],
         }
     }
 }

@@ -241,8 +241,6 @@ impl Core {
                             let model = model_registry.paths.get(&model_path).unwrap();
                             object.get_component_mut::<ModelRenderer>().unwrap().model =
                                 Some(Box::new(model.clone()));
-
-                            log!("loaded model");
                         }
 
                         let model_renderer = object.get_component::<ModelRenderer>().unwrap();

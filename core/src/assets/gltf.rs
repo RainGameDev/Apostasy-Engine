@@ -9,12 +9,15 @@ use ash::vk::CommandPool;
 use hashbrown::HashMap;
 use walkdir::WalkDir;
 
-use crate::rendering::{
-    shared::{
-        model::{GpuModel, Mesh},
-        vertex::Vertex,
+use crate::{
+    log, log_error,
+    rendering::{
+        shared::{
+            model::{GpuModel, Mesh},
+            vertex::Vertex,
+        },
+        vulkan::rendering_context::VulkanRenderingContext,
     },
-    vulkan::rendering_context::VulkanRenderingContext,
 };
 
 #[derive(Resource, Default, Clone, Debug)]
@@ -50,11 +53,11 @@ impl ModelLoader {
 
             match load_model(path, Arc::clone(&context), command_pool) {
                 Ok(model) => {
-                    println!("Loaded model: {} ({:?})", model.name, path);
+                    log!("Loaded model: {} ({:?})", model.name, path);
                     models.insert(model.name.clone(), model);
                 }
                 Err(e) => {
-                    eprintln!("Failed to load model {:?}: {}", path, e);
+                    log_error!("Failed to load model {:?}: {}", path, e);
                 }
             }
         }

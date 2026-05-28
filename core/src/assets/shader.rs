@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
+use crate::{log, log_warn};
+
 const SHADER_DIRECTORIES: &[&str] = &["res/shaders", "../core/res/shaders", "core/res/shaders"];
 
 pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
@@ -17,7 +19,7 @@ pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
 
     if let Some(spv) = &spv_path {
         if source_path.is_none() || source_is_older_than_spv(source_path.as_deref(), spv) {
-            eprintln!("Loading shader SPIR-V: {}", spv.display());
+            log!("Loading shader SPIR-V: {}", spv.display());
             return fs::read(spv)
                 .with_context(|| format!("Failed to read SPIR-V shader file {}", spv.display()));
         }
@@ -30,14 +32,14 @@ pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
         )
     })?;
 
-    eprintln!("Loading shader source: {}", source_path.display());
+    log!("Loading shader source: {}", source_path.display());
 
     match compile_shader(&source_path) {
         Ok(bytes) => Ok(bytes),
         Err(err) if spv_path.is_some() => {
             let spv = spv_path.unwrap();
-            eprintln!(
-                "WARNING: GLSL compile failed, falling back to SPIR-V {}: {}",
+            log_warn!(
+                "GLSL compile failed, falling back to SPIR-V {}: {}",
                 spv.display(),
                 err
             );

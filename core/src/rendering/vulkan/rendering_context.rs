@@ -11,8 +11,6 @@ use ash::vk;
 use ash::vk::ApplicationInfo;
 use ash::vk::AttachmentLoadOp;
 use ash::vk::AttachmentStoreOp;
-use ash::vk::BlendFactor;
-use ash::vk::BlendOp;
 use ash::vk::Buffer;
 use ash::vk::BufferCopy;
 use ash::vk::BufferCreateInfo;
@@ -20,26 +18,21 @@ use ash::vk::BufferUsageFlags;
 use ash::vk::ClearColorValue;
 use ash::vk::ClearDepthStencilValue;
 use ash::vk::ClearValue;
-use ash::vk::ColorComponentFlags;
 use ash::vk::CommandBuffer;
 use ash::vk::CommandBufferAllocateInfo;
 use ash::vk::CommandBufferBeginInfo;
 use ash::vk::CommandBufferLevel;
 use ash::vk::CommandBufferUsageFlags;
 use ash::vk::CommandPool;
-use ash::vk::CompareOp;
-use ash::vk::CullModeFlags;
 use ash::vk::DependencyFlags;
 use ash::vk::DeviceCreateInfo;
 use ash::vk::DeviceMemory;
 use ash::vk::DeviceQueueCreateInfo;
 use ash::vk::DeviceSize;
-use ash::vk::DynamicState;
 use ash::vk::Extent2D;
 use ash::vk::Extent3D;
 use ash::vk::Fence;
 use ash::vk::Format;
-use ash::vk::FrontFace;
 use ash::vk::GraphicsPipelineCreateInfo;
 use ash::vk::Image;
 use ash::vk::ImageAspectFlags;
@@ -62,7 +55,6 @@ use ash::vk::PhysicalDeviceBufferDeviceAddressFeatures;
 use ash::vk::PhysicalDeviceDynamicRenderingFeatures;
 use ash::vk::Pipeline;
 use ash::vk::PipelineCache;
-use ash::vk::PipelineColorBlendAttachmentState;
 use ash::vk::PipelineColorBlendStateCreateInfo;
 use ash::vk::PipelineDepthStencilStateCreateInfo;
 use ash::vk::PipelineDynamicStateCreateInfo;
@@ -74,8 +66,6 @@ use ash::vk::PipelineRenderingCreateInfo;
 use ash::vk::PipelineShaderStageCreateInfo;
 use ash::vk::PipelineVertexInputStateCreateInfo;
 use ash::vk::PipelineViewportStateCreateInfo;
-use ash::vk::PolygonMode;
-use ash::vk::PrimitiveTopology;
 use ash::vk::Queue;
 use ash::vk::Rect2D;
 use ash::vk::RenderPass;
@@ -93,7 +83,8 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::Window;
 
-use crate::rendering::shared::vertex::Vertex;
+use crate::rendering::shared::rendering_settings::PipelineOptions;
+use crate::rendering::shared::rendering_settings::RenderingSettings;
 use crate::rendering::shared::vertex::VertexDefinition;
 use crate::rendering::vulkan::device::PhysicalDevice;
 use crate::rendering::vulkan::image_layout::ImageLayoutState;
@@ -101,7 +92,6 @@ use crate::rendering::vulkan::queue_family::QueueFamilies;
 use crate::rendering::vulkan::queue_family::QueueFamily;
 use crate::rendering::vulkan::queue_family::QueueFamilyPicker;
 use crate::rendering::vulkan::surface::Surface;
-use crate::voxels::meshes::VoxelVertex;
 
 pub struct RenderingContextAttributes<'window> {
     pub compatability_window: &'window Window,
@@ -122,76 +112,6 @@ pub struct VulkanRenderingContext {
     pub entry: Entry,
     pub swapchain_extension: swapchain::Device,
 }
-
-pub struct GraphicsPipelineSettings {
-    pub vertex_shader: ShaderModule,
-    pub fragment_shader: ShaderModule,
-    pub vertex_bindings: Vec<vk::VertexInputBindingDescription>,
-    pub vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
-    pub primitive_topology: PrimitiveTopology,
-    pub cull_mode: CullModeFlags,
-    pub front_face: FrontFace,
-    pub polygon_mode: PolygonMode,
-    pub line_width: f32,
-    pub depth_test_enable: bool,
-    pub depth_write_enable: bool,
-    pub depth_compare_op: CompareOp,
-    pub blend_attachment: PipelineColorBlendAttachmentState,
-    pub image_extent: Extent2D,
-    pub image_format: Format,
-    pub depth_format: Option<Format>,
-    pub pipeline_layout: PipelineLayout,
-    pub dynamic_states: Vec<DynamicState>,
-}
-
-impl GraphicsPipelineSettings {
-    pub fn new(
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        depth_format: Option<Format>,
-        pipeline_layout: PipelineLayout,
-        vertex_bindings: Vec<vk::VertexInputBindingDescription>,
-        vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
-    ) -> Self {
-        Self {
-            vertex_shader,
-            fragment_shader,
-            vertex_bindings,
-            vertex_attributes,
-            primitive_topology: PrimitiveTopology::TRIANGLE_LIST,
-            cull_mode: CullModeFlags::NONE,
-            front_face: FrontFace::CLOCKWISE,
-            polygon_mode: PolygonMode::FILL,
-            line_width: 1.0,
-            depth_test_enable: true,
-            depth_write_enable: true,
-            depth_compare_op: CompareOp::LESS,
-            blend_attachment: PipelineColorBlendAttachmentState::default()
-                .color_write_mask(ColorComponentFlags::RGBA)
-                .blend_enable(true)
-                .src_color_blend_factor(BlendFactor::SRC_ALPHA)
-                .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
-                .color_blend_op(BlendOp::ADD)
-                .src_alpha_blend_factor(BlendFactor::ONE)
-                .dst_alpha_blend_factor(BlendFactor::ZERO)
-                .alpha_blend_op(BlendOp::ADD),
-            image_extent,
-            image_format,
-            depth_format,
-            pipeline_layout,
-            dynamic_states: vec![DynamicState::VIEWPORT, DynamicState::SCISSOR],
-        }
-    }
-
-    pub fn wireframe(mut self) -> Self {
-        self.polygon_mode = PolygonMode::LINE;
-        self.line_width = 1.0;
-        self
-    }
-}
-
 impl VulkanRenderingContext {
     pub fn new(attributes: RenderingContextAttributes) -> Result<VulkanRenderingContext> {
         unsafe {
@@ -447,15 +367,17 @@ impl VulkanRenderingContext {
         Ok(shader_module)
     }
 
-    pub fn create_graphics_pipeline_with_settings(
+    pub fn create_graphics_pipeline(
         &self,
-        settings: GraphicsPipelineSettings,
+        pipeline_options: PipelineOptions,
+        rendering_settings: RenderingSettings,
+        pipeline_layout: PipelineLayout,
     ) -> Result<Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
-        let attachment_formats = [settings.image_format];
-        let mut render_info = PipelineRenderingCreateInfo::default()
-            .color_attachment_formats(&attachment_formats);
-        if let Some(depth_format) = settings.depth_format {
+        let attachment_formats = [pipeline_options.image_format];
+        let mut render_info =
+            PipelineRenderingCreateInfo::default().color_attachment_formats(&attachment_formats);
+        if let Some(depth_format) = pipeline_options.depth_format {
             render_info = render_info.depth_attachment_format(depth_format);
         }
 
@@ -468,46 +390,51 @@ impl VulkanRenderingContext {
                         .stages(&[
                             PipelineShaderStageCreateInfo::default()
                                 .stage(ShaderStageFlags::VERTEX)
-                                .module(settings.vertex_shader)
+                                .module(pipeline_options.vertex_shader)
                                 .name(&entry_point),
                             PipelineShaderStageCreateInfo::default()
                                 .stage(ShaderStageFlags::FRAGMENT)
-                                .module(settings.fragment_shader)
+                                .module(pipeline_options.fragment_shader)
                                 .name(&entry_point),
                         ])
                         .vertex_input_state(
                             &PipelineVertexInputStateCreateInfo::default()
-                                .vertex_binding_descriptions(&settings.vertex_bindings)
-                                .vertex_attribute_descriptions(&settings.vertex_attributes),
+                                .vertex_binding_descriptions(&pipeline_options.vertex_bindings)
+                                .vertex_attribute_descriptions(&pipeline_options.vertex_attributes),
                         )
                         .input_assembly_state(
-                            &PipelineInputAssemblyStateCreateInfo::default()
-                                .topology(settings.primitive_topology),
+                            &PipelineInputAssemblyStateCreateInfo::default().topology(
+                                rendering_settings
+                                    .primitive_topology_settings
+                                    .primitive_topology,
+                            ),
                         )
                         .viewport_state(
                             &PipelineViewportStateCreateInfo::default()
                                 .viewports(&[Viewport {
                                     x: 0.0,
                                     y: 0.0,
-                                    width: settings.image_extent.width as f32,
-                                    height: settings.image_extent.height as f32,
+                                    width: pipeline_options.image_extent.width as f32,
+                                    height: pipeline_options.image_extent.height as f32,
                                     min_depth: 0.0,
                                     max_depth: 1.0,
                                 }])
                                 .scissors(&[Rect2D {
                                     offset: Offset2D { x: 0, y: 0 },
-                                    extent: settings.image_extent,
+                                    extent: pipeline_options.image_extent,
                                 }]),
                         )
                         .rasterization_state(
                             &PipelineRasterizationStateCreateInfo::default()
                                 .depth_clamp_enable(false)
                                 .rasterizer_discard_enable(false)
-                                .polygon_mode(settings.polygon_mode)
-                                .cull_mode(settings.cull_mode)
-                                .front_face(settings.front_face)
+                                .polygon_mode(
+                                    rendering_settings.rasterization_settings.polygon_mode,
+                                )
+                                .cull_mode(rendering_settings.rasterization_settings.cull_mode)
+                                .front_face(rendering_settings.rasterization_settings.front_face)
                                 .depth_bias_enable(false)
-                                .line_width(settings.line_width),
+                                .line_width(rendering_settings.rasterization_settings.line_width),
                         )
                         .multisample_state(
                             &PipelineMultisampleStateCreateInfo::default()
@@ -515,20 +442,26 @@ impl VulkanRenderingContext {
                                 .sample_shading_enable(false),
                         )
                         .color_blend_state(
-                            &PipelineColorBlendStateCreateInfo::default()
-                                .attachments(&[settings.blend_attachment]),
+                            &PipelineColorBlendStateCreateInfo::default().attachments(&[
+                                rendering_settings.color_blend_settings.blend_attachment,
+                            ]),
                         )
-                        .dynamic_state(
-                            &PipelineDynamicStateCreateInfo::default()
-                                .dynamic_states(&settings.dynamic_states),
-                        )
+                        .dynamic_state(&PipelineDynamicStateCreateInfo::default().dynamic_states(
+                            &rendering_settings.dynamic_state_settings.dynamic_states,
+                        ))
                         .depth_stencil_state(
                             &PipelineDepthStencilStateCreateInfo::default()
-                                .depth_test_enable(settings.depth_test_enable)
-                                .depth_write_enable(settings.depth_write_enable)
-                                .depth_compare_op(settings.depth_compare_op),
+                                .depth_test_enable(
+                                    rendering_settings.depth_settings.depth_test_enabled,
+                                )
+                                .depth_write_enable(
+                                    rendering_settings.depth_settings.depth_test_enabled,
+                                )
+                                .depth_compare_op(
+                                    rendering_settings.depth_settings.depth_compare_op,
+                                ),
                         )
-                        .layout(settings.pipeline_layout)
+                        .layout(pipeline_layout)
                         .render_pass(RenderPass::null())
                         .push_next(&mut render_info)],
                     None,
@@ -540,121 +473,117 @@ impl VulkanRenderingContext {
         }
     }
 
-    pub fn create_graphics_pipeline(
-        &self,
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        depth_format: Format,
-        pipeline_layout: PipelineLayout,
-        _pipeline_chache: PipelineCache,
-    ) -> Result<Pipeline> {
-        let settings = GraphicsPipelineSettings::new(
-            vertex_shader,
-            fragment_shader,
-            image_extent,
-            image_format,
-            Some(depth_format),
-            pipeline_layout,
-            vec![Vertex::get_binding_description()],
-            Vertex::get_attribute_descriptions(),
-        );
-        self.create_graphics_pipeline_with_settings(settings)
-    }
-
-    pub fn create_voxel_graphics_pipeline(
-        &self,
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        depth_format: Format,
-        pipeline_layout: PipelineLayout,
-        _pipeline_chache: PipelineCache,
-    ) -> Result<Pipeline> {
-        let settings = GraphicsPipelineSettings::new(
-            vertex_shader,
-            fragment_shader,
-            image_extent,
-            image_format,
-            Some(depth_format),
-            pipeline_layout,
-            vec![VoxelVertex::get_binding_description()],
-            VoxelVertex::get_attribute_descriptions(),
-        );
-        self.create_graphics_pipeline_with_settings(settings)
-    }
-
-    pub fn create_water_graphics_pipeline(
-        &self,
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        depth_format: Format,
-        pipeline_layout: PipelineLayout,
-        _pipeline_chache: PipelineCache,
-    ) -> Result<Pipeline> {
-        let settings = GraphicsPipelineSettings::new(
-            vertex_shader,
-            fragment_shader,
-            image_extent,
-            image_format,
-            Some(depth_format),
-            pipeline_layout,
-            vec![VoxelVertex::get_binding_description()],
-            VoxelVertex::get_attribute_descriptions(),
-        );
-        self.create_graphics_pipeline_with_settings(settings)
-    }
-
-    pub fn create_wireframe_pipeline(
-        &self,
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        depth_format: Format,
-        pipeline_layout: PipelineLayout,
-        _pipeline_chache: PipelineCache,
-    ) -> Result<Pipeline> {
-        let settings = GraphicsPipelineSettings::new(
-            vertex_shader,
-            fragment_shader,
-            image_extent,
-            image_format,
-            Some(depth_format),
-            pipeline_layout,
-            vec![Vertex::get_binding_description()],
-            Vertex::get_attribute_descriptions(),
-        )
-        .wireframe();
-        self.create_graphics_pipeline_with_settings(settings)
-    }
-    pub fn create_voxel_wireframe_pipeline(
-        &self,
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        image_extent: Extent2D,
-        image_format: Format,
-        _depth_format: Format,
-        pipeline_layout: PipelineLayout,
-        _pipeline_chache: PipelineCache,
-    ) -> Result<Pipeline> {
-        let settings = GraphicsPipelineSettings::new(
-            vertex_shader,
-            fragment_shader,
-            image_extent,
-            image_format,
-            None,
-            pipeline_layout,
-            vec![VoxelVertex::get_binding_description()],
-            VoxelVertex::get_attribute_descriptions(),
-        )
-        .wireframe();
-        self.create_graphics_pipeline_with_settings(settings)
-    }
+    // pub fn create_graphics_pipeline(
+    //     &self,
+    //     vertex_shader: ShaderModule,
+    //     fragment_shader: ShaderModule,
+    //     image_extent: Extent2D,
+    //     image_format: Format,
+    //     depth_format: Format,
+    //     pipeline_layout: PipelineLayout,
+    //     _pipeline_chache: PipelineCache,
+    // ) -> Result<Pipeline> {
+    //     let settings = GraphicsPipelineSettings::new(
+    //         vertex_shader,
+    //         fragment_shader,
+    //         image_extent,
+    //         image_format,
+    //         Some(depth_format),
+    //         pipeline_layout,
+    //         vec![Vertex::get_binding_description()],
+    //         Vertex::get_attribute_descriptions(),
+    //     );
+    //     self.create_graphics_pipeline_with_settings(settings)
+    // }
+    //
+    // pub fn create_voxel_graphics_pipeline(
+    //     &self,
+    //     vertex_shader: ShaderModule,
+    //     fragment_shader: ShaderModule,
+    //     image_extent: Extent2D,
+    //     image_format: Format,
+    //     depth_format: Format,
+    //     pipeline_layout: PipelineLayout,
+    //     _pipeline_chache: PipelineCache,
+    // ) -> Result<Pipeline> {
+    //     let settings = GraphicsPipelineSettings::new(
+    //         vertex_shader,
+    //         fragment_shader,
+    //         image_extent,
+    //         image_format,
+    //         Some(depth_format),
+    //         pipeline_layout,
+    //         vec![VoxelVertex::get_binding_description()],
+    //         VoxelVertex::get_attribute_descriptions(),
+    //     );
+    //     self.create_graphics_pipeline_with_settings(settings)
+    // }
+    //
+    // pub fn create_water_graphics_pipeline(
+    //     &self,
+    //     vertex_shader: ShaderModule,
+    //     fragment_shader: ShaderModule,
+    //     image_extent: Extent2D,
+    //     image_format: Format,
+    //     depth_format: Format,
+    //     pipeline_layout: PipelineLayout,
+    //     _pipeline_chache: PipelineCache,
+    // ) -> Result<Pipeline> {
+    //     let settings = GraphicsPipelineSettings::new(
+    //         vertex_shader,
+    //         fragment_shader,
+    //         image_extent,
+    //         image_format,
+    //         Some(depth_format),
+    //         pipeline_layout,
+    //         vec![VoxelVertex::get_binding_description()],
+    //         VoxelVertex::get_attribute_descriptions(),
+    //     );
+    //     self.create_graphics_pipeline_with_settings(settings)
+    // }
+    //
+    // pub fn create_wireframe_pipeline(
+    //     &self,
+    //     pipeline_options: PipelineOptions,
+    //     rendering_settings: RenderingSettings,
+    //     pipeline_layout: PipelineLayout,
+    // ) -> Result<Pipeline> {
+    //     let settings = GraphicsPipelineSettings::new(
+    //         vertex_shader,
+    //         fragment_shader,
+    //         image_extent,
+    //         image_format,
+    //         Some(depth_format),
+    //         pipeline_layout,
+    //         vec![Vertex::get_binding_description()],
+    //         Vertex::get_attribute_descriptions(),
+    //     )
+    //     .wireframe();
+    //     self.create_graphics_pipeline_with_settings(settings)
+    // }
+    // pub fn create_voxel_wireframe_pipeline(
+    //     &self,
+    //     vertex_shader: ShaderModule,
+    //     fragment_shader: ShaderModule,
+    //     image_extent: Extent2D,
+    //     image_format: Format,
+    //     _depth_format: Format,
+    //     pipeline_layout: PipelineLayout,
+    //     _pipeline_chache: PipelineCache,
+    // ) -> Result<Pipeline> {
+    //     let settings = GraphicsPipelineSettings::new(
+    //         vertex_shader,
+    //         fragment_shader,
+    //         image_extent,
+    //         image_format,
+    //         None,
+    //         pipeline_layout,
+    //         vec![VoxelVertex::get_binding_description()],
+    //         VoxelVertex::get_attribute_descriptions(),
+    //     )
+    //     .wireframe();
+    //     self.create_graphics_pipeline_with_settings(settings)
+    // }
 
     pub fn transition_image_layout(
         &self,
