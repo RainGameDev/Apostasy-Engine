@@ -25,7 +25,7 @@
     - [x] Object resolution
     - [x] Object shapes
     - [x] Offsets
-  - [ ] Friction
+  - [x] Friction
   - [ ] Inertia
 
 # Editor

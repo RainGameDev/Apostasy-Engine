@@ -2,7 +2,14 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, Zero},
     init_core,
-    objects::{Object, components::transform::Transform, world::World},
+    objects::{
+        Object,
+        components::transform::Transform,
+        resources::input_manager::InputManager,
+        systems::DeltaTime,
+        tags::Player,
+        world::World,
+    },
     packages::Packages,
     physics::{
         Gravity,
@@ -17,7 +24,18 @@ use apostasy_core::{
         },
     },
     start,
+    update,
+    winit::keyboard::{PhysicalKey, KeyCode},
 };
+use apostasy_macros::Resource;
+
+#[derive(Resource, Clone)]
+pub struct CoyoteTime(pub f32);
+
+const COYOTE_TIME_WINDOW: f32 = 0.15;
+const JUMP_VELOCITY: f32 = 8.0;
+const SIDE_SPEED: f32 = 5.0;
+
 
 fn main() {
     init_core(
@@ -94,10 +112,62 @@ pub fn start(world: &mut World) -> Result<()> {
         .add_component(Collider::new(
             ColliderShape::Sphere { radius: 1.0 },
             Vector3::zero(),
-        ));
+        ))
+        .add_tag(Player);
 
     let sphere = world.add_object(sphere);
-    world.set_parent(camera, Some(sphere));
+    let _ = world.set_parent(camera, Some(sphere));
+    world.insert_resource(CoyoteTime(0.0));
+
+    Ok(())
+}
+
+#[update(priority = 25)]
+pub fn sphere_player_input(world: &mut World) -> Result<()> {
+    let delta = world.get_resource::<DeltaTime>()?.0;
+    let inputs = world.get_resource::<InputManager>()?.clone();
+
+    let move_left = inputs.keys_held.contains(&PhysicalKey::Code(KeyCode::KeyA));
+    let move_right = inputs.keys_held.contains(&PhysicalKey::Code(KeyCode::KeyD));
+    let jump_pressed = inputs.keys_pressed.contains(&PhysicalKey::Code(KeyCode::Space));
+
+    let is_grounded = {
+        let player = world.get_object_with_tag::<Player>()?;
+        let velocity = player.get_component::<Velocity>()?;
+        velocity.is_grounded
+    };
+
+    let coyote_time_value = {
+        let coyote_time = world.get_resource_mut::<CoyoteTime>()?;
+        if is_grounded {
+            coyote_time.0 = COYOTE_TIME_WINDOW;
+        } else {
+            coyote_time.0 = (coyote_time.0 - delta).max(0.0);
+        }
+        coyote_time.0
+    };
+
+    let should_jump = jump_pressed && coyote_time_value > 0.0;
+
+    {
+        let player = world.get_object_with_tag_mut::<Player>()?;
+        let velocity = player.get_component_mut::<Velocity>()?;
+
+        if move_left && !move_right {
+            velocity.linear_velocity.x = -SIDE_SPEED;
+        } else if move_right && !move_left {
+            velocity.linear_velocity.x = SIDE_SPEED;
+        }
+
+        if should_jump {
+            velocity.linear_velocity.y = JUMP_VELOCITY;
+        }
+    }
+
+    if should_jump {
+        let coyote_time = world.get_resource_mut::<CoyoteTime>()?;
+        coyote_time.0 = 0.0;
+    }
 
     Ok(())
 }

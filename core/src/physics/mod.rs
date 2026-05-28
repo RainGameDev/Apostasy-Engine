@@ -32,7 +32,12 @@ pub fn apply_gravity(world: &mut World, delta: f32) -> Result<()> {
                 velocity.linear_velocity.y = 0.0;
             }
         } else {
-            velocity.linear_velocity.y -= 9.8 * delta;
+            let gravity = 9.8;
+            let mut fall_accel = gravity;
+            if velocity.linear_velocity.y < 0.0 {
+                fall_accel *= 1.8;
+            }
+            velocity.linear_velocity.y -= fall_accel * delta;
             velocity.linear_velocity.y = velocity.linear_velocity.y.max(-50.0);
         }
     }

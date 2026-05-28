@@ -112,11 +112,7 @@ fn velocity_process(world: &mut World) -> Result<()> {
             if vel.mass == 0.0 || !vel.process {
                 continue;
             }
-            (
-                vel.linear_velocity,
-                vel.angular_velocity,
-                vel.is_grounded,
-            )
+            (vel.linear_velocity, vel.angular_velocity, vel.is_grounded)
         };
 
         let transform = object.get_component_mut::<Transform>()?;
@@ -132,13 +128,18 @@ fn velocity_process(world: &mut World) -> Result<()> {
         let vel = object.get_component_mut::<Velocity>()?;
         if grounded {
             let tangential = Vector3::new(vel.linear_velocity.x, 0.0, vel.linear_velocity.z);
-            if tangential.magnitude() < 0.2 {
+            let speed = tangential.magnitude();
+            if speed < 0.2 {
                 vel.linear_velocity.x = 0.0;
                 vel.linear_velocity.z = 0.0;
             } else {
-                let grounded_damping = 0.9_f32.powf(delta);
-                vel.linear_velocity.x *= grounded_damping;
-                vel.linear_velocity.z *= grounded_damping;
+                let friction_acc = vel.mu_kinetic * 9.8;
+                let friction_delta = friction_acc * delta;
+                let new_speed = (speed - friction_delta).max(0.0);
+                let tangential_dir = tangential / speed;
+                let new_tangential = tangential_dir * new_speed;
+                vel.linear_velocity.x = new_tangential.x;
+                vel.linear_velocity.z = new_tangential.z;
             }
         }
 
