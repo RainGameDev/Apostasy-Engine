@@ -26,6 +26,7 @@ image = "0.25.10"
 noise = "0.9.0"
 slotmap = "1.1.1"
 egui = "0.33.3"
+egui_extras = { version = "0.33.3" } 
 eframe = "0.33.3"
 egui-winit = "0.33.3"
 epaint = "0.33.3"

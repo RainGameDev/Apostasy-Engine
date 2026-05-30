@@ -81,6 +81,7 @@ pub use cgmath;
 use cgmath::{InnerSpace, Vector3};
 pub use crossbeam_channel;
 pub use egui;
+pub use egui_extras;
 pub use epaint;
 pub use lru;
 pub use noise;

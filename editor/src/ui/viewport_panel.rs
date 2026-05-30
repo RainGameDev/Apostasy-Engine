@@ -33,7 +33,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 ui.label("Resolution scale");
                 ui.add(Slider::new(&mut viewport_size.supersample, 1.0..=4.0).text("SSAA"));
 
-                ComboBox::from_label("SMAA")
+                ComboBox::from_label("MSAA")
                     .selected_text(format!("{:?}", aa_selected))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut aa_selected, AntiAliasingAmount::X0, "None");
