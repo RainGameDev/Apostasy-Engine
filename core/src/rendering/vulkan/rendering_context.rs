@@ -83,6 +83,7 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::Window;
 
+use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::rendering_settings::PipelineOptions;
 use crate::rendering::shared::rendering_settings::RenderingSettings;
 use crate::rendering::shared::vertex::VertexDefinition;
@@ -112,6 +113,7 @@ pub struct VulkanRenderingContext {
     pub entry: Entry,
     pub swapchain_extension: swapchain::Device,
 }
+
 impl VulkanRenderingContext {
     pub fn new(attributes: RenderingContextAttributes) -> Result<VulkanRenderingContext> {
         unsafe {
@@ -274,6 +276,7 @@ impl VulkanRenderingContext {
             })
         }
     }
+
     pub fn find_memory_type(&self, filter: u32, properties: MemoryPropertyFlags) -> Result<u32> {
         // First, try to find an exact match
         for i in 0..self.physical_device.memory_properties.memory_type_count {
@@ -298,6 +301,7 @@ impl VulkanRenderingContext {
             filter
         ))
     }
+
     pub fn create_image(
         &self,
         extent: Extent2D,
@@ -305,6 +309,7 @@ impl VulkanRenderingContext {
         tiling: ImageTiling,
         usage: ImageUsageFlags,
         properties: MemoryPropertyFlags,
+        samples: SampleCountFlags,
     ) -> Result<(Image, DeviceMemory)> {
         let image_info = ImageCreateInfo::default()
             .image_type(ImageType::TYPE_2D)
@@ -319,7 +324,7 @@ impl VulkanRenderingContext {
             .tiling(tiling)
             .initial_layout(ImageLayout::UNDEFINED)
             .usage(usage)
-            .samples(SampleCountFlags::TYPE_1)
+            .samples(samples)
             .sharing_mode(SharingMode::EXCLUSIVE);
 
         let image = unsafe { self.device.create_image(&image_info, None).unwrap() };
@@ -333,6 +338,7 @@ impl VulkanRenderingContext {
         unsafe { self.device.bind_image_memory(image, memory, 0).unwrap() };
         Ok((image, memory))
     }
+
     pub fn create_image_view(
         &self,
         image: Image,
@@ -372,6 +378,7 @@ impl VulkanRenderingContext {
         pipeline_options: PipelineOptions,
         rendering_settings: RenderingSettings,
         pipeline_layout: PipelineLayout,
+        aa_amount: AntiAliasingAmount,
     ) -> Result<Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
         let attachment_formats = [pipeline_options.image_format];
@@ -380,6 +387,13 @@ impl VulkanRenderingContext {
         if let Some(depth_format) = pipeline_options.depth_format {
             render_info = render_info.depth_attachment_format(depth_format);
         }
+
+        let aa_samples = match aa_amount {
+            AntiAliasingAmount::X0 => SampleCountFlags::TYPE_1,
+            AntiAliasingAmount::X2 => SampleCountFlags::TYPE_2,
+            AntiAliasingAmount::X4 => SampleCountFlags::TYPE_4,
+            AntiAliasingAmount::X8 => SampleCountFlags::TYPE_8,
+        };
 
         unsafe {
             Ok(self
@@ -438,8 +452,9 @@ impl VulkanRenderingContext {
                         )
                         .multisample_state(
                             &PipelineMultisampleStateCreateInfo::default()
-                                .rasterization_samples(SampleCountFlags::TYPE_4)
-                                .sample_shading_enable(false),
+                                .rasterization_samples(aa_samples)
+                                .sample_shading_enable(true)
+                                .min_sample_shading(0.2),
                         )
                         .color_blend_state(
                             &PipelineColorBlendStateCreateInfo::default().attachments(&[
@@ -472,118 +487,6 @@ impl VulkanRenderingContext {
                 .unwrap())
         }
     }
-
-    // pub fn create_graphics_pipeline(
-    //     &self,
-    //     vertex_shader: ShaderModule,
-    //     fragment_shader: ShaderModule,
-    //     image_extent: Extent2D,
-    //     image_format: Format,
-    //     depth_format: Format,
-    //     pipeline_layout: PipelineLayout,
-    //     _pipeline_chache: PipelineCache,
-    // ) -> Result<Pipeline> {
-    //     let settings = GraphicsPipelineSettings::new(
-    //         vertex_shader,
-    //         fragment_shader,
-    //         image_extent,
-    //         image_format,
-    //         Some(depth_format),
-    //         pipeline_layout,
-    //         vec![Vertex::get_binding_description()],
-    //         Vertex::get_attribute_descriptions(),
-    //     );
-    //     self.create_graphics_pipeline_with_settings(settings)
-    // }
-    //
-    // pub fn create_voxel_graphics_pipeline(
-    //     &self,
-    //     vertex_shader: ShaderModule,
-    //     fragment_shader: ShaderModule,
-    //     image_extent: Extent2D,
-    //     image_format: Format,
-    //     depth_format: Format,
-    //     pipeline_layout: PipelineLayout,
-    //     _pipeline_chache: PipelineCache,
-    // ) -> Result<Pipeline> {
-    //     let settings = GraphicsPipelineSettings::new(
-    //         vertex_shader,
-    //         fragment_shader,
-    //         image_extent,
-    //         image_format,
-    //         Some(depth_format),
-    //         pipeline_layout,
-    //         vec![VoxelVertex::get_binding_description()],
-    //         VoxelVertex::get_attribute_descriptions(),
-    //     );
-    //     self.create_graphics_pipeline_with_settings(settings)
-    // }
-    //
-    // pub fn create_water_graphics_pipeline(
-    //     &self,
-    //     vertex_shader: ShaderModule,
-    //     fragment_shader: ShaderModule,
-    //     image_extent: Extent2D,
-    //     image_format: Format,
-    //     depth_format: Format,
-    //     pipeline_layout: PipelineLayout,
-    //     _pipeline_chache: PipelineCache,
-    // ) -> Result<Pipeline> {
-    //     let settings = GraphicsPipelineSettings::new(
-    //         vertex_shader,
-    //         fragment_shader,
-    //         image_extent,
-    //         image_format,
-    //         Some(depth_format),
-    //         pipeline_layout,
-    //         vec![VoxelVertex::get_binding_description()],
-    //         VoxelVertex::get_attribute_descriptions(),
-    //     );
-    //     self.create_graphics_pipeline_with_settings(settings)
-    // }
-    //
-    // pub fn create_wireframe_pipeline(
-    //     &self,
-    //     pipeline_options: PipelineOptions,
-    //     rendering_settings: RenderingSettings,
-    //     pipeline_layout: PipelineLayout,
-    // ) -> Result<Pipeline> {
-    //     let settings = GraphicsPipelineSettings::new(
-    //         vertex_shader,
-    //         fragment_shader,
-    //         image_extent,
-    //         image_format,
-    //         Some(depth_format),
-    //         pipeline_layout,
-    //         vec![Vertex::get_binding_description()],
-    //         Vertex::get_attribute_descriptions(),
-    //     )
-    //     .wireframe();
-    //     self.create_graphics_pipeline_with_settings(settings)
-    // }
-    // pub fn create_voxel_wireframe_pipeline(
-    //     &self,
-    //     vertex_shader: ShaderModule,
-    //     fragment_shader: ShaderModule,
-    //     image_extent: Extent2D,
-    //     image_format: Format,
-    //     _depth_format: Format,
-    //     pipeline_layout: PipelineLayout,
-    //     _pipeline_chache: PipelineCache,
-    // ) -> Result<Pipeline> {
-    //     let settings = GraphicsPipelineSettings::new(
-    //         vertex_shader,
-    //         fragment_shader,
-    //         image_extent,
-    //         image_format,
-    //         None,
-    //         pipeline_layout,
-    //         vec![VoxelVertex::get_binding_description()],
-    //         VoxelVertex::get_attribute_descriptions(),
-    //     )
-    //     .wireframe();
-    //     self.create_graphics_pipeline_with_settings(settings)
-    // }
 
     pub fn transition_image_layout(
         &self,
@@ -624,22 +527,34 @@ impl VulkanRenderingContext {
     pub fn begin_rendering(
         &self,
         command_buffer: CommandBuffer,
-        view: ImageView,
+        msaa_view: ImageView,
+        resolve_view: ImageView,
         depth_view: ImageView,
         clear_color: ClearColorValue,
         render_area: Rect2D,
     ) {
+        let mut color_attachment = RenderingAttachmentInfo::default()
+            .image_view(msaa_view)
+            .image_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .clear_value(ClearValue { color: clear_color })
+            .load_op(AttachmentLoadOp::CLEAR);
+
+        if resolve_view != ImageView::null() {
+            color_attachment = color_attachment
+                .resolve_image_view(resolve_view)
+                .resolve_image_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .resolve_mode(vk::ResolveModeFlags::AVERAGE)
+                .store_op(AttachmentStoreOp::DONT_CARE);
+        } else {
+            color_attachment = color_attachment.store_op(AttachmentStoreOp::STORE);
+        }
+
         unsafe {
             self.device.cmd_begin_rendering(
                 command_buffer,
                 &RenderingInfo::default()
                     .layer_count(1)
-                    .color_attachments(&[RenderingAttachmentInfo::default()
-                        .image_view(view)
-                        .image_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .clear_value(ClearValue { color: clear_color })
-                        .load_op(AttachmentLoadOp::CLEAR)
-                        .store_op(AttachmentStoreOp::STORE)])
+                    .color_attachments(&[color_attachment])
                     .depth_attachment(
                         &RenderingAttachmentInfo::default()
                             .image_view(depth_view)
@@ -744,6 +659,7 @@ impl VulkanRenderingContext {
             self.device.free_command_buffers(command_pool, &[cmd_buf]);
         }
     }
+
     pub fn create_buffer(
         &self,
         size: DeviceSize,

@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::log;
+use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, VoxelPushConstants,
@@ -17,8 +18,8 @@ use crate::voxels::meshes::VoxelVertex;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use anyhow::Result;
 use ash::vk::{
-    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Extent2D, Pipeline,
-    PipelineLayout, PipelineLayoutCreateInfo,
+    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Extent2D, ImageView, Pipeline,
+    PipelineLayout, PipelineLayoutCreateInfo, SampleCountFlags,
 };
 use egui::{Context, TextureId};
 use epaint::ImageDelta;
@@ -74,9 +75,15 @@ pub struct VulkanRenderer {
     pub viewport_image: vk::Image,
     pub viewport_image_memory: vk::DeviceMemory,
     pub viewport_image_view: vk::ImageView,
+    // MSAA color buffer
+    pub msaa_color_image: vk::Image,
+    pub msaa_color_memory: vk::DeviceMemory,
+    pub msaa_color_view: vk::ImageView,
+    // MSAA depth buffer
     pub viewport_depth_image: vk::Image,
     pub viewport_depth_memory: vk::DeviceMemory,
     pub viewport_depth_view: vk::ImageView,
+
     pub viewport_sampler: vk::Sampler,
     pub viewport_descriptor_set: vk::DescriptorSet,
     pub viewport_texture_id: TextureId,
@@ -93,6 +100,8 @@ pub struct VulkanRenderer {
     pub water_vertex_shader: String,
     pub water_fragment_shader: String,
     context: Arc<VulkanRenderingContext>,
+
+    pub aa_amount: AntiAliasingAmount,
 }
 
 impl VulkanRenderer {
@@ -101,7 +110,7 @@ impl VulkanRenderer {
             .create_shader_module(&self.context, path)
     }
 
-    fn rebuild_pipelines(&mut self) -> Result<()> {
+    fn rebuild_pipelines(&mut self, aa_amount: AntiAliasingAmount) -> Result<()> {
         let vertex_shader = self.load_shader_module(&self.default_vertex_shader)?;
         let fragment_shader = self.load_shader_module(&self.default_fragment_shader)?;
         let voxel_vertex_shader = self.load_shader_module(&self.voxel_vertex_shader)?;
@@ -129,11 +138,13 @@ impl VulkanRenderer {
                 pipeline_options.clone(),
                 RenderingSettings::default(),
                 pipeline_layout,
+                aa_amount,
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
                 RenderingSettings::default(),
                 pipeline_layout,
+                aa_amount,
             )?;
 
             let pipeline_options = PipelineOptions {
@@ -150,12 +161,14 @@ impl VulkanRenderer {
                 pipeline_options.clone(),
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
 
             let voxel_wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
 
             let pipeline_options = PipelineOptions {
@@ -172,6 +185,7 @@ impl VulkanRenderer {
                 pipeline_options,
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
 
             self.context
@@ -217,23 +231,52 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    pub fn reload_shader(&mut self, shader_name: &str) -> Result<bool> {
+    pub fn reload_shader(
+        &mut self,
+        shader_name: &str,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<bool> {
         if self.pipeline_manager.reload_shader(shader_name)? {
-            self.rebuild_pipelines()?;
+            self.rebuild_pipelines(aa_amount)?;
             Ok(true)
         } else {
             Ok(false)
         }
     }
 
-    pub fn resize_viewport(&mut self, new_extent: vk::Extent2D) -> Result<()> {
-        if self.viewport_extent == new_extent {
+    pub fn resize_viewport(
+        &mut self,
+        new_extent: vk::Extent2D,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<()> {
+        if self.viewport_extent == new_extent && self.aa_amount == aa_amount {
             return Ok(());
         }
+
+        self.aa_amount = aa_amount;
+
+        let aa_samples = match aa_amount {
+            AntiAliasingAmount::X0 => SampleCountFlags::TYPE_1,
+            AntiAliasingAmount::X2 => SampleCountFlags::TYPE_2,
+            AntiAliasingAmount::X4 => SampleCountFlags::TYPE_4,
+            AntiAliasingAmount::X8 => SampleCountFlags::TYPE_8,
+        };
 
         unsafe { self.context.device.device_wait_idle()? };
 
         unsafe {
+            // Destroy old MSAA color buffer
+            self.context
+                .device
+                .destroy_image_view(self.msaa_color_view, None);
+            self.context
+                .device
+                .destroy_image(self.msaa_color_image, None);
+            self.context
+                .device
+                .free_memory(self.msaa_color_memory, None);
+
+            // Destroy old resolve target
             self.context
                 .device
                 .destroy_image_view(self.viewport_image_view, None);
@@ -242,6 +285,7 @@ impl VulkanRenderer {
                 .device
                 .free_memory(self.viewport_image_memory, None);
 
+            // Destroy old depth buffer
             self.context
                 .device
                 .destroy_image_view(self.viewport_depth_view, None);
@@ -263,6 +307,7 @@ impl VulkanRenderer {
             vk::ImageTiling::OPTIMAL,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            SampleCountFlags::TYPE_1,
         )?;
         let viewport_image_view = self.context.create_image_view(
             viewport_image,
@@ -270,12 +315,28 @@ impl VulkanRenderer {
             vk::ImageAspectFlags::COLOR,
         )?;
 
+        let (msaa_color_image, msaa_color_memory) = self.context.create_image(
+            new_extent,
+            self.swapchain.format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            aa_samples,
+        )?;
+        let msaa_color_view = self.context.create_image_view(
+            msaa_color_image,
+            self.swapchain.format,
+            vk::ImageAspectFlags::COLOR,
+        )?;
+
+        // MSAA depth buffer
         let (viewport_depth_image, viewport_depth_memory) = self.context.create_image(
             new_extent,
             self.swapchain.depth_format,
             vk::ImageTiling::OPTIMAL,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            aa_samples,
         )?;
         let viewport_depth_view = self.context.create_image_view(
             viewport_depth_image,
@@ -297,7 +358,7 @@ impl VulkanRenderer {
             )?
         };
 
-        // Write new image into the existing descriptor set
+        // Write the new resolve target into the existing descriptor set
         unsafe {
             let image_info = vk::DescriptorImageInfo::default()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -317,6 +378,9 @@ impl VulkanRenderer {
         self.viewport_image = viewport_image;
         self.viewport_image_memory = viewport_image_memory;
         self.viewport_image_view = viewport_image_view;
+        self.msaa_color_image = msaa_color_image;
+        self.msaa_color_memory = msaa_color_memory;
+        self.msaa_color_view = msaa_color_view;
         self.viewport_depth_image = viewport_depth_image;
         self.viewport_depth_memory = viewport_depth_memory;
         self.viewport_depth_view = viewport_depth_view;
@@ -331,13 +395,24 @@ impl VulkanRenderer {
 }
 
 impl RenderingAPI for VulkanRenderer {
-    fn new(rendering_info: Arc<Mutex<RenderingInfo>>, window: Arc<Window>) -> Result<()> {
+    fn new(
+        rendering_info: Arc<Mutex<RenderingInfo>>,
+        window: Arc<Window>,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<()> {
         let mut rendering_info = rendering_info.lock().unwrap();
         let mut swapchain = VulkanSwapchain::new(
             rendering_info.context.clone().into(),
             rendering_info.window.clone(),
         )?;
         swapchain.resize()?;
+
+        let aa_samples = match aa_amount {
+            AntiAliasingAmount::X0 => SampleCountFlags::TYPE_1,
+            AntiAliasingAmount::X2 => SampleCountFlags::TYPE_2,
+            AntiAliasingAmount::X4 => SampleCountFlags::TYPE_4,
+            AntiAliasingAmount::X8 => SampleCountFlags::TYPE_8,
+        };
 
         let pipeline_manager = PipelineManager::new();
 
@@ -362,7 +437,6 @@ impl RenderingAPI for VulkanRenderer {
             &rendering_info.context.clone().into(),
             &voxel_fragment_shader,
         )?;
-
         let water_vertex_shader = pipeline_manager
             .create_shader_module(&rendering_info.context.clone().into(), &water_vertex_shader)?;
         let water_fragment_shader = pipeline_manager.create_shader_module(
@@ -417,11 +491,13 @@ impl RenderingAPI for VulkanRenderer {
                 pipeline_options.clone(),
                 RenderingSettings::default(),
                 pipeline_layout,
+                aa_amount,
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
                 RenderingSettings::default(),
                 pipeline_layout,
+                aa_amount,
             )?;
 
             let voxel_pipeline_layout = context.device.create_pipeline_layout(
@@ -447,13 +523,15 @@ impl RenderingAPI for VulkanRenderer {
                 pipeline_options.clone(),
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
-
             let voxel_wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
+
             let water_pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default()
                     .push_constant_ranges(&[vk::PushConstantRange::default()
@@ -472,11 +550,11 @@ impl RenderingAPI for VulkanRenderer {
                 vertex_bindings: vec![VoxelVertex::get_binding_description()],
                 vertex_attributes: VoxelVertex::get_attribute_descriptions(),
             };
-
             let water_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
                 RenderingSettings::default(),
                 voxel_pipeline_layout,
+                aa_amount,
             )?;
 
             context.device.destroy_shader_module(vertex_shader, None);
@@ -522,7 +600,6 @@ impl RenderingAPI for VulkanRenderer {
                     &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
                     None,
                 )?;
-
                 frames.push(VulkanFrame {
                     command_buffer,
                     image_available_semaphore,
@@ -536,7 +613,6 @@ impl RenderingAPI for VulkanRenderer {
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             )?;
-
             let ubo = Ubo {
                 buffer: default_ubo,
                 memory: default_ubo_mem,
@@ -549,7 +625,6 @@ impl RenderingAPI for VulkanRenderer {
             let water_vertex_shader = "water.vert".to_string();
             let water_fragment_shader = "water.frag".to_string();
 
-            // let viewport_size = ViewportSize::default();
             let viewport_extent = swapchain.extent;
 
             let (viewport_image, viewport_image_memory) = context.create_image(
@@ -558,37 +633,55 @@ impl RenderingAPI for VulkanRenderer {
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                SampleCountFlags::TYPE_1,
             )?;
             let viewport_image_view = context.create_image_view(
                 viewport_image,
                 swapchain.format,
                 vk::ImageAspectFlags::COLOR,
             )?;
+
+            let (msaa_color_image, msaa_color_memory) = context.create_image(
+                viewport_extent,
+                swapchain.format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                aa_samples,
+            )?;
+            let msaa_color_view = context.create_image_view(
+                msaa_color_image,
+                swapchain.format,
+                vk::ImageAspectFlags::COLOR,
+            )?;
+
             let (viewport_depth_image, viewport_depth_memory) = context.create_image(
                 viewport_extent,
                 swapchain.depth_format,
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                aa_samples,
             )?;
             let viewport_depth_view = context.create_image_view(
                 viewport_depth_image,
                 swapchain.depth_format,
                 vk::ImageAspectFlags::DEPTH,
             )?;
-            let viewport_sampler = unsafe {
-                context.device.create_sampler(
-                    &vk::SamplerCreateInfo::default()
-                        .mag_filter(vk::Filter::LINEAR)
-                        .min_filter(vk::Filter::LINEAR)
-                        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                        .anisotropy_enable(false)
-                        .max_anisotropy(1.0),
-                    None,
-                )?
-            };
+
+            let viewport_sampler = context.device.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .anisotropy_enable(false)
+                    .max_anisotropy(1.0),
+                None,
+            )?;
+
+            // Descriptor set points at the resolve target (TYPE_1)
             let viewport_descriptor_set = context.create_texture_descriptor_set(
                 descriptor_pool,
                 descriptor_set_layout,
@@ -607,7 +700,6 @@ impl RenderingAPI for VulkanRenderer {
                 in_flight_frames_count,
                 current_frame: 0,
                 frames,
-                // command_pool,
                 image_layouts: ImageLayouts::default(),
 
                 pipeline,
@@ -628,6 +720,9 @@ impl RenderingAPI for VulkanRenderer {
                 viewport_image,
                 viewport_image_memory,
                 viewport_image_view,
+                msaa_color_image,
+                msaa_color_memory,
+                msaa_color_view,
                 viewport_depth_image,
                 viewport_depth_memory,
                 viewport_depth_view,
@@ -638,7 +733,6 @@ impl RenderingAPI for VulkanRenderer {
                 viewport_target_initialized: false,
                 viewport_depth_initialized: false,
 
-                // push_constants: PushConstants::default(),
                 ubo,
                 pipeline_manager,
                 default_vertex_shader,
@@ -649,6 +743,8 @@ impl RenderingAPI for VulkanRenderer {
                 water_fragment_shader,
                 context: Arc::new(rendering_info.context.clone()),
                 swapchain,
+
+                aa_amount,
             };
 
             rendering_info.renderer = Some(Box::new(renderer));
@@ -660,18 +756,15 @@ impl RenderingAPI for VulkanRenderer {
     fn begin_frame(&mut self) -> Result<()> {
         let frame = &self.frames[self.current_frame];
 
-        // Recreate swapchain if it was marked dirty
-        if self.swapchain.is_dirty {
-            if let Err(e) = self.swapchain.resize() {
-                eprintln!("Failed to recreate swapchain: {}", e);
-                return Err(anyhow::anyhow!("Failed to recreate swapchain: {}", e));
-            }
+        if self.swapchain.is_dirty
+            && let Err(e) = self.swapchain.resize()
+        {
+            eprintln!("Failed to recreate swapchain: {}", e);
+            return Err(anyhow::anyhow!("Failed to recreate swapchain: {}", e));
         }
 
         unsafe {
-            // Use a 5-second timeout instead of infinite to prevent device hangs
-            const FENCE_TIMEOUT_NS: u64 = 5_000_000_000; // 5 seconds in nanoseconds
-            //
+            const FENCE_TIMEOUT_NS: u64 = 5_000_000_000;
 
             match self.context.device.wait_for_fences(
                 &[frame.in_flight_fence],
@@ -683,7 +776,6 @@ impl RenderingAPI for VulkanRenderer {
                 }
                 Err(e) => {
                     eprintln!("Fence wait failed (likely device timeout): {}", e);
-                    // Reset the device state and try to recover
                     let _ = self.context.device.device_wait_idle();
                     return Err(anyhow::anyhow!("Device timeout during frame wait"));
                 }
@@ -703,7 +795,6 @@ impl RenderingAPI for VulkanRenderer {
                 return Err(anyhow::anyhow!("Failed to reset command buffer: {}", e));
             }
 
-            // Attempt to acquire next image; if device is lost, try to recover by recreating swapchain
             match self
                 .swapchain
                 .acquire_next_image(frame.image_available_semaphore)
@@ -711,12 +802,10 @@ impl RenderingAPI for VulkanRenderer {
                 Ok(index) => self.current_image_index = index,
                 Err(e) => {
                     eprintln!("Failed to acquire next image: {}", e);
-                    // Try device wait idle first
                     if let Err(idle_err) = self.context.device.device_wait_idle() {
                         eprintln!("Device wait idle failed: {}", idle_err);
                         return Err(anyhow::anyhow!("Device lost during acquire: {}", idle_err));
                     }
-                    // Try to recover by recreating the swapchain
                     if let Err(resize_err) = self.swapchain.resize() {
                         eprintln!(
                             "Failed to recreate swapchain during recovery: {}",
@@ -727,7 +816,6 @@ impl RenderingAPI for VulkanRenderer {
                             resize_err
                         ));
                     }
-                    // After swapchain recreation, try acquiring again
                     self.current_image_index = self
                         .swapchain
                         .acquire_next_image(frame.image_available_semaphore)?;
@@ -762,12 +850,14 @@ impl RenderingAPI for VulkanRenderer {
 
     fn begin_viewport_render(&mut self) -> Result<()> {
         let frame = &self.frames[self.current_frame];
+
         let old_color_layout = if self.viewport_target_initialized {
             self.image_layouts.shader_read_only
         } else {
             self.image_layouts.undefined
         };
 
+        // Transition the resolve target (egui reads this after rendering)
         self.context.transition_image_layout(
             frame.command_buffer,
             self.viewport_image,
@@ -790,8 +880,10 @@ impl RenderingAPI for VulkanRenderer {
             vk::ImageAspectFlags::DEPTH,
         );
 
+        // msaa_color_view → render target; viewport_image_view → resolve target
         self.context.begin_rendering(
             frame.command_buffer,
+            self.msaa_color_view,
             self.viewport_image_view,
             self.viewport_depth_view,
             ClearColorValue {
@@ -834,6 +926,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_end_rendering(frame.command_buffer);
         }
 
+        // Transition the resolve target so egui can sample it
         self.context.transition_image_layout(
             frame.command_buffer,
             self.viewport_image,
@@ -850,6 +943,7 @@ impl RenderingAPI for VulkanRenderer {
         self.context.begin_rendering(
             frame.command_buffer,
             self.swapchain.views[self.current_image_index as usize],
+            ImageView::null(),
             self.swapchain.depth_image_view,
             ClearColorValue {
                 float32: [0.2, 0.2, 0.2, 1.0],
@@ -924,7 +1018,6 @@ impl RenderingAPI for VulkanRenderer {
                 .present_image(self.current_image_index, frame.render_finished_semaphore)
             {
                 eprintln!("Failed to present image: {}", e);
-                // Mark swapchain as dirty for recreation
                 self.swapchain.is_dirty = true;
                 return Err(anyhow::anyhow!("Failed to present image: {}", e));
             }
@@ -981,6 +1074,7 @@ impl RenderingAPI for VulkanRenderer {
 
         Ok(())
     }
+
     fn wireframe_render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
@@ -998,7 +1092,6 @@ impl RenderingAPI for VulkanRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.wireframe_pipeline,
             );
-
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
                 self.pipeline_layout,
@@ -1006,7 +1099,6 @@ impl RenderingAPI for VulkanRenderer {
                 0,
                 &data,
             );
-
             self.context.device.cmd_bind_vertex_buffers(
                 frame.command_buffer,
                 0,
@@ -1144,7 +1236,6 @@ impl RenderingAPI for VulkanRenderer {
 
     fn begin_ui(&mut self) {
         let mut state = self.ui_renderer.state.lock().unwrap();
-
         let raw_input = state.take_egui_input(&self.ui_renderer.window);
         self.ui_renderer.context.begin_pass(raw_input);
     }
@@ -1212,15 +1303,19 @@ impl RenderingAPI for VulkanRenderer {
     fn get_buffer_graveyard(&mut self) -> &mut Vec<(vk::Buffer, vk::DeviceMemory)> {
         &mut self.buffer_graveyard
     }
+
     fn get_command_pool(&self) -> Result<CommandPool> {
         Ok(self.context.command_pool)
     }
+
     fn get_aspect(&self) -> f32 {
         self.viewport_extent.width as f32 / self.viewport_extent.height as f32
     }
+
     fn get_descriptor_pool(&self) -> vk::DescriptorPool {
         self.voxel_descriptor_pool
     }
+
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.voxel_descriptor_set_layout
     }
@@ -1235,13 +1330,18 @@ impl RenderingAPI for VulkanRenderer {
         }
 
         log!("Reloaded shaders: {}", reloaded.join(", "));
-        self.rebuild_pipelines()?;
+        self.rebuild_pipelines(self.aa_amount)?;
         Ok(true)
     }
 
-    fn resize_viewport(&mut self, width: u32, height: u32) -> Result<()> {
+    fn resize_viewport(
+        &mut self,
+        width: u32,
+        height: u32,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<()> {
         let new_extent = vk::Extent2D { width, height };
-        self.resize_viewport(new_extent)
+        self.resize_viewport(new_extent, aa_amount)
     }
 
     fn get_viewport_extent(&mut self) -> Extent2D {

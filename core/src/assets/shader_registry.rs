@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
-use crate::assets::shader::{load_shader_bytes, resolve_shader_path, shader_kind_from_path, ShaderKind};
+use crate::assets::shader::{
+    ShaderKind, load_shader_bytes, resolve_shader_path, shader_kind_from_path,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShaderStage {
@@ -65,7 +67,9 @@ impl ShaderAsset {
 }
 
 fn fs_metadata_modified(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
 }
 
 pub struct ShaderRegistry {
@@ -88,7 +92,10 @@ impl ShaderRegistry {
     pub fn load_shader(&self, name: &str) -> Result<Arc<RwLock<ShaderAsset>>> {
         let asset = ShaderAsset::load(name)?;
         let asset = Arc::new(RwLock::new(asset));
-        self.shaders.write().unwrap().insert(name.to_string(), asset.clone());
+        self.shaders
+            .write()
+            .unwrap()
+            .insert(name.to_string(), asset.clone());
         Ok(asset)
     }
 

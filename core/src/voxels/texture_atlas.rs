@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use ash::vk;
+use ash::vk::{self, SampleCountFlags};
 use hashbrown::HashMap;
 use image::{DynamicImage, GenericImageView, RgbaImage};
 
@@ -138,6 +138,7 @@ pub fn upload_atlas(
         vk::ImageTiling::OPTIMAL,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        SampleCountFlags::TYPE_1,
     )?;
 
     let cmd = ctx.begin_single_time_commands(command_pool);

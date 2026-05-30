@@ -6,6 +6,7 @@ pub use apostasy_macros::late_update;
 pub use apostasy_macros::start;
 pub use apostasy_macros::update;
 
+use ash::vk;
 use winit::event::DeviceEvent;
 use winit::event::DeviceId;
 use winit::keyboard::KeyCode;
@@ -39,6 +40,8 @@ use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::model_renderer::ModelRenderer;
+use crate::rendering::shared::UpdateRenderer;
+use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
 use crate::rendering::shared::push_constants::ModelPushConstants;
@@ -102,6 +105,7 @@ impl Core {
         world.insert_resource(InputManager::default());
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
+        world.insert_resource(AntiAliasing::default());
 
         world.insert_resource(PushConstants::default());
         world.insert_resource(ModelPushConstants::default());
@@ -157,6 +161,8 @@ impl Core {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
                     let model_registry = world.get_resource::<ModelRegistry>().unwrap().clone();
+
+                    let aa_amount = world.get_resource::<AntiAliasing>().unwrap().amount;
 
                     if world.get_resource::<ShouldExit>().is_ok() {
                         log!("Recieved ShouldExit resource, closing");
@@ -216,6 +222,20 @@ impl Core {
                         }
                     }
 
+                    if world.has_resource::<UpdateRenderer>() {
+                        world.remove_resource::<UpdateRenderer>();
+
+                        renderer.reload_shaders().unwrap();
+
+                        if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
+                            let w = viewport_size.pixel_width as u32;
+                            let h = viewport_size.pixel_height as u32;
+                            renderer.resize_viewport(w, h, aa_amount).unwrap();
+                            world.insert_resource(ViewportTexture(
+                                renderer.get_viewport_texture_id().unwrap(),
+                            ));
+                        }
+                    }
                     world.prerender();
 
                     if let Err(e) = renderer.begin_frame() {
@@ -226,15 +246,11 @@ impl Core {
                     if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
                         let w = viewport_size.pixel_width as u32;
                         let h = viewport_size.pixel_height as u32;
-                        let current = renderer.get_viewport_extent();
-                        if w > 0 && h > 0 && (w != current.width || h != current.height) {
-                            if let Err(e) = renderer.resize_viewport(w, h) {
-                                log_error!("Failed to resize viewport: {}", e);
-                            }
-                            world.insert_resource(ViewportTexture(
-                                renderer.get_viewport_texture_id().unwrap(),
-                            ));
-                        }
+                        renderer.resize_viewport(w, h, aa_amount).unwrap();
+
+                        world.insert_resource(ViewportTexture(
+                            renderer.get_viewport_texture_id().unwrap(),
+                        ));
                     }
                     renderer.begin_ui();
 
@@ -430,8 +446,16 @@ impl Core {
 
 impl ApplicationHandler for Core {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let rendering_info = Some(RenderingInfo::new(&event_loop, self.rendering_api));
         let mut world = self.world.lock().unwrap();
+
+        let aa_amount = world.get_resource::<AntiAliasing>().unwrap().amount;
+
+        let rendering_info = Some(RenderingInfo::new(
+            event_loop,
+            self.rendering_api,
+            aa_amount,
+        ));
+
         {
             let ri = rendering_info.as_ref().unwrap();
             let locked = ri.lock().unwrap();
@@ -567,6 +591,8 @@ impl ApplicationHandler for Core {
             if let Some(render_info) = &self.rendering_info {
                 let mut render_info = render_info.lock().unwrap();
 
+                let aa_amount = world.get_resource::<AntiAliasing>().unwrap().amount;
+
                 if let Some(renderer) = &mut render_info.renderer {
                     renderer.reload_shaders().unwrap();
                 }
@@ -575,13 +601,6 @@ impl ApplicationHandler for Core {
 
         if let Some(render_info) = &self.rendering_info {
             let render_info = render_info.lock().unwrap();
-            // if let Some(renderer) = &mut render_info.renderer
-            //     && let Ok(changed) = renderer.reload_shaders()
-            //     && changed
-            // {
-            //     render_info.window.request_redraw();
-            // }
-
             render_info.window.request_redraw();
         }
     }

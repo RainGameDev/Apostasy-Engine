@@ -1,9 +1,7 @@
 use apostasy_macros::Component;
 
-
-
 #[derive(Component, Clone, Debug)]
-pub struct Voxel{
+pub struct Voxel {
     pub name: String,
 }
 
@@ -19,7 +17,8 @@ impl Voxel {
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         self.name = value
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("name expects a string"))? .to_string();
+            .ok_or_else(|| anyhow::anyhow!("name expects a string"))?
+            .to_string();
         Ok(())
     }
 }

@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use ash::vk::{self, CommandPool, Extent2D};
-use cgmath::Vector2;
 use egui::{Context, TextureId};
 use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
+use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, VoxelPushConstants,
@@ -95,16 +95,29 @@ pub trait RenderingAPI {
     fn get_descriptor_pool(&self) -> vk::DescriptorPool;
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout;
     /// Assigns the rendering_info's renderer the the value created via this
-    fn new(rendering_info: Arc<Mutex<RenderingInfo>>, window: Arc<Window>) -> Result<()>
+    fn new(
+        rendering_info: Arc<Mutex<RenderingInfo>>,
+        window: Arc<Window>,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<()>
     where
         Self: Sized;
 
-    fn resize_viewport(&mut self, width: u32, height: u32) -> Result<()>;
+    fn resize_viewport(
+        &mut self,
+        width: u32,
+        height: u32,
+        aa_amount: AntiAliasingAmount,
+    ) -> Result<()>;
     fn get_viewport_extent(&mut self) -> Extent2D;
 }
 
 impl RenderingInfo {
-    pub fn new(event_loop: &ActiveEventLoop, rendering_api: RenderingBackend) -> Arc<Mutex<Self>> {
+    pub fn new(
+        event_loop: &ActiveEventLoop,
+        rendering_api: RenderingBackend,
+        aa_amount: AntiAliasingAmount,
+    ) -> Arc<Mutex<Self>> {
         let window = Arc::new(event_loop.create_window(Default::default()).unwrap());
 
         let rendering_info = Arc::new(Mutex::new(RenderingInfo {
@@ -120,7 +133,7 @@ impl RenderingInfo {
 
         match rendering_api {
             RenderingBackend::Vulkan => {
-                VulkanRenderer::new(rendering_info.clone(), window).unwrap();
+                VulkanRenderer::new(rendering_info.clone(), window, aa_amount).unwrap();
             }
             RenderingBackend::OpenGl => {
                 println!("Opengl is not supported at the moment");

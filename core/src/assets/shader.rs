@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-use crate::{log, log_warn};
+use crate::log;
 
 const SHADER_DIRECTORIES: &[&str] = &["res/shaders", "../core/res/shaders", "core/res/shaders"];
 

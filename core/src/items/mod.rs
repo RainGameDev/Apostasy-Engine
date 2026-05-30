@@ -56,7 +56,7 @@ pub struct ItemRegistry {
     pub id_to_name: HashMap<ItemId, String>,
 }
 
-impl ItemRegistry{
+impl ItemRegistry {
     pub fn get_def(&self, name: &str) -> Option<&ItemDefinition> {
         self.defs.get(name)
     }

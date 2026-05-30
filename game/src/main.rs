@@ -1,6 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, Zero},
+    egui::{CentralPanel, Color32, Frame, Image, Label, RichText, Sense},
     init_core,
     objects::{
         Object, components::transform::Transform, resources::input_manager::InputManager,
@@ -19,7 +20,9 @@ use apostasy_core::{
             model_renderer::ModelRenderer,
         },
     },
-    start, update,
+    start,
+    ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
+    update,
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 use apostasy_macros::Resource;
@@ -164,6 +167,49 @@ pub fn sphere_player_input(world: &mut World) -> Result<()> {
         let coyote_time = world.get_resource_mut::<CoyoteTime>()?;
         coyote_time.0 = 0.0;
     }
+
+    Ok(())
+}
+
+#[update]
+pub fn viewport(world: &mut World) -> Result<()> {
+    let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
+    let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
+
+    let frame = Frame::none();
+
+    CentralPanel::default().frame(frame).show(&ctx, |ui| {
+        let available_size = ui.available_size();
+        if available_size.x <= 0.0 || available_size.y <= 0.0 {
+            return;
+        }
+
+        let (frame_rect, _) = ui.allocate_exact_size(available_size, Sense::hover());
+
+        if let Some(texture_id) = viewport_texture {
+            let image = Image::new((texture_id, available_size));
+            ui.put(frame_rect, image);
+        } else {
+            let label = Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
+            ui.put(frame_rect, label);
+        }
+
+        viewport_size.logical_width = available_size.x;
+        viewport_size.logical_height = available_size.y;
+
+        let pixels_per_point = ctx.pixels_per_point();
+        let ss = viewport_size.supersample;
+        let pixel_w = (available_size.x * pixels_per_point * ss)
+            .ceil()
+            .clamp(1.0, 8192.0);
+        let pixel_h = (available_size.y * pixels_per_point * ss)
+            .ceil()
+            .clamp(1.0, 8192.0);
+
+        viewport_size.pixel_width = pixel_w;
+        viewport_size.pixel_height = pixel_h;
+    });
 
     Ok(())
 }

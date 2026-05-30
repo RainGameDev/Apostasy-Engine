@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ash::vk::{self, DeviceMemory, Extent2D, Format, Handle, Image, ImageView, SwapchainKHR};
+use ash::vk::{
+    self, DeviceMemory, Extent2D, Format, Handle, Image, ImageView, SampleCountFlags, SwapchainKHR,
+};
 use winit::window::Window;
 
 use crate::rendering::vulkan::{rendering_context::VulkanRenderingContext, surface::Surface};
@@ -189,6 +191,7 @@ impl VulkanSwapchain {
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                SampleCountFlags::TYPE_1,
             )?;
             self.depth_image = depth_image;
             self.depth_memory = depth_memory;
