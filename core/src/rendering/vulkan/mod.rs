@@ -17,8 +17,8 @@ use crate::voxels::meshes::VoxelVertex;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use anyhow::Result;
 use ash::vk::{
-    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Pipeline, PipelineLayout,
-    PipelineLayoutCreateInfo,
+    self, ClearColorValue, CommandBufferResetFlags, CommandPool, Extent2D, Pipeline,
+    PipelineLayout, PipelineLayoutCreateInfo,
 };
 use egui::{Context, TextureId};
 use epaint::ImageDelta;
@@ -70,6 +70,19 @@ pub struct VulkanRenderer {
 
     pub ui_renderer: UIRenderer,
     pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
+
+    pub viewport_image: vk::Image,
+    pub viewport_image_memory: vk::DeviceMemory,
+    pub viewport_image_view: vk::ImageView,
+    pub viewport_depth_image: vk::Image,
+    pub viewport_depth_memory: vk::DeviceMemory,
+    pub viewport_depth_view: vk::ImageView,
+    pub viewport_sampler: vk::Sampler,
+    pub viewport_descriptor_set: vk::DescriptorSet,
+    pub viewport_texture_id: TextureId,
+    pub viewport_extent: vk::Extent2D,
+    pub viewport_target_initialized: bool,
+    pub viewport_depth_initialized: bool,
 
     pub ubo: Ubo,
     pub pipeline_manager: PipelineManager,
@@ -211,6 +224,109 @@ impl VulkanRenderer {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn resize_viewport(&mut self, new_extent: vk::Extent2D) -> Result<()> {
+        if self.viewport_extent == new_extent {
+            return Ok(());
+        }
+
+        unsafe { self.context.device.device_wait_idle()? };
+
+        unsafe {
+            self.context
+                .device
+                .destroy_image_view(self.viewport_image_view, None);
+            self.context.device.destroy_image(self.viewport_image, None);
+            self.context
+                .device
+                .free_memory(self.viewport_image_memory, None);
+
+            self.context
+                .device
+                .destroy_image_view(self.viewport_depth_view, None);
+            self.context
+                .device
+                .destroy_image(self.viewport_depth_image, None);
+            self.context
+                .device
+                .free_memory(self.viewport_depth_memory, None);
+
+            self.context
+                .device
+                .destroy_sampler(self.viewport_sampler, None);
+        }
+
+        let (viewport_image, viewport_image_memory) = self.context.create_image(
+            new_extent,
+            self.swapchain.format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+        let viewport_image_view = self.context.create_image_view(
+            viewport_image,
+            self.swapchain.format,
+            vk::ImageAspectFlags::COLOR,
+        )?;
+
+        let (viewport_depth_image, viewport_depth_memory) = self.context.create_image(
+            new_extent,
+            self.swapchain.depth_format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+        let viewport_depth_view = self.context.create_image_view(
+            viewport_depth_image,
+            self.swapchain.depth_format,
+            vk::ImageAspectFlags::DEPTH,
+        )?;
+
+        let viewport_sampler = unsafe {
+            self.context.device.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .anisotropy_enable(false)
+                    .max_anisotropy(1.0),
+                None,
+            )?
+        };
+
+        // Write new image into the existing descriptor set
+        unsafe {
+            let image_info = vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(viewport_image_view)
+                .sampler(viewport_sampler);
+
+            self.context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(self.viewport_descriptor_set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&[image_info])],
+                &[],
+            );
+        }
+
+        self.viewport_image = viewport_image;
+        self.viewport_image_memory = viewport_image_memory;
+        self.viewport_image_view = viewport_image_view;
+        self.viewport_depth_image = viewport_depth_image;
+        self.viewport_depth_memory = viewport_depth_memory;
+        self.viewport_depth_view = viewport_depth_view;
+        self.viewport_sampler = viewport_sampler;
+        self.viewport_extent = new_extent;
+
+        self.viewport_target_initialized = false;
+        self.viewport_depth_initialized = false;
+
+        Ok(())
     }
 }
 
@@ -432,6 +548,60 @@ impl RenderingAPI for VulkanRenderer {
             let voxel_fragment_shader = "voxel.frag".to_string();
             let water_vertex_shader = "water.vert".to_string();
             let water_fragment_shader = "water.frag".to_string();
+
+            // let viewport_size = ViewportSize::default();
+            let viewport_extent = swapchain.extent;
+
+            let (viewport_image, viewport_image_memory) = context.create_image(
+                viewport_extent,
+                swapchain.format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+            let viewport_image_view = context.create_image_view(
+                viewport_image,
+                swapchain.format,
+                vk::ImageAspectFlags::COLOR,
+            )?;
+            let (viewport_depth_image, viewport_depth_memory) = context.create_image(
+                viewport_extent,
+                swapchain.depth_format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+            let viewport_depth_view = context.create_image_view(
+                viewport_depth_image,
+                swapchain.depth_format,
+                vk::ImageAspectFlags::DEPTH,
+            )?;
+            let viewport_sampler = unsafe {
+                context.device.create_sampler(
+                    &vk::SamplerCreateInfo::default()
+                        .mag_filter(vk::Filter::LINEAR)
+                        .min_filter(vk::Filter::LINEAR)
+                        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                        .anisotropy_enable(false)
+                        .max_anisotropy(1.0),
+                    None,
+                )?
+            };
+            let viewport_descriptor_set = context.create_texture_descriptor_set(
+                descriptor_pool,
+                descriptor_set_layout,
+                viewport_image_view,
+                viewport_sampler,
+            );
+
+            let viewport_texture_id = ui_renderer
+                .renderer
+                .lock()
+                .unwrap()
+                .add_user_texture(viewport_descriptor_set);
+
             let renderer = VulkanRenderer {
                 current_image_index: 0,
                 in_flight_frames_count,
@@ -454,6 +624,19 @@ impl RenderingAPI for VulkanRenderer {
                 water_pipeline,
                 water_pipeline_layout,
                 buffer_graveyard: Vec::new(),
+
+                viewport_image,
+                viewport_image_memory,
+                viewport_image_view,
+                viewport_depth_image,
+                viewport_depth_memory,
+                viewport_depth_view,
+                viewport_sampler,
+                viewport_descriptor_set,
+                viewport_texture_id,
+                viewport_extent,
+                viewport_target_initialized: false,
+                viewport_depth_initialized: false,
 
                 // push_constants: PushConstants::default(),
                 ubo,
@@ -562,28 +745,119 @@ impl RenderingAPI for VulkanRenderer {
             self.context.transition_image_layout(
                 frame.command_buffer,
                 self.swapchain.images[self.current_image_index as usize],
-                self.image_layouts.undefined,
+                self.image_layouts.present,
                 self.image_layouts.renderable,
                 vk::ImageAspectFlags::COLOR,
             );
             self.context.transition_image_layout(
                 frame.command_buffer,
                 self.swapchain.depth_image,
-                self.image_layouts.undefined,
+                self.image_layouts.depth,
                 self.image_layouts.depth,
                 vk::ImageAspectFlags::DEPTH,
             );
+        }
+        Ok(())
+    }
 
-            self.context.begin_rendering(
+    fn begin_viewport_render(&mut self) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let old_color_layout = if self.viewport_target_initialized {
+            self.image_layouts.shader_read_only
+        } else {
+            self.image_layouts.undefined
+        };
+
+        self.context.transition_image_layout(
+            frame.command_buffer,
+            self.viewport_image,
+            old_color_layout,
+            self.image_layouts.renderable,
+            vk::ImageAspectFlags::COLOR,
+        );
+
+        let old_depth_layout = if self.viewport_depth_initialized {
+            self.image_layouts.depth
+        } else {
+            self.image_layouts.undefined
+        };
+
+        self.context.transition_image_layout(
+            frame.command_buffer,
+            self.viewport_depth_image,
+            old_depth_layout,
+            self.image_layouts.depth,
+            vk::ImageAspectFlags::DEPTH,
+        );
+
+        self.context.begin_rendering(
+            frame.command_buffer,
+            self.viewport_image_view,
+            self.viewport_depth_view,
+            ClearColorValue {
+                float32: [0.05, 0.05, 0.05, 1.0],
+            },
+            vk::Rect2D::default().extent(self.viewport_extent),
+        );
+
+        unsafe {
+            self.context.device.cmd_set_viewport(
                 frame.command_buffer,
-                self.swapchain.views[self.current_image_index as usize],
-                self.swapchain.depth_image_view,
-                ClearColorValue {
-                    float32: [0.0, 0.2, 0.8, 1.0],
-                },
-                vk::Rect2D::default().extent(self.swapchain.extent),
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: self.viewport_extent.width as f32,
+                    height: self.viewport_extent.height as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
             );
+            self.context.device.cmd_set_scissor(
+                frame.command_buffer,
+                0,
+                &[vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: self.viewport_extent,
+                }],
+            );
+        }
 
+        self.viewport_target_initialized = true;
+        self.viewport_depth_initialized = true;
+        Ok(())
+    }
+
+    fn end_viewport_render(&mut self) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        unsafe {
+            self.context.device.cmd_end_rendering(frame.command_buffer);
+        }
+
+        self.context.transition_image_layout(
+            frame.command_buffer,
+            self.viewport_image,
+            self.image_layouts.renderable,
+            self.image_layouts.shader_read_only,
+            vk::ImageAspectFlags::COLOR,
+        );
+
+        Ok(())
+    }
+
+    fn begin_swapchain_render(&mut self) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        self.context.begin_rendering(
+            frame.command_buffer,
+            self.swapchain.views[self.current_image_index as usize],
+            self.swapchain.depth_image_view,
+            ClearColorValue {
+                float32: [0.2, 0.2, 0.2, 1.0],
+            },
+            vk::Rect2D::default().extent(self.swapchain.extent),
+        );
+
+        unsafe {
             self.context.device.cmd_set_viewport(
                 frame.command_buffer,
                 0,
@@ -605,7 +879,12 @@ impl RenderingAPI for VulkanRenderer {
                 }],
             );
         }
+
         Ok(())
+    }
+
+    fn get_viewport_texture_id(&self) -> Option<TextureId> {
+        Some(self.viewport_texture_id)
     }
 
     fn end_frame(&mut self) -> Result<()> {
@@ -937,7 +1216,7 @@ impl RenderingAPI for VulkanRenderer {
         Ok(self.context.command_pool)
     }
     fn get_aspect(&self) -> f32 {
-        self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
+        self.viewport_extent.width as f32 / self.viewport_extent.height as f32
     }
     fn get_descriptor_pool(&self) -> vk::DescriptorPool {
         self.voxel_descriptor_pool
@@ -958,5 +1237,14 @@ impl RenderingAPI for VulkanRenderer {
         log!("Reloaded shaders: {}", reloaded.join(", "));
         self.rebuild_pipelines()?;
         Ok(true)
+    }
+
+    fn resize_viewport(&mut self, width: u32, height: u32) -> Result<()> {
+        let new_extent = vk::Extent2D { width, height };
+        self.resize_viewport(new_extent)
+    }
+
+    fn get_viewport_extent(&mut self) -> Extent2D {
+        self.viewport_extent
     }
 }

@@ -44,7 +44,7 @@ use crate::rendering::shared::frustrum::ObjectsDrawing;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
 use crate::states::ShouldExit;
-use crate::ui::ui_context::EguiContext;
+use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
@@ -185,7 +185,11 @@ impl Core {
                     let camera_pos = camera_transform.global_position;
                     let view = get_view_matrix(&camera_transform);
 
-                    let aspect = renderer.get_aspect();
+                    let aspect = if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
+                        viewport_size.aspect_logical()
+                    } else {
+                        renderer.get_aspect()
+                    };
                     let proj = get_perspective_projection(
                         camera.get_component::<Camera>().unwrap(),
                         aspect,
@@ -219,11 +223,28 @@ impl Core {
                         return;
                     }
 
+                    if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
+                        let w = viewport_size.pixel_width as u32;
+                        let h = viewport_size.pixel_height as u32;
+                        let current = renderer.get_viewport_extent();
+                        if w > 0 && h > 0 && (w != current.width || h != current.height) {
+                            if let Err(e) = renderer.resize_viewport(w, h) {
+                                log_error!("Failed to resize viewport: {}", e);
+                            }
+                            world.insert_resource(ViewportTexture(
+                                renderer.get_viewport_texture_id().unwrap(),
+                            ));
+                        }
+                    }
                     renderer.begin_ui();
 
                     world.update();
 
                     world.fixed_update();
+
+                    if let Err(e) = renderer.begin_viewport_render() {
+                        log_error!("Failed to begin viewport render: {}", e);
+                    }
 
                     let object_ids: Vec<_> = world
                         .get_objects_with_component_with_ids::<ModelRenderer>()
@@ -365,6 +386,12 @@ impl Core {
                     }
 
                     world.get_resource_mut::<ObjectsDrawing>().unwrap().0 = objects_dawn;
+                    if let Err(e) = renderer.end_viewport_render() {
+                        log_error!("Failed to end viewport render: {}", e);
+                    }
+                    if let Err(e) = renderer.begin_swapchain_render() {
+                        log_error!("Failed to begin swapchain render: {}", e);
+                    }
                     if let Err(e) = renderer.end_ui() {
                         log_error!("Failed to end UI: {}", e);
                     }
@@ -491,7 +518,21 @@ impl ApplicationHandler for Core {
             world.insert_resource(atlas);
         }
 
+        let viewport_texture_id = self
+            .rendering_info
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .renderer
+            .as_ref()
+            .unwrap()
+            .get_viewport_texture_id()
+            .expect("Viewport texture id missing");
+
         world.insert_resource(EguiContext(egui_context));
+        world.insert_resource(ViewportTexture(viewport_texture_id));
+        world.insert_resource(ViewportSize::default());
         world.insert_resource(context);
 
         world.start();

@@ -1,8 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use ash::vk::{self, CommandPool};
-use egui::Context;
+use ash::vk::{self, CommandPool, Extent2D};
+use cgmath::Vector2;
+use egui::{Context, TextureId};
 use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
@@ -43,6 +44,9 @@ pub struct RenderingInfo {
 /// Used for Vulkan and Opengl
 pub trait RenderingAPI {
     fn begin_frame(&mut self) -> Result<()>;
+    fn begin_viewport_render(&mut self) -> Result<()>;
+    fn end_viewport_render(&mut self) -> Result<()>;
+    fn begin_swapchain_render(&mut self) -> Result<()>;
     fn end_frame(&mut self) -> Result<()>;
 
     fn render(
@@ -78,6 +82,7 @@ pub trait RenderingAPI {
     fn end_ui(&mut self) -> Result<()>;
     fn handle_ui_event(&mut self, event: &WindowEvent) -> bool;
     fn get_egui_context(&self) -> Context;
+    fn get_viewport_texture_id(&self) -> Option<TextureId>;
 
     fn resize(&mut self) -> Result<()>;
     fn update_command_buffer(&mut self);
@@ -93,6 +98,9 @@ pub trait RenderingAPI {
     fn new(rendering_info: Arc<Mutex<RenderingInfo>>, window: Arc<Window>) -> Result<()>
     where
         Self: Sized;
+
+    fn resize_viewport(&mut self, width: u32, height: u32) -> Result<()>;
+    fn get_viewport_extent(&mut self) -> Extent2D;
 }
 
 impl RenderingInfo {

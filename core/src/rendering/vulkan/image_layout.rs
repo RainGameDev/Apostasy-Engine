@@ -14,6 +14,7 @@ pub struct ImageLayouts {
     pub renderable: ImageLayoutState,
     pub present: ImageLayoutState,
     pub depth: ImageLayoutState,
+    pub shader_read_only: ImageLayoutState,
 }
 
 impl Default for ImageLayouts {
@@ -43,11 +44,18 @@ impl Default for ImageLayouts {
             stage_mask: vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
             queue_family_index: vk::QUEUE_FAMILY_IGNORED,
         };
+        let shader_read_only = ImageLayoutState {
+            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            access_mask: vk::AccessFlags::SHADER_READ,
+            stage_mask: vk::PipelineStageFlags::FRAGMENT_SHADER,
+            queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+        };
         Self {
             undefined,
             renderable,
             present,
             depth,
+            shader_read_only,
         }
     }
 }

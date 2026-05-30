@@ -1,5 +1,4 @@
 use anyhow::Result;
-use ash::vk::DescriptorSet;
 use egui::{Context, FontDefinitions, FontFamily};
 use egui_ash_renderer::{DynamicRendering, Options, Renderer};
 use egui_winit::State;
@@ -27,7 +26,7 @@ impl UIRenderer {
         swapchain: &VulkanSwapchain,
         window: Arc<Window>,
     ) -> Result<Self> {
-        let mut renderer = Renderer::with_default_allocator(
+        let renderer = Renderer::with_default_allocator(
             &context.instance,
             context.physical_device.handle,
             context.device.clone(),
@@ -40,8 +39,6 @@ impl UIRenderer {
                 ..Default::default()
             },
         )?;
-
-        renderer.add_user_texture(DescriptorSet::default());
         let mut fonts = FontDefinitions::default();
 
         fonts.font_data.insert(

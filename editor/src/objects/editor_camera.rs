@@ -6,7 +6,7 @@ use apostasy_core::{
     start,
 };
 
-#[start]
+// #[start]
 pub fn editor_camera_init(world: &mut World) -> Result<()> {
     let editor_camera = Object::new()
         .add_component(Transform::default())

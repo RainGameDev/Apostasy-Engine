@@ -438,7 +438,7 @@ impl VulkanRenderingContext {
                         )
                         .multisample_state(
                             &PipelineMultisampleStateCreateInfo::default()
-                                .rasterization_samples(SampleCountFlags::TYPE_1)
+                                .rasterization_samples(SampleCountFlags::TYPE_4)
                                 .sample_shading_enable(false),
                         )
                         .color_blend_state(

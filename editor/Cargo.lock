@@ -224,6 +224,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
+ "walkdir",
  "winit",
 ]
 
@@ -231,6 +232,7 @@ dependencies = [
 name = "apostasy-editor"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "apostasy-core",
  "apostasy-macros",
  "inventory",
