@@ -90,6 +90,7 @@ pub use rand;
 pub use rayon;
 pub use serde;
 pub use serde_yaml;
+pub use slotmap;
 pub use winit;
 
 pub struct Core {

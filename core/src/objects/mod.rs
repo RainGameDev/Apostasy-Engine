@@ -52,8 +52,8 @@ impl Object {
         }
     }
 
-    pub fn set_name(&mut self, name: String) -> Self {
-        self.name = name;
+    pub fn set_name(&mut self, name: &str) -> Self {
+        self.name = name.to_string();
         self.clone()
     }
 
@@ -163,4 +163,14 @@ impl Object {
         self.components.push(component);
         Ok(())
     }
+}
+
+/// Formats an object ID to a index value
+pub fn fmt_key(id: ObjectId) -> String {
+    let s = format!("{:?}", id);
+    s.trim_start_matches("DefaultKey(")
+        .split('v')
+        .next()
+        .unwrap_or(&s)
+        .to_string()
 }

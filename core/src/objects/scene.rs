@@ -209,6 +209,11 @@ impl Scene {
             .collect()
     }
 
+    /// Returns all all objects
+    pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
+        self.objects.iter().collect()
+    }
+
     // ========== ========== Debug ========== ==========
 
     pub fn debug_objects(&self) {

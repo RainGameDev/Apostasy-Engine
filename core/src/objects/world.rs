@@ -328,6 +328,9 @@ impl World {
     pub fn get_root_objects(&self) -> Vec<(ObjectId, &Object)> {
         self.scene.get_root_objects()
     }
+    pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
+        self.scene.get_all_objects()
+    }
 
     // ========== ========== Resources ========== ==========
 

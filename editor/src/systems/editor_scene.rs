@@ -17,6 +17,7 @@ use apostasy_core::{
 #[start]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let camera = Object::new()
+        .set_name("Camera")
         .add_component(Camera::default())
         .add_component(Transform {
             local_position: Vector3::new(0.0, 2.0, 20.0),
@@ -28,6 +29,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let camera = world.add_object(camera);
 
     let floor = Object::new()
+        .set_name("Floor")
         .add_component(Transform {
             local_scale: Vector3::new(15.0, 1.0, 15.0),
             ..Default::default()
@@ -43,6 +45,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     world.add_object(floor);
 
     let cube = Object::new()
+        .set_name("Cube")
         .add_component(Transform {
             local_position: Vector3::new(4.0, 10.0, 0.0),
             ..Default::default()
@@ -55,6 +58,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     world.add_object(cube);
 
     let cube = Object::new()
+        .set_name("Cube")
         .add_component(Transform {
             local_position: Vector3::new(-4.0, 15.0, 0.0),
             ..Default::default()
@@ -67,6 +71,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     world.add_object(cube);
 
     let sphere = Object::new()
+        .set_name("Sphere")
         .add_component(Transform {
             local_position: Vector3::new(0.0, 8.0, 0.0),
             ..Default::default()
@@ -81,7 +86,6 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         .add_tag(Player);
 
     let sphere = world.add_object(sphere);
-    let _ = world.set_parent(camera, Some(sphere));
     // world.insert_resource(CoyoteTime(0.0));
 
     Ok(())

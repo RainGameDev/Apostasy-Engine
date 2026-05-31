@@ -1,5 +1,7 @@
 use anyhow::Result;
 use apostasy_core::egui::{Color32, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
+use apostasy_core::objects::fmt_key;
+use apostasy_core::objects::scene::ObjectId;
 use apostasy_core::objects::world::World;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{egui, update};
@@ -18,6 +20,7 @@ pub struct CellEntry {
 pub struct ObjectRefEntry {
     pub obj_name: String,
     pub id: String,
+    pub object_id: ObjectId,
 }
 
 #[derive(Clone, Resource)]
@@ -59,34 +62,14 @@ impl Default for CellSearchState {
                     location: "ApostasyWorld".into(),
                 },
             ],
-            obj_entries: vec![
-                ObjectRefEntry {
-                    obj_name: "Obj 1".into(),
-                    id: "12345678".into(),
-                },
-                ObjectRefEntry {
-                    obj_name: "Obj 1".into(),
-                    id: "12345678".into(),
-                },
-                ObjectRefEntry {
-                    obj_name: "Obj 1".into(),
-                    id: "12345678".into(),
-                },
-                ObjectRefEntry {
-                    obj_name: "Obj 1".into(),
-                    id: "12345678".into(),
-                },
-                ObjectRefEntry {
-                    obj_name: "Obj 1".into(),
-                    id: "12345678".into(),
-                },
-            ],
+            obj_entries: vec![],
             selected_cell: None,
             selected_obj: None,
         }
     }
 }
 
+#[allow(deprecated)]
 #[update]
 pub fn cell_search(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
@@ -94,7 +77,21 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
     }
+
+    let obj_entries: Vec<ObjectRefEntry> = world
+        .get_all_objects()
+        .iter()
+        .map(|(id, obj)| ObjectRefEntry {
+            obj_name: obj.name.clone(),
+            id: fmt_key(*id),
+            object_id: *id,
+        })
+        .collect();
+
     let cell_search_state = world.get_resource_mut::<CellSearchState>()?;
+    cell_search_state.obj_entries = obj_entries;
+
+    let mut cell_search_state = world.get_resource_mut::<CellSearchState>()?.clone();
     if !cell_search_state.open {
         return Ok(());
     }
@@ -525,6 +522,25 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         if row_resp.clicked() {
                                             cell_search_state.selected_obj = Some(entry.id.clone());
                                         }
+
+                                        // adds a popup menu
+                                        row_resp.context_menu(|ui| {
+                                            if ui.button("Teleport to Object").clicked() {
+                                                // do stuff
+                                                ui.close_menu();
+                                            }
+                                            if ui.button("Delete Object").clicked() {
+                                                world.remove_object(entry.object_id);
+                                            }
+                                            if ui.button("Add new Object").clicked() {
+                                                world.add_new_object();
+                                            }
+                                            ui.separator();
+                                            if ui.button("Copy ID").clicked() {
+                                                ui.close_menu();
+                                            }
+                                        });
+
                                         let bg = if is_sel {
                                             sel_bg
                                         } else if row_resp.hovered() {
@@ -579,10 +595,17 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         } else {
                                             row_alt
                                         };
-                                        let (row_rect, _) = ui.allocate_exact_size(
+                                        let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
-                                            Sense::hover(),
+                                            Sense::click(),
                                         );
+                                        // adds a popup menu
+                                        row_resp.context_menu(|ui| {
+                                            if ui.button("Add new Object").clicked() {
+                                                world.add_new_object();
+                                            }
+                                        });
+
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
                                         let rl = row_rect.left();
                                         ui.painter().line_segment(
