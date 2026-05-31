@@ -3,7 +3,7 @@ use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;
-use cgmath::{InnerSpace, Quaternion, Vector3};
+use cgmath::{InnerSpace, Matrix4, Quaternion, Vector3, Vector4};
 
 // Definition of a ray in a raycast, direction and start point
 pub struct Ray {
@@ -98,7 +98,7 @@ pub struct ColliderSnapshot {
 }
 
 /// Takes a snapshot of every object in the world that has a Collider component
-pub(crate) fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
+pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
     world
         .get_objects_with_component_with_ids::<Collider>()
         .into_iter()
@@ -363,14 +363,14 @@ pub fn collider_raycast_with_snapshot(
     let ray = get_camera_ray(transform, direction);
     raycast_colliders_raw(&ray, distance, snapshots, ignore_id)
 }
-
-/// Raycast from a raw ray use this when you want a custom origin/direction rather than one derived from a transform
-pub fn collider_raycast_raw_ray(
-    world: &mut World,
-    ray: &Ray,
-    distance: f32,
-    ignore_id: Option<ObjectId>,
-) -> Option<ColliderHit> {
-    let snapshots = build_collider_snapshot(world);
-    raycast_colliders_raw(ray, distance, &snapshots, ignore_id)
+pub fn unproject(
+    ndc_x: f32,
+    ndc_y: f32,
+    inv_view_proj: &Matrix4<f32>,
+    camera_position: Vector3<f32>,
+) -> Vector3<f32> {
+    let clip = Vector4::new(ndc_x, ndc_y, -1.0, 1.0);
+    let world = inv_view_proj * clip;
+    let world = Vector3::new(world.x / world.w, world.y / world.w, world.z / world.w);
+    (world - camera_position).normalize()
 }

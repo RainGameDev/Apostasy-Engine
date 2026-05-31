@@ -26,20 +26,20 @@
     - [x] Object shapes
     - [x] Offsets
   - [x] Friction
-  - [ ] Inertia
+  - [x] Inertia
 
 # Editor
 
-- [ ] Editor UI
-  - [ ] Inspector
-    - [ ] Objects displaying
-    - [ ] Object selection
-    - [ ] Object deletion
-    - [ ] Object creation
+- [-] Editor UI
+  - [x] Inspector
+    - [x] Objects displaying
+    - [x] Object selection
+    - [x] Object deletion
+    - [x] Object creation
   - [ ] Object Editor
     - [ ] Name bar
     - [ ] Component adding
-    - [ ] Component editing
+    - [x] Component editing
     - [ ] Component removal
     - [ ] Component copy/paste
     - [ ] Tag adding

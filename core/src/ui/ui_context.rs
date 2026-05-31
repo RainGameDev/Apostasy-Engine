@@ -10,6 +10,8 @@ pub struct ViewportTexture(pub TextureId);
 
 #[derive(Resource, Clone, Copy)]
 pub struct ViewportSize {
+    pub logical_x: f32, // viewport top-left position
+    pub logical_y: f32,
     pub logical_width: f32, // egui logical points
     pub logical_height: f32,
     pub pixel_width: f32, // physical pixels (pixels_per_point * logical * supersample)
@@ -20,6 +22,8 @@ pub struct ViewportSize {
 impl ViewportSize {
     pub fn new(logical_w: f32, logical_h: f32) -> Self {
         Self {
+            logical_x: 0.0,
+            logical_y: 0.0,
             logical_width: logical_w,
             logical_height: logical_h,
             pixel_width: logical_w,
@@ -47,6 +51,8 @@ impl ViewportSize {
 impl Default for ViewportSize {
     fn default() -> Self {
         Self {
+            logical_x: 0.0,
+            logical_y: 0.0,
             logical_width: 960.0,
             logical_height: 540.0,
             pixel_width: 960.0,

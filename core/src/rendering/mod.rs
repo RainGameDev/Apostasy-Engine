@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use apostasy_macros::Resource;
 use ash::vk::{self, CommandPool, Extent2D};
 use egui::{Context, TextureId};
 use winit::event::WindowEvent;
@@ -30,6 +31,11 @@ pub mod vulkan;
 pub enum RenderingBackend {
     Vulkan,
     OpenGl,
+}
+
+#[derive(Clone, Resource, Default)]
+pub struct WindowInfo {
+    pub window_size: (f32, f32),
 }
 
 pub struct RenderingInfo {

@@ -20,7 +20,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
     let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
-
+    let mut frame_rect_out = None;
     let vp = Window::new("Viewport")
         .default_pos([100.0, 100.0])
         .default_size([960.0, 540.0])
@@ -51,6 +51,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
             }
 
             let (frame_rect, _) = ui.allocate_exact_size(available_size, Sense::hover());
+            frame_rect_out = Some(frame_rect);
             ui.painter()
                 .rect_filled(frame_rect, 4.0, Color32::from_gray(40));
 
@@ -72,19 +73,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
         viewport_size.logical_width = size.x;
         viewport_size.logical_height = size.y;
 
-        // compute physical pixels using egui's device pixel ratio and supersample
-        let pixels_per_point = ctx.pixels_per_point();
-        let ss = viewport_size.supersample;
-        let mut pixel_w = (size.x * pixels_per_point * ss).ceil();
-        let mut pixel_h = (size.y * pixels_per_point * ss).ceil();
-
-        // clamp to safe maximum to avoid too-large textures (tweak or query device limits)
-        const MAX_DIM: f32 = 8192.0;
-        pixel_w = pixel_w.clamp(1.0, MAX_DIM);
-        pixel_h = pixel_h.clamp(1.0, MAX_DIM);
-
-        viewport_size.pixel_width = pixel_w;
-        viewport_size.pixel_height = pixel_h;
+        //
+        if let Some(frame_rect) = frame_rect_out {
+            viewport_size.logical_x = frame_rect.min.x;
+            viewport_size.logical_y = frame_rect.min.y;
+            viewport_size.logical_width = frame_rect.width();
+            viewport_size.logical_height = frame_rect.height();
+        }
         world.get_resource_mut::<AntiAliasing>().unwrap().amount = aa_selected;
     }
 

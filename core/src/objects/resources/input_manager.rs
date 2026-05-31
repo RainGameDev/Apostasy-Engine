@@ -71,8 +71,6 @@ pub struct InputManager {
     pub mouse_position: PhysicalPosition<f64>,
 
     /// Raw mouse delta accumulated from `DeviceEvent::MouseMotion`.
-    /// This is the single source of truth for camera / look control;
-    /// `CursorMoved` is used only to track `mouse_position`.
     pub mouse_delta: (f64, f64),
 
     /// Scroll delta accumulated across all wheel events this frame.

@@ -1,19 +1,30 @@
 use apostasy_core::{
     anyhow::Result,
-    cgmath::{Vector3, Zero},
-    objects::{Object, components::transform::Transform, tags::Player, world::World},
+    cgmath::{SquareMatrix, Vector3, Zero},
+    objects::{
+        Object,
+        components::transform::Transform,
+        resources::input_manager::{InputManager, KeyAction, MouseBind},
+        tags::Player,
+        world::World,
+    },
     physics::{
         Gravity,
         collider::{Collider, ColliderShape},
-        raycast::{Direction, collider_raycast},
+        raycast::{Ray, build_collider_snapshot, raycast_colliders_raw, unproject},
         velocity::Velocity,
     },
     rendering::components::{
-        camera::{ActiveCamera, Camera, GameCamera},
+        camera::{ActiveCamera, Camera, GameCamera, get_perspective_projection, get_view_matrix},
         model_renderer::ModelRenderer,
     },
-    start, update,
+    start,
+    ui::ui_context::ViewportSize,
+    update,
+    winit::event::MouseButton,
 };
+
+use crate::ui::scenes_panel::CellSearchState;
 
 #[start]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
@@ -89,36 +100,76 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let sphere = world.add_object(sphere);
     let _ = world.set_parent(camera, Some(sphere));
     // world.insert_resource(CoyoteTime(0.0));
+    //
+
+    let inputs = world.get_resource_mut::<InputManager>().unwrap();
+
+    inputs.register_mousebind(
+        "MouseClick",
+        MouseBind::new(MouseButton::Left, KeyAction::Press),
+    )?;
 
     Ok(())
 }
 
 #[update]
-pub fn raycast_test(world: &mut World) -> Result<()> {
-    let obj = world
-        .get_objects_with_component::<Camera>()
-        .first()
-        .unwrap()
-        .clone();
+pub fn editor_raycasting(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource::<InputManager>().unwrap();
 
-    let transform = world
-        .get_objects_with_component::<Camera>()
-        .first()
-        .unwrap()
-        .get_component::<Transform>()
-        .unwrap()
-        .clone();
+    if inputs.is_mousebind_active("MouseClick") {
+        let camera_transform = world
+            .get_objects_with_component::<Camera>()
+            .first()
+            .unwrap()
+            .get_component::<Transform>()
+            .unwrap()
+            .clone();
 
-    let hit = collider_raycast(
-        world,
-        &transform,
-        100.0, // max distance
-        Direction::Forward,
-        Some(obj.id), // ignore self
-    );
+        let camera_view = world
+            .get_objects_with_component::<Camera>()
+            .first()
+            .unwrap()
+            .get_component::<Camera>()
+            .unwrap()
+            .clone();
+        let viewport_size = world.get_resource::<ViewportSize>().unwrap();
 
-    if let Some(hit) = hit {
-        println!("Hit object {:?} at {:?}", hit.object_id, hit.point);
+        let aspect = viewport_size.logical_width / viewport_size.logical_height;
+        let perspective = get_perspective_projection(&camera_view, aspect);
+        let view = get_view_matrix(&camera_transform);
+
+        let mouse_position = world.get_resource::<InputManager>().unwrap().mouse_position;
+
+        let relative_x = mouse_position.x - viewport_size.logical_x as f64;
+        let relative_y = mouse_position.y - viewport_size.logical_y as f64;
+
+        if relative_x >= 0.0
+            && relative_x <= viewport_size.logical_width as f64
+            && relative_y >= 0.0
+            && relative_y <= viewport_size.logical_height as f64
+        {
+            let ndc_x = (relative_x / viewport_size.logical_width as f64) * 2.0 - 1.0;
+            let ndc_y = (relative_y / viewport_size.logical_height as f64) * 2.0 - 1.0;
+
+            let direction = unproject(
+                ndc_x as f32,
+                ndc_y as f32,
+                &(perspective * view).invert().unwrap(),
+                camera_transform.global_position,
+            );
+            let ray = Ray::new(camera_transform.global_position, direction);
+
+            let snapshots = build_collider_snapshot(world);
+            let hit = raycast_colliders_raw(&ray, 1000.0, &snapshots, None);
+
+            if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
+                if let Some(hit) = hit {
+                    cell_search_state.selected_obj = Some(hit.object_id);
+                } else {
+                    cell_search_state.selected_obj = None;
+                }
+            }
+        }
     }
     Ok(())
 }

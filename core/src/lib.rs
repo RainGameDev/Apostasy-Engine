@@ -35,6 +35,7 @@ use crate::objects::resources::window_manager::WindowManager;
 use crate::objects::systems::EngineTimer;
 use crate::packages::Packages;
 use crate::packages::add_package;
+use crate::rendering::WindowInfo;
 use crate::rendering::components::camera::ActiveCamera;
 use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::get_perspective_projection;
@@ -109,6 +110,7 @@ impl Core {
         world.insert_resource(WindowManager::default());
         world.insert_resource(AntiAliasing::default());
         world.insert_resource(InspectorRegistry::build());
+        world.insert_resource(WindowInfo::default());
 
         world.insert_resource(PushConstants::default());
         world.insert_resource(ModelPushConstants::default());
@@ -164,6 +166,9 @@ impl Core {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
                     let model_registry = world.get_resource::<ModelRegistry>().unwrap().clone();
+
+                    world.get_resource_mut::<WindowInfo>().unwrap().window_size =
+                        rendering_info.window.outer_size().into();
 
                     let aa_amount = world.get_resource::<AntiAliasing>().unwrap().amount;
 
