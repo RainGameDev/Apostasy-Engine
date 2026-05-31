@@ -155,7 +155,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .resizable(true)
         .movable(true)
         .frame(
-            egui::Frame::window(&ctx.style())
+            egui::Frame::window(&ctx.global_style())
                 .fill(DARK_BG)
                 .inner_margin(Margin::same(0)),
         )

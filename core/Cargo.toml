@@ -25,12 +25,12 @@ rand = "0.10.0"
 image = "0.25.10"
 noise = "0.9.0"
 slotmap = "1.1.1"
-egui = "0.33.3"
-egui_extras = { version = "0.33.3" } 
-eframe = "0.33.3"
-egui-winit = "0.33.3"
-epaint = "0.33.3"
-egui-ash-renderer = {version = "0.11", features = ["dynamic-rendering"]}
+egui         = { git = "https://github.com/emilk/egui", branch = "main" }
+eframe       = { git = "https://github.com/emilk/egui", branch = "main" }
+egui_extras  = { git = "https://github.com/emilk/egui", branch = "main" }
+egui-winit   = { git = "https://github.com/emilk/egui", branch = "main" }
+epaint       = { git = "https://github.com/emilk/egui", branch = "main" }
+egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer", branch = "main", features = ["dynamic-rendering"]}
 rayon = "1.10"
 crossbeam-channel = "0.5"
 num_cpus = "1.16"

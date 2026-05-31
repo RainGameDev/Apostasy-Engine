@@ -33,6 +33,7 @@ impl UIRenderer {
             DynamicRendering {
                 color_attachment_format: swapchain.format,
                 depth_attachment_format: Some(swapchain.depth_format),
+                stencil_attachment_format: None,
             },
             Options {
                 srgb_framebuffer: true,

@@ -4,7 +4,7 @@ use apostasy_core::{
     objects::{
         Object,
         components::transform::Transform,
-        resources::input_manager::{InputManager, KeyAction, MouseBind},
+        resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
         tags::Player,
         world::World,
     },
@@ -15,16 +15,22 @@ use apostasy_core::{
         velocity::Velocity,
     },
     rendering::components::{
-        camera::{ActiveCamera, Camera, GameCamera, get_perspective_projection, get_view_matrix},
+        camera::{
+            ActiveCamera, Camera, EditorCamera, GameCamera, get_perspective_projection,
+            get_view_matrix,
+        },
         model_renderer::ModelRenderer,
     },
     start,
-    ui::ui_context::ViewportSize,
+    ui::ui_context::{EguiContext, ViewportSize},
     update,
-    winit::event::MouseButton,
+    winit::{
+        event::MouseButton,
+        keyboard::{KeyCode, PhysicalKey},
+    },
 };
 
-use crate::ui::scenes_panel::CellSearchState;
+use crate::ui::{scenes_panel::CellSearchState, viewport_panel::ViewportInfo};
 
 #[start]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
@@ -35,8 +41,9 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             local_position: Vector3::new(0.0, 2.0, 20.0),
             ..Default::default()
         })
+        .add_component(Velocity::default())
         .add_tag(ActiveCamera)
-        .add_tag(GameCamera);
+        .add_tag(EditorCamera);
 
     let camera = world.add_object(camera);
 
@@ -85,6 +92,23 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let sphere = Object::new()
         .set_name("Sphere")
         .add_component(Transform {
+            local_position: Vector3::new(1.0, 8.0, 0.0),
+            ..Default::default()
+        })
+        .add_component(ModelRenderer::from_path("sphere"))
+        .add_component(Velocity::default_sphere())
+        .add_component(Gravity::default())
+        .add_component(Collider::new(
+            ColliderShape::Sphere { radius: 1.0 },
+            Vector3::zero(),
+        ))
+        .add_tag(Player);
+
+    world.add_object(sphere);
+
+    let sphere = Object::new()
+        .set_name("Sphere")
+        .add_component(Transform {
             local_position: Vector3::new(0.0, 8.0, 0.0),
             ..Default::default()
         })
@@ -97,10 +121,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         ))
         .add_tag(Player);
 
-    let sphere = world.add_object(sphere);
-    let _ = world.set_parent(camera, Some(sphere));
-    // world.insert_resource(CoyoteTime(0.0));
-    //
+    world.add_object(sphere);
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 
@@ -108,12 +129,58 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         "MouseClick",
         MouseBind::new(MouseButton::Left, KeyAction::Press),
     )?;
+    inputs.register_mousebind(
+        "RightMouseClick",
+        MouseBind::new(MouseButton::Right, KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Left",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyA), KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Right",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Forwards",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyW), KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Backwards",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyS), KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Downwards",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyQ), KeyAction::Hold),
+    )?;
+    inputs.register_keybind(
+        "Jump",
+        KeyBind::new(PhysicalKey::Code(KeyCode::Space), KeyAction::Press),
+    )?;
 
     Ok(())
 }
 
 #[update]
 pub fn editor_raycasting(world: &mut World) -> Result<()> {
+    let ctx = world.get_resource::<EguiContext>()?.0.clone();
+
+    if !world.has_resource::<ViewportInfo>() {
+        world.insert_resource(ViewportInfo::default());
+    }
+    let viewport_info = world.get_resource::<ViewportInfo>()?;
+
+    // Block pointer input (clicks, scrolls, hover)
+    //
+    if !viewport_info.is_hovered {
+        return Ok(());
+    }
+    //
+    // // Block keyboard input
+    // if ctx.wants_keyboard_input() {
+    //     return Ok(());
+    // }
+
     let inputs = world.get_resource::<InputManager>().unwrap();
 
     if inputs.is_mousebind_active("MouseClick") {

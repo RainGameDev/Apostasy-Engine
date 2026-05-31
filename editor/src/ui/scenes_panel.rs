@@ -130,9 +130,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         .resizable(true)
         .movable(true)
         .frame(
-            egui::Frame::window(&ctx.style())
+            egui::Frame::window(&ctx.global_style())
                 .fill(DARK_BG)
-                .inner_margin(Margin::same(8)),
+                .inner_margin(Margin::same(0)),
         )
         .show(&ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
@@ -523,7 +523,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             Vec2::new(avail_w, row_h),
                                             Sense::click(),
                                         );
-                                        if row_resp.clicked() {
+                                        if row_resp.double_clicked() {
                                             pending_selected_obj = Some(entry.object_id);
                                         }
 
@@ -531,20 +531,25 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         row_resp.context_menu(|ui| {
                                             if ui.button("Teleport to Object").clicked() {
                                                 // do stuff
-                                                ui.close_menu();
+                                                ui.close();
                                             }
                                             if ui.button("Delete Object").clicked() {
                                                 pending_delete = Some(entry.object_id);
-                                                ui.close_menu();
+                                                ui.close();
                                             }
                                             if ui.button("Add new Object").clicked() {
                                                 pending_add = true;
-                                                ui.close_menu();
+                                                ui.close();
                                             }
+                                            if ui.button("Inspect").clicked() {
+                                                pending_selected_obj = Some(entry.object_id);
+                                                ui.close();
+                                            }
+
                                             ui.separator();
                                             if ui.button("Copy ID").clicked() {
                                                 // ui.output_mut(|o| o.copied_text = entry.id.clone());
-                                                ui.close_menu();
+                                                ui.close();
                                             }
                                         });
 
@@ -610,7 +615,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         row_resp.context_menu(|ui| {
                                             if ui.button("Add new Object").clicked() {
                                                 pending_add = true;
-                                                ui.close_menu();
+                                                ui.close();
                                             }
                                         });
 
