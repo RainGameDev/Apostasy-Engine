@@ -1,13 +1,14 @@
 use anyhow::Result;
-use apostasy_macros::{Component, fixed_update};
+use apostasy_macros::{Component, Inspect, fixed_update};
 
 use crate::{objects::world::World, physics::velocity::Velocity};
 
 pub mod collider;
 pub mod collision_system;
+pub mod raycast;
 pub mod velocity;
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug)]
 pub struct Gravity {
     pub strength: f32,
 }

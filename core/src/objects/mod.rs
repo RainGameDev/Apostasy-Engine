@@ -125,6 +125,13 @@ impl Object {
             .ok_or_else(|| Error::msg(format!("No Component of type: {}", T::name())))
     }
 
+    pub fn get_components(&self) -> Vec<&Box<dyn Component + Send + Sync>> {
+        self.components.iter().collect()
+    }
+
+    pub fn get_components_mut(&mut self) -> Vec<&mut Box<dyn Component + Send + Sync>> {
+        self.components.iter_mut().collect()
+    }
     pub fn add_component<T: Component + 'static>(&mut self, component: T) -> Self {
         if self.get_component::<T>().is_ok() {
             log_warn!("You can only have one of any component on an entity");

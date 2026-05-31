@@ -1,10 +1,15 @@
 use anyhow::Result;
 use apostasy_macros::{Component, update};
 use cgmath::{InnerSpace, Quaternion, Rotation3, Vector3, Zero};
+use egui::Stroke;
 
 use crate::{
     log,
-    objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
+    objects::{
+        component::Inspect, components::transform::Transform, systems::DeltaTime, tags::Player,
+        world::World,
+    },
+    ui::{DIV_COL, DRAG_SIZE, LABEL_WIDTH, PANEL_BG},
 };
 
 #[derive(Component, Clone, Debug)]
@@ -24,6 +29,63 @@ pub struct Velocity {
     pub restitution: f32,
     pub linear_damping: f32,
     pub angular_damping: f32,
+}
+
+impl Inspect for Velocity {
+    fn inspect(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(PANEL_BG)
+            .stroke(Stroke::new(1.0, DIV_COL))
+            .corner_radius(4.0)
+            .inner_margin(4.0)
+            .show(ui, |ui| {
+                ui.label("Velocity");
+                ui.separator();
+                ui.indent("transform_indent", |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Mass"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.mass).speed(0.1),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Friction"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.mu_kinetic).speed(0.1),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Damping"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.angular_damping).speed(0.1),
+                            );
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Bounciness"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.restitution).speed(0.1),
+                            );
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Process"));
+                            ui.style_mut().spacing.icon_width = 20.0;
+                            ui.style_mut().spacing.icon_width_inner = 14.0;
+                            ui.add_space(DRAG_SIZE.x / 3.0);
+                            ui.add(egui::Checkbox::new(&mut self.process, ""));
+                        });
+
+                        ui.separator();
+                    });
+                });
+            });
+    }
 }
 
 impl Default for Velocity {

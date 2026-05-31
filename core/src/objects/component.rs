@@ -1,4 +1,7 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
+
+use apostasy_macros::Resource;
+use hashbrown::HashMap;
 
 pub type BoxedComponent = Box<dyn Component + Send + Sync>;
 
@@ -38,4 +41,36 @@ inventory::collect!(ComponentRegistration);
 pub fn get_component_registration(type_name: &str) -> Option<&'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>()
         .find(|r| r.type_name.to_lowercase() == type_name.to_lowercase())
+}
+
+/// Struct defining an inspectable compone
+pub struct InspectEntry {
+    pub type_id: fn() -> TypeId,
+    pub inspect_fn: fn(&mut dyn Any, &mut crate::egui::Ui),
+}
+
+type InspectFn = fn(&mut dyn Any, &mut crate::egui::Ui);
+inventory::collect!(InspectEntry);
+
+#[derive(Resource, Clone)]
+pub struct InspectorRegistry {
+    pub inspectors: HashMap<TypeId, InspectFn>,
+}
+
+impl InspectorRegistry {
+    pub fn build() -> Self {
+        let mut inspectors = HashMap::new();
+        for entry in inventory::iter::<InspectEntry> {
+            inspectors.insert((entry.type_id)(), entry.inspect_fn);
+        }
+        Self { inspectors }
+    }
+
+    pub fn get(&self, type_id: TypeId) -> Option<fn(&mut dyn Any, &mut egui::Ui)> {
+        self.inspectors.get(&type_id).copied()
+    }
+}
+
+pub trait Inspect: 'static {
+    fn inspect(&mut self, _ui: &mut egui::Ui) {}
 }

@@ -6,7 +6,6 @@ pub use apostasy_macros::late_update;
 pub use apostasy_macros::start;
 pub use apostasy_macros::update;
 
-use ash::vk;
 use winit::event::DeviceEvent;
 use winit::event::DeviceId;
 use winit::keyboard::KeyCode;
@@ -26,6 +25,7 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
+use crate::objects::component::InspectorRegistry;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
 use crate::objects::resources::input_manager::InputManager;
@@ -108,6 +108,7 @@ impl Core {
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
         world.insert_resource(AntiAliasing::default());
+        world.insert_resource(InspectorRegistry::build());
 
         world.insert_resource(PushConstants::default());
         world.insert_resource(ModelPushConstants::default());
@@ -592,8 +593,6 @@ impl ApplicationHandler for Core {
 
             if let Some(render_info) = &self.rendering_info {
                 let mut render_info = render_info.lock().unwrap();
-
-                let aa_amount = world.get_resource::<AntiAliasing>().unwrap().amount;
 
                 if let Some(renderer) = &mut render_info.renderer {
                     renderer.reload_shaders().unwrap();

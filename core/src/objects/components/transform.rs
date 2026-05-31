@@ -1,8 +1,12 @@
 use anyhow::Result;
 use apostasy_macros::{Component, update};
 use cgmath::{Deg, Euler, Quaternion, Rotation, Vector3};
+use egui::Stroke;
 
-use crate::objects::{scene::ObjectId, world::World};
+use crate::{
+    objects::{component::Inspect, scene::ObjectId, world::World},
+    ui::{DIV_COL, DRAG_SIZE, LABEL_WIDTH, PANEL_BG},
+};
 
 pub const UP: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
 pub const RIGHT: Vector3<f32> = Vector3::new(1.0, 0.0, 0.0);
@@ -60,6 +64,74 @@ impl Transform {
     }
     pub fn calculate_global_right(&self) -> Vector3<f32> {
         self.global_rotation.rotate_vector(RIGHT)
+    }
+}
+
+impl Inspect for Transform {
+    fn inspect(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(PANEL_BG)
+            .stroke(Stroke::new(1.0, DIV_COL))
+            .corner_radius(4.0)
+            .inner_margin(4.0)
+            .show(ui, |ui| {
+                ui.label("Transform");
+                ui.separator();
+                ui.indent("transform_indent", |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Position"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_position.x).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_position.y).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_position.z).speed(0.1),
+                            );
+                        });
+                        ui.separator();
+
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Rotation"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_euler_angles.x).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_euler_angles.y).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_euler_angles.z).speed(0.1),
+                            );
+                        });
+                        ui.separator();
+
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Scale"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_scale.x).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_scale.y).speed(0.1),
+                            );
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.local_scale.z).speed(0.1),
+                            );
+                        });
+                        ui.separator();
+                    });
+                });
+            });
     }
 }
 

@@ -5,13 +5,14 @@ use apostasy_core::{
     physics::{
         Gravity,
         collider::{Collider, ColliderShape},
+        raycast::{Direction, collider_raycast},
         velocity::Velocity,
     },
     rendering::components::{
         camera::{ActiveCamera, Camera, GameCamera},
         model_renderer::ModelRenderer,
     },
-    start,
+    start, update,
 };
 
 #[start]
@@ -86,7 +87,38 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         .add_tag(Player);
 
     let sphere = world.add_object(sphere);
+    let _ = world.set_parent(camera, Some(sphere));
     // world.insert_resource(CoyoteTime(0.0));
 
+    Ok(())
+}
+
+#[update]
+pub fn raycast_test(world: &mut World) -> Result<()> {
+    let obj = world
+        .get_objects_with_component::<Camera>()
+        .first()
+        .unwrap()
+        .clone();
+
+    let transform = world
+        .get_objects_with_component::<Camera>()
+        .first()
+        .unwrap()
+        .get_component::<Transform>()
+        .unwrap()
+        .clone();
+
+    let hit = collider_raycast(
+        world,
+        &transform,
+        100.0, // max distance
+        Direction::Forward,
+        Some(obj.id), // ignore self
+    );
+
+    if let Some(hit) = hit {
+        println!("Hit object {:?} at {:?}", hit.object_id, hit.point);
+    }
     Ok(())
 }

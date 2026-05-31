@@ -1,6 +1,6 @@
-use apostasy_macros::Component;
+use apostasy_macros::{Component, Inspect};
 
-#[derive(Component, Default, Clone, Debug)]
+#[derive(Component, Inspect, Default, Clone, Debug)]
 pub struct IsSolid();
 
 impl IsSolid {

@@ -1,4 +1,4 @@
-use apostasy_macros::Component;
+use apostasy_macros::{Component, Inspect};
 
 /// The type of tint a voxel has, colours defined in biomes
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -9,7 +9,7 @@ pub enum TintType {
 }
 
 /// Defines if a voxel has a tint, takes a TintType
-#[derive(Component, Clone, Debug, Default)]
+#[derive(Component, Inspect, Clone, Debug, Default)]
 pub struct HasTint(pub TintType);
 
 impl HasTint {

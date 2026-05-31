@@ -1,7 +1,11 @@
-use apostasy_macros::{Component, Tag};
+use apostasy_macros::{Component, Inspect, Tag};
 use cgmath::{Deg, Matrix4, PerspectiveFov, Point3};
+use egui::Stroke;
 
-use crate::objects::components::transform::Transform;
+use crate::{
+    objects::{component::Inspect, components::transform::Transform},
+    ui::{DIV_COL, DRAG_SIZE, LABEL_WIDTH, PANEL_BG},
+};
 
 #[derive(Component, Clone, Debug)]
 pub struct Camera {
@@ -19,6 +23,47 @@ impl Default for Camera {
             far: 10000.0,
             is_main: false,
         }
+    }
+}
+
+impl Inspect for Camera {
+    fn inspect(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(PANEL_BG)
+            .stroke(Stroke::new(1.0, DIV_COL))
+            .corner_radius(4.0)
+            .inner_margin(4.0)
+            .show(ui, |ui| {
+                ui.label("Camera");
+                ui.separator();
+                ui.indent("transform_indent", |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("FOV"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.fov_y)
+                                    .speed(0.1)
+                                    .range(1.0..=170.0),
+                            );
+                        });
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Near"));
+                            ui.add_sized(
+                                DRAG_SIZE,
+                                egui::DragValue::new(&mut self.near).speed(0.1),
+                            );
+                        });
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Far"));
+                            ui.add_sized(DRAG_SIZE, egui::DragValue::new(&mut self.far).speed(0.1));
+                        });
+                        ui.separator();
+                    });
+                });
+            });
     }
 }
 

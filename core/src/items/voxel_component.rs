@@ -1,6 +1,6 @@
-use apostasy_macros::Component;
+use apostasy_macros::{Component, Inspect};
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug)]
 pub struct Voxel {
     pub name: String,
 }

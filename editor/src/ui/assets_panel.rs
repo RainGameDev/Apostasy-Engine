@@ -5,6 +5,8 @@ use apostasy_core::egui::{
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
 
+use crate::ui::{DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL};
+
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
     EditorId,
@@ -147,15 +149,6 @@ pub fn object_window(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    let dark_bg = Color32::from_rgb(18, 18, 18);
-    let header_bg = Color32::from_rgb(28, 28, 28);
-    let row_alt = Color32::from_rgb(24, 24, 24);
-    let div_col = Color32::from_rgb(60, 60, 60);
-    let text_col = Color32::WHITE;
-    let dim_col = Color32::from_rgb(170, 170, 170);
-    let sel_bg = Color32::from_rgb(40, 80, 140);
-    let hover_bg = Color32::from_rgb(38, 38, 50);
-
     Window::new("Object Window")
         .default_pos([60.0, 60.0])
         .default_size([640.0, 520.0])
@@ -163,7 +156,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .movable(true)
         .frame(
             egui::Frame::window(&ctx.style())
-                .fill(dark_bg)
+                .fill(DARK_BG)
                 .inner_margin(Margin::same(0)),
         )
         .show(&ctx, |ui| {
@@ -181,7 +174,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
             // header bar
             let (header_rect, _) =
                 ui.allocate_exact_size(Vec2::new(total_w, header_h), Sense::hover());
-            ui.painter().rect_filled(header_rect, 0.0, header_bg);
+            ui.painter().rect_filled(header_rect, 0.0, HEADER_BG);
 
             let font_hdr = egui::FontId::proportional(13.0);
 
@@ -190,7 +183,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                 egui::Align2::LEFT_CENTER,
                 "Filter",
                 font_hdr.clone(),
-                text_col,
+                TEXT_COL,
             );
             ui.add_sized(
                 Vec2::new(filter_w, 18.0),
@@ -252,13 +245,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     col_w - 12.0,
                     &format!("{}{}", label, arrow),
                     font_hdr.clone(),
-                    text_col,
+                    TEXT_COL,
                 );
             }
 
             ui.painter().line_segment(
                 [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(1.0, div_col),
+                Stroke::new(1.0, DIV_COL),
             );
 
             // body
@@ -315,7 +308,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             Pos2::new(left_rect.left(), sep_y),
                             Pos2::new(left_rect.right(), sep_y),
                         ],
-                        Stroke::new(1.0, div_col),
+                        Stroke::new(1.0, DIV_COL),
                     );
                     ui.add_space(3.0);
 
@@ -324,9 +317,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         &object_window_resource.filter_tree.clone(),
                         0,
                         &object_window_resource.selected_filter,
-                        text_col,
-                        dim_col,
-                        sel_bg,
+                        TEXT_COL,
+                        DIM_COL,
+                        SEL_BG,
                         filter_w,
                         &mut toggle_path,
                         &mut select_path,
@@ -345,7 +338,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     Pos2::new(left_rect.right(), left_rect.top()),
                     Pos2::new(left_rect.right(), left_rect.bottom()),
                 ],
-                Stroke::new(1.0, div_col),
+                Stroke::new(1.0, DIV_COL),
             );
 
             // parse filter string
@@ -423,13 +416,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         }
 
                         let bg = if is_selected {
-                            sel_bg
+                            SEL_BG
                         } else if row_resp.hovered() {
-                            hover_bg
+                            HOVER_BG
                         } else if idx % 2 == 0 {
-                            dark_bg
+                            DARK_BG
                         } else {
-                            row_alt
+                            ROW_ALT
                         };
 
                         ui.painter().rect_filled(row_rect, 0.0, bg);
@@ -444,7 +437,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             edid_w - 12.0,
                             &entry.editor_id,
                             fnt.clone(),
-                            dim_col,
+                            DIM_COL,
                         );
                         paint_clipped(
                             ui,
@@ -452,7 +445,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             name_w - 12.0,
                             &entry.name,
                             fnt.clone(),
-                            dim_col,
+                            DIM_COL,
                         );
                         paint_clipped(
                             ui,
@@ -460,7 +453,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             count_w - 12.0,
                             &entry.count.to_string(),
                             fnt.clone(),
-                            dim_col,
+                            DIM_COL,
                         );
 
                         ui.painter().line_segment(
@@ -473,7 +466,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                     Pos2::new(rl + offset, row_rect.top()),
                                     Pos2::new(rl + offset, row_rect.bottom()),
                                 ],
-                                Stroke::new(1.0, div_col),
+                                Stroke::new(1.0, DIV_COL),
                             );
                         }
                     }
@@ -486,9 +479,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     for i in 0..remaining_rows {
                         let idx = rows_drawn + i;
                         let bg = if idx.is_multiple_of(2) {
-                            dark_bg
+                            DARK_BG
                         } else {
-                            row_alt
+                            ROW_ALT
                         };
                         let (row_rect, _) =
                             ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::hover());
@@ -505,7 +498,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                     Pos2::new(rl + offset, row_rect.top()),
                                     Pos2::new(rl + offset, row_rect.bottom()),
                                 ],
-                                Stroke::new(1.0, div_col),
+                                Stroke::new(1.0, DIV_COL),
                             );
                         }
                     }

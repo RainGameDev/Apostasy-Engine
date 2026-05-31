@@ -1,10 +1,14 @@
 use anyhow::Result;
-use apostasy_macros::{Component, update};
+use apostasy_macros::{Component, Inspect, update};
 use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
+use egui::{ComboBox, Stroke};
 
 use crate::{
-    objects::{components::transform::Transform, scene::ObjectId, world::World},
+    objects::{
+        component::Inspect, components::transform::Transform, scene::ObjectId, world::World,
+    },
     physics::velocity::Velocity,
+    ui::{DIV_COL, DRAG_SIZE, LABEL_WIDTH, PANEL_BG},
 };
 
 ///  A shape of a collider, might add more if needed
@@ -29,6 +33,16 @@ impl ColliderShape {
             }
         }
     }
+
+    #[allow(unused)]
+    pub fn to_string(&self) -> String {
+        match self {
+            ColliderShape::Cuboid { size } => "Cube".into(),
+            ColliderShape::Sphere { radius } => "Sphere".into(),
+            ColliderShape::Capsule { radius, height } => "Capsule".into(),
+            ColliderShape::Cylinder { radius, height } => "Cylinder".into(),
+        }
+    }
 }
 
 /// A component that defines a colliders data
@@ -38,6 +52,136 @@ pub struct Collider {
     pub offset: Vector3<f32>,
     pub is_static: bool,
     pub is_area: bool,
+}
+
+impl Inspect for Collider {
+    fn inspect(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(PANEL_BG)
+            .stroke(Stroke::new(1.0, DIV_COL))
+            .corner_radius(4.0)
+            .inner_margin(4.0)
+            .show(ui, |ui| {
+                ui.label("Camera");
+                ui.separator();
+                ui.indent("transform_indent", |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Shape"));
+                            ComboBox::from_label("")
+                                .selected_text(self.shape.to_string())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.shape,
+                                        ColliderShape::Cuboid {
+                                            size: Vector3::new(1.0, 1.0, 1.0),
+                                        },
+                                        "Cube",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.shape,
+                                        ColliderShape::Sphere { radius: 1.0 },
+                                        "Sphere",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.shape,
+                                        ColliderShape::Capsule {
+                                            radius: 1.0,
+                                            height: 2.0,
+                                        },
+                                        "Capsule",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.shape,
+                                        ColliderShape::Cylinder {
+                                            radius: 1.0,
+                                            height: 2.0,
+                                        },
+                                        "Cylinder",
+                                    );
+                                });
+                        });
+                        ui.separator();
+                        match &mut self.shape {
+                            ColliderShape::Cuboid { size } => {
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Size"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(&mut size.x)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(&mut size.y)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(&mut size.z)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                            }
+                            ColliderShape::Sphere { radius } => {
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(radius)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                            }
+                            ColliderShape::Capsule { radius, height } => {
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(radius)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(height)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                            }
+                            ColliderShape::Cylinder { radius, height } => {
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(radius)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
+                                    ui.add_sized(
+                                        DRAG_SIZE,
+                                        egui::DragValue::new(height)
+                                            .speed(0.1)
+                                            .range(0.1..=f32::MAX),
+                                    );
+                                });
+                            }
+                        }
+                    });
+                });
+            });
+    }
 }
 
 impl Default for Collider {
@@ -209,7 +353,7 @@ pub struct CollisionEvent {
     pub normal: Vector3<f32>,
 }
 
-#[derive(Debug, Clone, Default, Component)]
+#[derive(Debug, Clone, Default, Component, Inspect)]
 pub struct CollisionEvents {
     pub events: Vec<CollisionEvent>,
 }

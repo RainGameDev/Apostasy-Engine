@@ -17,7 +17,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         impl #impl_generics apostasy_core::objects::component::Component for #struct_name #type_generics
-        #where_clause
+            #where_clause
         {
             fn name() -> &'static str where Self: Sized {
                 std::any::type_name::<#struct_name>()
@@ -28,7 +28,6 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                 std::any::type_name::<Self>()
             }
         }
-
         inventory::submit! {
             apostasy_core::objects::component::ComponentRegistration {
                 type_name: #struct_name_str,
@@ -41,9 +40,29 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                     }
                 },
             }
-        };
+        }
+        inventory::submit! {
+            apostasy_core::objects::component::InspectEntry {
+                type_id: || std::any::TypeId::of::<#struct_name>(),
+                inspect_fn: |any, ui: &mut apostasy_core::egui::Ui| {
+                    if let Some(c) = any.downcast_mut::<#struct_name>() {
+                        apostasy_core::objects::component::Inspect::inspect(c, ui);
+                    }
+                },
+            }
+        }
     };
+    output.into()
+}
 
+#[proc_macro_derive(Inspect)]
+pub fn inspect_derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    let struct_name = &ast.ident;
+    let (impl_generics, type_generics, where_clause) = ast.generics.split_for_impl();
+    let output = quote! {
+        impl #impl_generics apostasy_core::objects::component::Inspect for #struct_name #type_generics #where_clause {}
+    };
     output.into()
 }
 
@@ -60,8 +79,8 @@ pub fn resource_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
     let output = quote! {
-     impl #impl_generics apostasy_core::objects::resource::Resource for #struct_name #type_generics
-        #where_clause
+        impl #impl_generics apostasy_core::objects::resource::Resource for #struct_name #type_generics
+            #where_clause
 
         {
             fn name() -> &'static str where Self: Sized {
@@ -94,8 +113,8 @@ pub fn tag_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
     let output = quote! {
-     impl #impl_generics apostasy_core::objects::tag::Tag for #struct_name #type_generics
-        #where_clause
+        impl #impl_generics apostasy_core::objects::tag::Tag for #struct_name #type_generics
+            #where_clause
 
         {
             fn name() -> &'static str where Self: Sized {

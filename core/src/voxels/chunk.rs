@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use apostasy_macros::{Component, Resource};
+use apostasy_macros::{Component, Inspect, Resource};
 use cgmath::Vector3;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use hashbrown::HashMap;
@@ -21,7 +21,7 @@ pub struct VoxelBreakProgress {
     pub progress: HashMap<(i32, i32, i32), u32>,
 }
 
-#[derive(Clone, Component, Debug)]
+#[derive(Clone, Inspect, Component, Debug)]
 pub struct Chunk {
     pub voxels: Box<[VoxelId; 32 * 32 * 32]>,
     pub lod: u8,

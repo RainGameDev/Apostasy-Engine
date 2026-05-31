@@ -2,7 +2,7 @@ use std::num::NonZeroU16;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
-use apostasy_macros::{Component, Tag};
+use apostasy_macros::{Component, Inspect, Tag};
 use ash::vk::{self, Buffer, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
@@ -105,7 +105,7 @@ impl VertexDefinition for VoxelVertex {
     }
 }
 
-#[derive(Debug, Component, Clone, Default)]
+#[derive(Debug, Inspect, Component, Clone, Default)]
 pub struct VoxelChunkMesh {
     pub vertex_buffer: Buffer,
     pub vertex_buffer_memory: DeviceMemory,
@@ -114,7 +114,7 @@ pub struct VoxelChunkMesh {
     pub index_count: u32,
 }
 
-#[derive(Debug, Component, Clone, Default)]
+#[derive(Debug, Inspect, Component, Clone, Default)]
 pub struct WaterMesh {
     pub vertex_buffer: Buffer,
     pub vertex_buffer_memory: DeviceMemory,

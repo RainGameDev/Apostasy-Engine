@@ -1,4 +1,5 @@
 use crate::objects::world::World;
+use crate::physics::raycast::{Direction, Ray, get_camera_ray};
 use crate::rendering::components::camera::Camera;
 use crate::voxels::voxel::{VoxelId, VoxelRegistry};
 use crate::{
@@ -17,57 +18,6 @@ pub struct RaycastHit {
     pub face: u8,
     pub distance: f32,
     pub set_to: Option<VoxelId>,
-}
-
-pub struct Ray {
-    pub origin: Vector3<f32>,
-    pub direction: Vector3<f32>,
-}
-
-impl Ray {
-    pub fn new(origin: Vector3<f32>, direction: Vector3<f32>) -> Self {
-        let len =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        Self {
-            origin,
-            direction: Vector3::new(direction.x / len, direction.y / len, direction.z / len),
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone)]
-pub enum Direction {
-    Forward,
-    Backwards,
-    Left,
-    Right,
-    Up,
-    Down,
-}
-
-#[inline(always)]
-pub fn get_camera_ray(transform: &Transform, direction: Direction) -> Ray {
-    match direction {
-        Direction::Forward => Ray::new(
-            transform.global_position,
-            transform.calculate_global_forward(),
-        ),
-        Direction::Backwards => Ray::new(
-            transform.global_position,
-            -transform.calculate_global_forward(),
-        ),
-        Direction::Left => Ray::new(
-            transform.global_position,
-            transform.calculate_global_right(),
-        ),
-        Direction::Right => Ray::new(
-            transform.global_position,
-            -transform.calculate_global_right(),
-        ),
-        Direction::Up => Ray::new(transform.global_position, transform.calculate_global_up()),
-        Direction::Down => Ray::new(transform.global_position, -transform.calculate_global_up()),
-    }
 }
 
 /// Voxel DDA algorithm

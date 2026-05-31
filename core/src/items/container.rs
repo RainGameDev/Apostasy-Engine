@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use apostasy_macros::Component;
+use apostasy_macros::{Component, Inspect};
 use cgmath::Vector2;
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug)]
 pub struct Container {
     pub items: Vec<ContainerItem>,
     pub size: Vector2<u32>,

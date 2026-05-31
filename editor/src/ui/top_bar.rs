@@ -1,8 +1,8 @@
 use anyhow::Result;
-use apostasy_core::egui::{Color32, TopBottomPanel, Window};
+use apostasy_core::egui::TopBottomPanel;
 use apostasy_core::objects::world::World;
 use apostasy_core::ui::ui_context::EguiContext;
-use apostasy_core::{egui, update};
+use apostasy_core::update;
 
 #[update]
 pub fn top_bar(world: &mut World) -> Result<()> {

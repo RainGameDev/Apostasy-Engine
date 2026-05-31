@@ -1,4 +1,4 @@
-use apostasy_macros::Component;
+use apostasy_macros::{Component, Inspect};
 use cgmath::{Vector3, Zero};
 
 pub mod biome;
@@ -12,7 +12,7 @@ pub mod voxel;
 pub mod voxel_components;
 pub mod voxel_raycast;
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug)]
 pub struct VoxelTransform {
     pub position: Vector3<i32>,
 }

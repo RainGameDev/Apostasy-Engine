@@ -3,7 +3,6 @@ use apostasy_core::{
     objects::{Object, components::transform::Transform, world::World},
     physics::velocity::Velocity,
     rendering::components::camera::{ActiveCamera, Camera},
-    start,
 };
 
 // #[start]
