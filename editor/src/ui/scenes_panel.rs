@@ -1,8 +1,8 @@
 use anyhow::Result;
 use apostasy_core::egui::{Color32, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
-use apostasy_core::objects::fmt_key;
 use apostasy_core::objects::scene::ObjectId;
 use apostasy_core::objects::world::World;
+use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
@@ -35,6 +35,7 @@ pub struct CellSearchState {
     pub obj_entries: Vec<ObjectRefEntry>,
     pub selected_cell: Option<String>,
     pub selected_obj: Option<ObjectId>,
+    pub copied_obj: Option<Object>,
 }
 
 impl Default for CellSearchState {
@@ -68,6 +69,7 @@ impl Default for CellSearchState {
             obj_entries: vec![],
             selected_cell: None,
             selected_obj: None,
+            copied_obj: None,
         }
     }
 }
@@ -118,6 +120,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         world.get_resource::<CellSearchState>()?.obj_filter.clone();
     let mut pending_delete: Option<ObjectId> = None;
     let mut pending_add = false;
+    let mut object_to_copy: Option<Object> = None;
 
     let row_h = 20.0;
     let header_h = 26.0;
@@ -551,6 +554,35 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 // ui.output_mut(|o| o.copied_text = entry.id.clone());
                                                 ui.close();
                                             }
+                                            if ui.button("Copy Object").clicked() {
+                                                object_to_copy = Some(
+                                                    world
+                                                        .get_object(entry.object_id)
+                                                        .unwrap()
+                                                        .clone(),
+                                                );
+
+                                                ui.close();
+                                            }
+                                            if ui.button("Cut Object").clicked() {
+                                                object_to_copy = Some(
+                                                    world
+                                                        .get_object(entry.object_id)
+                                                        .unwrap()
+                                                        .clone(),
+                                                );
+                                                pending_delete = Some(entry.object_id);
+                                                ui.close();
+                                            }
+                                            if ui.button("Paste Object").clicked() {
+                                                let s = world
+                                                    .get_resource::<CellSearchState>()
+                                                    .unwrap();
+                                                if let Some(obj) = s.copied_obj.clone() {
+                                                    world.add_object(obj);
+                                                }
+                                                ui.close();
+                                            }
                                         });
 
                                         let bg = if is_sel {
@@ -617,6 +649,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 pending_add = true;
                                                 ui.close();
                                             }
+                                            if ui.button("Paste Object").clicked() {
+                                                let s = world
+                                                    .get_resource::<CellSearchState>()
+                                                    .unwrap();
+                                                if let Some(obj) = s.copied_obj.clone() {
+                                                    world.add_object(obj);
+                                                }
+                                                ui.close();
+                                            }
                                         });
 
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
@@ -652,6 +693,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     if let Some(id) = pending_delete {
         world.remove_object(id);
     }
+
+    if object_to_copy.is_some() {
+        let s = world.get_resource_mut::<CellSearchState>()?;
+        s.copied_obj = object_to_copy;
+    }
+
     if pending_add {
         world.add_new_object();
     }

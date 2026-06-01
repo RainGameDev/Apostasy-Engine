@@ -29,7 +29,7 @@ pub struct Object {
     pub id: ObjectId,
     pub name: String,
     pub components: Vec<BoxedComponent>,
-    pub tags: Vec<Box<dyn Tag>>,
+    pub tags: Vec<Box<dyn Tag + Send + Sync>>,
     pub parent: Option<ObjectId>,
     pub children: Vec<ObjectId>,
 }
@@ -132,6 +132,16 @@ impl Object {
     pub fn get_components_mut(&mut self) -> Vec<&mut Box<dyn Component + Send + Sync>> {
         self.components.iter_mut().collect()
     }
+
+    pub fn add_boxed_component(&mut self, component: Box<dyn Component>) -> Self {
+        // if self.get_component::<T>().is_ok() {
+        //     log_warn!("You can only have one of any component on an entity");
+        //     return self.clone();
+        // }
+        self.components.push(component);
+        self.clone()
+    }
+
     pub fn add_component<T: Component + 'static>(&mut self, component: T) -> Self {
         if self.get_component::<T>().is_ok() {
             log_warn!("You can only have one of any component on an entity");
@@ -169,6 +179,15 @@ impl Object {
 
         self.components.push(component);
         Ok(())
+    }
+    pub fn remove_component_by_type_id(&mut self, type_id: TypeId) {
+        if let Some(i) = self
+            .components
+            .iter()
+            .position(|c| c.as_any().type_id() == type_id)
+        {
+            self.components.remove(i);
+        }
     }
 }
 

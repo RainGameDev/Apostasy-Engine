@@ -1,6 +1,6 @@
 use std::any::Any;
 
-pub trait Tag: TagContainer {
+pub trait Tag: TagContainer + Send + Sync {
     fn name() -> &'static str
     where
         Self: Sized;
@@ -21,19 +21,19 @@ impl PartialEq for dyn Tag {
 impl Eq for dyn Tag {}
 
 pub trait TagContainer {
-    fn clone_box(&self) -> Box<dyn Tag>;
+    fn clone_box(&self) -> Box<dyn Tag + Send + Sync>;
 }
 
 impl<T> TagContainer for T
 where
-    T: 'static + Tag + Clone,
+    T: 'static + Tag + Clone + Send + Sync,
 {
-    fn clone_box(&self) -> Box<dyn Tag> {
+    fn clone_box(&self) -> Box<dyn Tag + Send + Sync> {
         Box::new(self.clone())
     }
 }
-impl Clone for Box<dyn Tag> {
-    fn clone(&self) -> Box<dyn Tag> {
+impl Clone for Box<dyn Tag + Send + Sync> {
+    fn clone(&self) -> Box<dyn Tag + Send + Sync> {
         self.clone_box()
     }
 }
@@ -42,7 +42,7 @@ pub struct TagRegistration {
     pub type_name: &'static str,
     // pub serialize: fn(&dyn Tag) -> serde_yaml::Value,
     // pub deserialize: fn(serde_yaml::Value) -> Box<dyn Tag>,
-    pub create: fn() -> Box<dyn Tag>,
+    pub create: fn() -> Box<dyn Tag + Send + Sync>,
 }
 
 inventory::collect!(TagRegistration);

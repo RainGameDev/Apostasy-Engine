@@ -3,7 +3,7 @@ use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;
-use cgmath::{InnerSpace, Matrix4, Quaternion, Vector3, Vector4};
+use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
 
 // Definition of a ray in a raycast, direction and start point
 pub struct Ray {
@@ -62,14 +62,6 @@ pub fn get_camera_ray(transform: &Transform, direction: Direction) -> Ray {
     }
 }
 
-/// Rotates a vector by a quaternion
-#[inline]
-fn rotate_vec(q: Quaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {
-    let qv = Vector3::new(q.v.x, q.v.y, q.v.z);
-    let t = qv.cross(v) * 2.0;
-    v + t * q.s + qv.cross(t)
-}
-
 /// Result of a successful collider raycast
 #[derive(Debug, Clone)]
 pub struct ColliderHit {
@@ -93,8 +85,6 @@ pub struct ColliderSnapshot {
     half_extents: Vector3<f32>,
     shape: ColliderShape,
     collider: Collider,
-    position: Vector3<f32>,
-    rotation: Quaternion<f32>,
 }
 
 /// Takes a snapshot of every object in the world that has a Collider component
@@ -139,8 +129,6 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
                 half_extents,
                 shape: collider.shape.clone(),
                 collider,
-                position,
-                rotation,
             })
         })
         .collect()
@@ -194,8 +182,6 @@ pub(crate) fn ray_vs_obb(
         return None; // OBB is entirely behind the ray origin
     }
 
-    // Use t_max (exit) only if origin is inside the OBB
-    let t = if t_min >= 0.0 { t_min } else { t_max };
     Some((t_min, t_max, hit_face))
 }
 
@@ -227,6 +213,7 @@ fn ray_vs_sphere(ray: &Ray, center: Vector3<f32>, radius: f32) -> Option<(f32, V
 
 /// Test a single snapshot against the ray
 /// Returns (distance, point, normal, face) on hit
+#[allow(unused)]
 fn test_snapshot(
     ray: &Ray,
     snap: &ColliderSnapshot,
@@ -353,7 +340,7 @@ pub fn collider_raycast_camera(world: &mut World, range: f32) -> Option<Collider
 
 /// Raycast from an arbitrary transform with a pre-built snapshot (avoids rebuilding
 pub fn collider_raycast_with_snapshot(
-    world: &mut World,
+    _world: &mut World,
     transform: &Transform,
     distance: f32,
     direction: Direction,

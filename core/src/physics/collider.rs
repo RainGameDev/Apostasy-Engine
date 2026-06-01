@@ -1,14 +1,14 @@
 use anyhow::Result;
 use apostasy_macros::{Component, Inspect, update};
 use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
-use egui::{ComboBox, Stroke};
+use egui::ComboBox;
 
 use crate::{
     objects::{
         component::Inspect, components::transform::Transform, scene::ObjectId, world::World,
     },
     physics::velocity::Velocity,
-    ui::{DIV_COL, DRAG_SIZE, LABEL_WIDTH, PANEL_BG},
+    ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
 ///  A shape of a collider, might add more if needed
@@ -56,131 +56,120 @@ pub struct Collider {
 
 impl Inspect for Collider {
     fn inspect(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::new()
-            .fill(PANEL_BG)
-            .stroke(Stroke::new(1.0, DIV_COL))
-            .corner_radius(4.0)
-            .inner_margin(4.0)
-            .show(ui, |ui| {
-                ui.label("Camera");
-                ui.separator();
-                ui.indent("transform_indent", |ui| {
-                    ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Shape"));
-                            ComboBox::from_label("")
-                                .selected_text(self.shape.to_string())
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(
-                                        &mut self.shape,
-                                        ColliderShape::Cuboid {
-                                            size: Vector3::new(1.0, 1.0, 1.0),
-                                        },
-                                        "Cube",
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.shape,
-                                        ColliderShape::Sphere { radius: 1.0 },
-                                        "Sphere",
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.shape,
-                                        ColliderShape::Capsule {
-                                            radius: 1.0,
-                                            height: 2.0,
-                                        },
-                                        "Capsule",
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.shape,
-                                        ColliderShape::Cylinder {
-                                            radius: 1.0,
-                                            height: 2.0,
-                                        },
-                                        "Cylinder",
-                                    );
-                                });
-                        });
-                        ui.separator();
-                        match &mut self.shape {
-                            ColliderShape::Cuboid { size } => {
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Size"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(&mut size.x)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(&mut size.y)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(&mut size.z)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                            }
-                            ColliderShape::Sphere { radius } => {
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(radius)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                            }
-                            ColliderShape::Capsule { radius, height } => {
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(radius)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(height)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                            }
-                            ColliderShape::Cylinder { radius, height } => {
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(radius)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
-                                    ui.add_sized(
-                                        DRAG_SIZE,
-                                        egui::DragValue::new(height)
-                                            .speed(0.1)
-                                            .range(0.1..=f32::MAX),
-                                    );
-                                });
-                            }
-                        }
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Shape"));
+                ComboBox::from_label("")
+                    .selected_text(self.shape.to_string())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.shape,
+                            ColliderShape::Cuboid {
+                                size: Vector3::new(1.0, 1.0, 1.0),
+                            },
+                            "Cube",
+                        );
+                        ui.selectable_value(
+                            &mut self.shape,
+                            ColliderShape::Sphere { radius: 1.0 },
+                            "Sphere",
+                        );
+                        ui.selectable_value(
+                            &mut self.shape,
+                            ColliderShape::Capsule {
+                                radius: 1.0,
+                                height: 2.0,
+                            },
+                            "Capsule",
+                        );
+                        ui.selectable_value(
+                            &mut self.shape,
+                            ColliderShape::Cylinder {
+                                radius: 1.0,
+                                height: 2.0,
+                            },
+                            "Cylinder",
+                        );
                     });
-                });
             });
+            ui.separator();
+            match &mut self.shape {
+                ColliderShape::Cuboid { size } => {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Size"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(&mut size.x)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(&mut size.y)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(&mut size.z)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                }
+                ColliderShape::Sphere { radius } => {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(radius)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                }
+                ColliderShape::Capsule { radius, height } => {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(radius)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(height)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                }
+                ColliderShape::Cylinder { radius, height } => {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Radius"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(radius)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Height"));
+                        ui.add_sized(
+                            DRAG_SIZE,
+                            egui::DragValue::new(height)
+                                .speed(0.1)
+                                .range(0.1..=f32::MAX),
+                        );
+                    });
+                }
+            }
+        });
     }
 }
 
