@@ -16,32 +16,33 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             egui::Frame::new()
                 .fill(ui.visuals().panel_fill)
                 .show(ui, |ui| {
-                    ui.separator();
-                    ui.set_min_size(egui::vec2(screen_width, 32.0));
-                    ui.vertical(|ui| {
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.add_space(8.0);
-                            if ui
-                                .add(egui::Button::new("Files").min_size(DRAG_SIZE))
-                                .clicked()
-                            {}
-                            ui.add_space(8.0);
-                            if ui
-                                .add(egui::Button::new("Edit").min_size(DRAG_SIZE))
-                                .clicked()
-                            {}
-
-                            ui.add_space(8.0);
-                            if ui
-                                .add(egui::Button::new("View").min_size(DRAG_SIZE))
-                                .clicked()
-                            {}
-
-                            ui.add_space(8.0);
+                    ui.set_min_size(egui::vec2(screen_width, 40.0));
+                    let button_height = DRAG_SIZE.y;
+                    let offset = (40.0 - button_height) / 6.0;
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            ui.separator();
+                            ui.add_space(offset);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(egui::Button::new("Files").min_size(DRAG_SIZE))
+                                    .clicked()
+                                {}
+                                ui.add_space(8.0);
+                                if ui
+                                    .add(egui::Button::new("Edit").min_size(DRAG_SIZE))
+                                    .clicked()
+                                {}
+                                ui.add_space(8.0);
+                                if ui
+                                    .add(egui::Button::new("View").min_size(DRAG_SIZE))
+                                    .clicked()
+                                {}
+                            });
+                            ui.separator();
                         });
                     });
-                    ui.separator();
                 });
         });
     Ok(())
