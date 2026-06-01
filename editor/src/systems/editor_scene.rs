@@ -163,23 +163,14 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
 #[update]
 pub fn editor_raycasting(world: &mut World) -> Result<()> {
-    let ctx = world.get_resource::<EguiContext>()?.0.clone();
-
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());
     }
     let viewport_info = world.get_resource::<ViewportInfo>()?;
 
-    // Block pointer input (clicks, scrolls, hover)
-    //
     if !viewport_info.is_hovered {
         return Ok(());
     }
-    //
-    // // Block keyboard input
-    // if ctx.wants_keyboard_input() {
-    //     return Ok(());
-    // }
 
     let inputs = world.get_resource::<InputManager>().unwrap();
 

@@ -9,8 +9,19 @@ use apostasy_core::{
     update,
 };
 
+use crate::ui::viewport_panel::ViewportInfo;
+
 #[update]
 pub fn editor_camera_move(world: &mut World) -> Result<()> {
+    if !world.has_resource::<ViewportInfo>() {
+        world.insert_resource(ViewportInfo::default());
+    }
+    let viewport_info = world.get_resource::<ViewportInfo>()?;
+
+    if !viewport_info.is_hovered {
+        return Ok(());
+    }
+
     let inputs = world.get_resource::<InputManager>().unwrap();
     let mouse_delta = inputs.mouse_delta;
     let direction = inputs.input_vector_2d("Left", "Right", "Backwards", "Forwards");
