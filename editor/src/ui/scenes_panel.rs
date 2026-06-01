@@ -551,7 +551,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                             ui.separator();
                                             if ui.button("Copy ID").clicked() {
-                                                // ui.output_mut(|o| o.copied_text = entry.id.clone());
+                                                ui.copy_text(entry.id.clone());
                                                 ui.close();
                                             }
                                             if ui.button("Copy Object").clicked() {
