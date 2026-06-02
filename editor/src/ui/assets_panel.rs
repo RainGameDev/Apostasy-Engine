@@ -137,7 +137,7 @@ impl Default for ObjectWindowState {
     }
 }
 
-#[update]
+#[update(mode = "editor")]
 pub fn object_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 

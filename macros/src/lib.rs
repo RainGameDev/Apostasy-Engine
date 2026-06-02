@@ -1,7 +1,8 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{DeriveInput, ItemFn, LitInt, parse_macro_input, parse_quote};
+use syn::{DeriveInput, ItemFn, LitInt, LitStr, Token, parse_macro_input, parse_quote};
 
 #[proc_macro_derive(Component, attributes(component_deserialize))]
 pub fn component_derive(input: TokenStream) -> TokenStream {
@@ -142,27 +143,48 @@ pub fn tag_derive(input: TokenStream) -> TokenStream {
 
 struct SystemArgs {
     priority: Option<u32>,
+    mode: Option<TokenStream2>,
 }
 
 /// Parser for the attribute arguments
 impl Parse for SystemArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.is_empty() {
-            return Ok(SystemArgs { priority: None });
+        let mut priority = None;
+        let mut mode = None;
+
+        while !input.is_empty() {
+            let name: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            if name == "priority" {
+                let priority_lit: LitInt = input.parse()?;
+                priority = Some(priority_lit.base10_parse()?);
+            } else if name == "mode" {
+                let mode_lit: LitStr = input.parse()?;
+                mode = Some(match mode_lit.value().as_str() {
+                    "game" => quote! { apostasy_core::EngineMode::Game },
+                    "editor" => quote! { apostasy_core::EngineMode::Editor },
+                    "all" => quote! { apostasy_core::EngineMode::All },
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            mode_lit,
+                            "expected `game`, `editor`, or `all`",
+                        ))
+                    }
+                });
+            } else {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "expected `priority` or `mode`",
+                ));
+            }
+
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
         }
 
-        let name: syn::Ident = input.parse()?;
-        if name != "priority" {
-            return Err(syn::Error::new_spanned(name, "expected `priority`"));
-        }
-
-        input.parse::<syn::Token![=]>()?;
-        let priority_lit: LitInt = input.parse()?;
-        let priority: u32 = priority_lit.base10_parse()?;
-
-        Ok(SystemArgs {
-            priority: Some(priority),
-        })
+        Ok(SystemArgs { priority, mode })
     }
 }
 
@@ -176,6 +198,7 @@ pub fn start(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
+    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -184,6 +207,7 @@ pub fn start(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
+                mode: #mode,
             }
         }
     };
@@ -200,6 +224,7 @@ pub fn prerender(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
+    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -208,6 +233,7 @@ pub fn prerender(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
+                mode: #mode,
             }
         }
     };
@@ -224,6 +250,7 @@ pub fn update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
+    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -232,6 +259,7 @@ pub fn update(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
+                mode: #mode,
             }
         }
     };
@@ -248,6 +276,7 @@ pub fn fixed_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
+    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -256,6 +285,7 @@ pub fn fixed_update(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
+                mode: #mode,
             }
         }
     };
@@ -272,6 +302,7 @@ pub fn late_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
+    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -280,6 +311,7 @@ pub fn late_update(attr: TokenStream, item: TokenStream) -> TokenStream {
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
+                mode: #mode,
             }
         }
     };

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use apostasy_core::{
     objects::{
-        Object,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
+        Object,
     },
     start, update,
     winit::keyboard::{KeyCode, PhysicalKey},
@@ -11,7 +11,7 @@ use apostasy_core::{
 
 use crate::ui::scenes_panel::CellSearchState;
 
-#[start]
+#[start(mode = "editor")]
 pub fn init(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 
@@ -30,7 +30,7 @@ pub fn init(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-#[update]
+#[update(mode = "editor")]
 pub fn copy_paste_objects(world: &mut World) -> Result<()> {
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
@@ -39,10 +39,7 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>().unwrap();
 
     let copy = world.get_resource::<CellSearchState>()?.copied_obj.clone();
-    let selected_object = world
-        .get_resource::<CellSearchState>()?
-        .clicked_obj
-        .clone();
+    let selected_object = world.get_resource::<CellSearchState>()?.clicked_obj.clone();
 
     if inputs.is_keybind_active("ControlModifier") && inputs.is_keybind_active("Copy") {
         if let Some(selected) = selected_object {

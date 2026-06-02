@@ -5,7 +5,7 @@ use apostasy_core::ui::DRAG_SIZE;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::update;
 
-#[update]
+#[update(mode = "editor")]
 pub fn top_bar(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let screen_width = ctx.viewport_rect().width();

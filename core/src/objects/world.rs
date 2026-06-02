@@ -4,14 +4,16 @@ use anyhow::Result;
 use hashbrown::HashMap;
 
 use crate::{
+    EngineMode,
     objects::{
         Object,
         component::Component,
         resource::{Resource, ResourceMap},
         scene::{ObjectId, Scene},
         systems::{
-            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasPriority,
-            LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
+            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer,
+            HasMode, HasPriority, LateUpdateSystem, PreRenderSystem, StartSystem,
+            UpdateSystem,
         },
         tag::Tag,
     },
@@ -38,11 +40,17 @@ impl World {
 
     /// Collects and caches all systems
     pub fn build_systems(&mut self) {
-        self.start_systems = Self::collect_sorted(inventory::iter::<StartSystem>());
-        self.update_systems = Self::collect_sorted(inventory::iter::<UpdateSystem>());
-        self.fixed_update_systems = Self::collect_sorted(inventory::iter::<FixedUpdateSystem>());
-        self.late_update_systems = Self::collect_sorted(inventory::iter::<LateUpdateSystem>());
-        self.prerender_systems = Self::collect_sorted(inventory::iter::<PreRenderSystem>());
+        let engine_mode = self
+            .get_resource::<EngineMode>()
+            .ok()
+            .copied()
+            .unwrap_or(EngineMode::Game);
+
+        self.start_systems = Self::collect_sorted(inventory::iter::<StartSystem>(), engine_mode);
+        self.update_systems = Self::collect_sorted(inventory::iter::<UpdateSystem>(), engine_mode);
+        self.fixed_update_systems = Self::collect_sorted(inventory::iter::<FixedUpdateSystem>(), engine_mode);
+        self.late_update_systems = Self::collect_sorted(inventory::iter::<LateUpdateSystem>(), engine_mode);
+        self.prerender_systems = Self::collect_sorted(inventory::iter::<PreRenderSystem>(), engine_mode);
         self.insert_resource(FixedUpdateTimer {
             accumulator: 0.0,
             fixed_timestep: 1.0 / 20.0,
@@ -52,10 +60,14 @@ impl World {
     }
 
     /// Collects and sorts the Iterator
-    fn collect_sorted<T: HasPriority + Copy + 'static>(
+    fn collect_sorted<T: HasPriority + HasMode + Copy + 'static>(
         iter: impl Iterator<Item = &'static T>,
+        engine_mode: EngineMode,
     ) -> Vec<T> {
-        let mut systems: Vec<T> = iter.copied().collect();
+        let mut systems: Vec<T> = iter
+            .filter(|system| system.mode().matches(engine_mode))
+            .copied()
+            .collect();
         systems.sort_by_key(|s| Reverse(s.priority()));
         systems
     }
@@ -69,6 +81,7 @@ impl World {
             name: "",
             func,
             priority,
+            mode: EngineMode::All,
         });
         self.update_systems.sort_by_key(|s| Reverse(s.priority));
 
@@ -84,6 +97,7 @@ impl World {
             name: "",
             func,
             priority,
+            mode: EngineMode::Game,
         });
         self.fixed_update_systems
             .sort_by_key(|s| Reverse(s.priority));
@@ -101,6 +115,7 @@ impl World {
             name: "",
             func,
             priority,
+            mode: EngineMode::Game,
         });
         self.late_update_systems
             .sort_by_key(|s| Reverse(s.priority));
@@ -118,6 +133,7 @@ impl World {
             name: "",
             func,
             priority,
+            mode: EngineMode::Game,
         });
         self.prerender_systems.sort_by_key(|s| Reverse(s.priority));
 
@@ -134,6 +150,7 @@ impl World {
             name: "",
             func,
             priority,
+            mode: EngineMode::Game,
         });
         self.start_systems.sort_by_key(|s| Reverse(s.priority));
 

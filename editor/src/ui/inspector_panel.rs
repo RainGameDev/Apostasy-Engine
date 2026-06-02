@@ -23,7 +23,7 @@ pub struct ComponentPickerState {
     pub copied_component: Option<BoxedComponent>,
 }
 
-#[update]
+#[update(mode = "editor")]
 pub fn inspector(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 

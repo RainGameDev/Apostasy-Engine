@@ -94,6 +94,25 @@ pub use serde_yaml;
 pub use slotmap;
 pub use winit;
 
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineMode {
+    All,
+    Game,
+    Editor,
+}
+
+impl Default for EngineMode {
+    fn default() -> Self {
+        Self::Game
+    }
+}
+
+impl EngineMode {
+    pub fn matches(&self, mode: EngineMode) -> bool {
+        *self == EngineMode::All || *self == mode
+    }
+}
+
 pub struct Core {
     pub rendering_api: RenderingBackend,
     pub rendering_info: Option<Arc<Mutex<RenderingInfo>>>,
@@ -104,7 +123,16 @@ pub struct Core {
 
 impl Core {
     pub fn new(rendering_api: RenderingBackend, packages: Vec<Packages>) -> Self {
+        Self::new_with_mode(rendering_api, packages, EngineMode::Game)
+    }
+
+    pub fn new_with_mode(
+        rendering_api: RenderingBackend,
+        packages: Vec<Packages>,
+        engine_mode: EngineMode,
+    ) -> Self {
         let mut world = World::default();
+        world.insert_resource(engine_mode);
         world.insert_resource(InputManager::default());
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
@@ -632,7 +660,28 @@ pub fn init_core(rendering_api: RenderingBackend, packages: Vec<Packages>) -> Re
     Ok(())
 }
 
-#[start]
+pub fn init_core_with_mode(
+    rendering_api: RenderingBackend,
+    packages: Vec<Packages>,
+    engine_mode: EngineMode,
+) -> Result<()> {
+    let mut core = Core::new_with_mode(rendering_api, packages, engine_mode);
+
+    // run all start systems
+    {
+        let mut world = core.world.lock().unwrap();
+
+        world.build_systems();
+    }
+
+    // begin event loop
+    let event_loop = EventLoop::new()?;
+    event_loop.run_app(&mut core)?;
+
+    Ok(())
+}
+
+#[start(mode = "editor")]
 pub fn editor_start(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>()?;
 
@@ -645,7 +694,7 @@ pub fn editor_start(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-#[update]
+#[update(mode = "editor")]
 pub fn editor_update(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>()?;
     if inputs.is_keybind_active("Reload Shaders") {

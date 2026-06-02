@@ -79,7 +79,7 @@ impl Default for CellSearchState {
 }
 
 #[allow(deprecated)]
-#[update]
+#[update(mode = "editor")]
 pub fn cell_search(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 

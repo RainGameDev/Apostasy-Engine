@@ -32,7 +32,7 @@ use apostasy_core::{
 
 use crate::ui::{scenes_panel::CellSearchState, viewport_panel::ViewportInfo};
 
-#[start]
+#[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let camera = Object::new()
         .set_name("Camera")
@@ -161,7 +161,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-#[update]
+#[update(mode = "editor")]
 pub fn editor_raycasting(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());

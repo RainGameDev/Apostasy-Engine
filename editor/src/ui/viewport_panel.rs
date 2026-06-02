@@ -17,7 +17,7 @@ pub struct ViewportInfo {
 }
 
 use crate::ui::DARK_BG;
-#[update]
+#[update(mode = "editor")]
 pub fn viewport(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());

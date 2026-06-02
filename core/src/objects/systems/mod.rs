@@ -1,10 +1,14 @@
 use anyhow::Result;
 use apostasy_macros::Resource;
 
-use crate::objects::world::World;
+use crate::{EngineMode, objects::world::World};
 
 pub trait HasPriority {
     fn priority(&self) -> u32;
+}
+
+pub trait HasMode {
+    fn mode(&self) -> EngineMode;
 }
 
 /// A system that happens every frame
@@ -13,11 +17,17 @@ pub struct UpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
     pub priority: u32,
+    pub mode: EngineMode,
 }
 inventory::collect!(UpdateSystem);
 impl HasPriority for UpdateSystem {
     fn priority(&self) -> u32 {
         self.priority
+    }
+}
+impl HasMode for UpdateSystem {
+    fn mode(&self) -> EngineMode {
+        self.mode
     }
 }
 
@@ -27,12 +37,18 @@ pub struct StartSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
     pub priority: u32,
+    pub mode: EngineMode,
 }
 inventory::collect!(StartSystem);
 
 impl HasPriority for StartSystem {
     fn priority(&self) -> u32 {
         self.priority
+    }
+}
+impl HasMode for StartSystem {
+    fn mode(&self) -> EngineMode {
+        self.mode
     }
 }
 
@@ -42,12 +58,18 @@ pub struct FixedUpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World, delta: f32) -> Result<()>,
     pub priority: u32,
+    pub mode: EngineMode,
 }
 inventory::collect!(FixedUpdateSystem);
 
 impl HasPriority for FixedUpdateSystem {
     fn priority(&self) -> u32 {
         self.priority
+    }
+}
+impl HasMode for FixedUpdateSystem {
+    fn mode(&self) -> EngineMode {
+        self.mode
     }
 }
 
@@ -70,12 +92,18 @@ pub struct LateUpdateSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
     pub priority: u32,
+    pub mode: EngineMode,
 }
 inventory::collect!(LateUpdateSystem);
 
 impl HasPriority for LateUpdateSystem {
     fn priority(&self) -> u32 {
         self.priority
+    }
+}
+impl HasMode for LateUpdateSystem {
+    fn mode(&self) -> EngineMode {
+        self.mode
     }
 }
 
@@ -85,11 +113,17 @@ pub struct PreRenderSystem {
     pub name: &'static str,
     pub func: fn(&mut World) -> Result<()>,
     pub priority: u32,
+    pub mode: EngineMode,
 }
 inventory::collect!(PreRenderSystem);
 
 impl HasPriority for PreRenderSystem {
     fn priority(&self) -> u32 {
         self.priority
+    }
+}
+impl HasMode for PreRenderSystem {
+    fn mode(&self) -> EngineMode {
+        self.mode
     }
 }
