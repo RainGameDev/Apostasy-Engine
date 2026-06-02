@@ -1,4 +1,6 @@
+use crate::log;
 use std::collections::HashSet;
+use std::ffi::CString;
 use std::io;
 
 use anyhow::Result;
@@ -122,12 +124,35 @@ impl VulkanRenderingContext {
             let raw_display_handle = attributes.compatability_window.display_handle()?.as_raw();
             let raw_window_handle = attributes.compatability_window.window_handle()?.as_raw();
 
+            // Allow enabling validation layers via env var `APOSTASY_ENABLE_VALIDATION`.
+            let enable_validation = std::env::var("APOSTASY_ENABLE_VALIDATION").is_ok();
+
+            // Collect required extensions from the window system and allow
+            // adding extra extension names (kept alive as CString) when needed.
+            let mut required_exts =
+                ash_window::enumerate_required_extensions(raw_display_handle)?.to_vec();
+            let mut extra_ext_strings: Vec<CString> = Vec::new();
+            let mut enabled_layer_strings: Vec<CString> = Vec::new();
+            let mut enabled_layer_names: Vec<*const i8> = Vec::new();
+
+            if enable_validation {
+                // Add VK_EXT_debug_utils to the extension list and keep its CString alive.
+                let debug_ext = CString::new("VK_EXT_debug_utils").unwrap();
+                required_exts.push(debug_ext.as_ptr());
+                extra_ext_strings.push(debug_ext);
+
+                let layer_name = CString::new("VK_LAYER_KHRONOS_validation").unwrap();
+                enabled_layer_names.push(layer_name.as_ptr());
+                enabled_layer_strings.push(layer_name);
+
+                log!("Validation layers enabled (APOSTASY_ENABLE_VALIDATION set)");
+            }
+
             let instance = entry.create_instance(
                 &InstanceCreateInfo::default()
                     .application_info(&ApplicationInfo::default().api_version(vk::API_VERSION_1_3))
-                    .enabled_extension_names(ash_window::enumerate_required_extensions(
-                        raw_display_handle,
-                    )?),
+                    .enabled_extension_names(&required_exts)
+                    .enabled_layer_names(&enabled_layer_names),
                 None,
             )?;
 
@@ -197,19 +222,25 @@ impl VulkanRenderingContext {
                 })
                 .collect::<Vec<_>>();
 
+            // Enable device features where supported (sampleRateShading for sample shading).
+            let mut device_features = ash::vk::PhysicalDeviceFeatures::default();
+            if physical_device.features.sample_rate_shading == vk::TRUE {
+                device_features.sample_rate_shading = vk::TRUE;
+            }
+
+            let mut dynamic_rendering = PhysicalDeviceDynamicRenderingFeatures::default();
+            dynamic_rendering.dynamic_rendering = 1;
+            let mut buffer_device_addr = PhysicalDeviceBufferDeviceAddressFeatures::default();
+            buffer_device_addr.buffer_device_address = 1;
+
             let device = instance.create_device(
                 physical_device.handle,
                 &DeviceCreateInfo::default()
                     .queue_create_infos(&queue_create_infos)
                     .enabled_extension_names(&[ash::khr::swapchain::NAME.as_ptr()])
-                    .push_next(
-                        &mut PhysicalDeviceDynamicRenderingFeatures::default()
-                            .dynamic_rendering(true),
-                    )
-                    .push_next(
-                        &mut PhysicalDeviceBufferDeviceAddressFeatures::default()
-                            .buffer_device_address(true),
-                    ),
+                    .enabled_features(&device_features)
+                    .push_next(&mut dynamic_rendering)
+                    .push_next(&mut buffer_device_addr),
                 None,
             )?;
 
@@ -396,6 +427,19 @@ impl VulkanRenderingContext {
         };
 
         unsafe {
+            // Prepare multisample state separately so the struct lives long
+            // enough for the pipeline creation call (avoid referencing a
+            // temporary value).
+            // Only enable sample shading when using more than 1 sample AND the
+            // physical device supports the sampleRateShading feature.
+            let enable_sample_shading = aa_samples != SampleCountFlags::TYPE_1
+                && self.physical_device.features.sample_rate_shading == vk::TRUE;
+            let min_shading = if enable_sample_shading { 0.2 } else { 0.0 };
+            let multisample_state = PipelineMultisampleStateCreateInfo::default()
+                .rasterization_samples(aa_samples)
+                .sample_shading_enable(enable_sample_shading)
+                .min_sample_shading(min_shading);
+
             Ok(self
                 .device
                 .create_graphics_pipelines(
@@ -450,12 +494,7 @@ impl VulkanRenderingContext {
                                 .depth_bias_enable(false)
                                 .line_width(rendering_settings.rasterization_settings.line_width),
                         )
-                        .multisample_state(
-                            &PipelineMultisampleStateCreateInfo::default()
-                                .rasterization_samples(aa_samples)
-                                .sample_shading_enable(true)
-                                .min_sample_shading(0.2),
-                        )
+                        .multisample_state(&multisample_state)
                         .color_blend_state(
                             &PipelineColorBlendStateCreateInfo::default().attachments(&[
                                 rendering_settings.color_blend_settings.blend_attachment,
@@ -806,5 +845,31 @@ impl VulkanRenderingContext {
         }
 
         Ok((buffer, buffer_memory))
+    }
+
+    pub fn get_supported_sample_counts(&self) -> Vec<AntiAliasingAmount> {
+        let limits = self.physical_device.properties.limits;
+
+        let supported =
+            limits.framebuffer_color_sample_counts & limits.framebuffer_depth_sample_counts;
+
+        dbg!(supported);
+
+        let mut available = Vec::new();
+
+        if supported.contains(SampleCountFlags::TYPE_1) {
+            available.push(AntiAliasingAmount::X0);
+        }
+        if supported.contains(SampleCountFlags::TYPE_2) {
+            available.push(AntiAliasingAmount::X2);
+        }
+        if supported.contains(SampleCountFlags::TYPE_4) {
+            available.push(AntiAliasingAmount::X4);
+        }
+        if supported.contains(SampleCountFlags::TYPE_8) {
+            available.push(AntiAliasingAmount::X8);
+        }
+
+        available
     }
 }

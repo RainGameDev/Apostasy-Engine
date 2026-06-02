@@ -20,7 +20,7 @@ serde = { version = "1.0.228", features = ["derive"]}
 serde_yaml = "0.9.34"
 inventory = "0.3.24"
 apostasy-macros = {path = "../macros/"}
-hashbrown = "0.17.0"
+hashbrown = "0.17.1"
 rand = "0.10.0"
 image = "0.25.10"
 noise = "0.9.0"

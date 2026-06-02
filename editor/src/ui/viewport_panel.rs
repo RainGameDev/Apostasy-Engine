@@ -23,8 +23,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.insert_resource(ViewportInfo::default());
     }
 
-    let anti_aliasing = world.get_resource_mut::<AntiAliasing>().unwrap();
+    let available_options = world
+        .get_resource::<AntiAliasing>()
+        .unwrap()
+        .available_options
+        .clone();
 
+    let anti_aliasing = world.get_resource_mut::<AntiAliasing>().unwrap();
     let aa_before = anti_aliasing.amount;
     let mut aa_selected = anti_aliasing.amount;
 
@@ -53,10 +58,18 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 ComboBox::from_label("MSAA")
                     .selected_text(format!("{:?}", aa_selected))
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut aa_selected, AntiAliasingAmount::X0, "None");
-                        ui.selectable_value(&mut aa_selected, AntiAliasingAmount::X2, "X2");
-                        ui.selectable_value(&mut aa_selected, AntiAliasingAmount::X4, "X4");
-                        ui.selectable_value(&mut aa_selected, AntiAliasingAmount::X8, "X8");
+                        let options = [
+                            (AntiAliasingAmount::X0, "None"),
+                            (AntiAliasingAmount::X2, "X2"),
+                            (AntiAliasingAmount::X4, "X4"),
+                            (AntiAliasingAmount::X8, "X8"),
+                        ];
+
+                        for (amount, label) in options {
+                            if available_options.contains(&amount) {
+                                ui.selectable_value(&mut aa_selected, amount, label);
+                            }
+                        }
                     });
             });
 

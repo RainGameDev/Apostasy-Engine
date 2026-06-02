@@ -262,7 +262,7 @@ impl InputManager {
     }
 }
 
-#[late_update]
+#[late_update(mode = "all")]
 pub fn clear_actions(world: &mut World) -> Result<()> {
     let input_manager = world.get_resource_mut::<InputManager>()?;
 

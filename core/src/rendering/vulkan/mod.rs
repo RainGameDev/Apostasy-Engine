@@ -111,6 +111,8 @@ impl VulkanRenderer {
     }
 
     fn rebuild_pipelines(&mut self, aa_amount: AntiAliasingAmount) -> Result<()> {
+        // Ensure GPU is idle before destroying/recreating pipelines.
+        unsafe { self.context.device.device_wait_idle()? };
         let vertex_shader = self.load_shader_module(&self.default_vertex_shader)?;
         let fragment_shader = self.load_shader_module(&self.default_fragment_shader)?;
         let voxel_vertex_shader = self.load_shader_module(&self.voxel_vertex_shader)?;
@@ -253,6 +255,7 @@ impl VulkanRenderer {
             return Ok(());
         }
 
+        let aa_changed = self.aa_amount != aa_amount;
         self.aa_amount = aa_amount;
 
         let aa_samples = match aa_amount {
@@ -263,6 +266,11 @@ impl VulkanRenderer {
         };
 
         unsafe { self.context.device.device_wait_idle()? };
+
+        // Rebuild pipelines only if MSAA sample count changed
+        if aa_changed {
+            self.rebuild_pipelines(aa_amount)?;
+        }
 
         unsafe {
             // Destroy old MSAA color buffer
@@ -343,6 +351,15 @@ impl VulkanRenderer {
             self.swapchain.depth_format,
             vk::ImageAspectFlags::DEPTH,
         )?;
+
+        log!(
+            "resize_viewport: requested AA={:?}, image samples={:?}",
+            aa_amount,
+            aa_samples
+        );
+        if aa_amount == AntiAliasingAmount::X0 && aa_samples != SampleCountFlags::TYPE_1 {
+            log!("Warning: AA requested X0 but created image samples != TYPE_1");
+        }
 
         let viewport_sampler = unsafe {
             self.context.device.create_sampler(
@@ -764,7 +781,7 @@ impl RenderingAPI for VulkanRenderer {
         }
 
         unsafe {
-            const FENCE_TIMEOUT_NS: u64 = 5_000_000_000;
+            const FENCE_TIMEOUT_NS: u64 = 20_000_000_000; // 20 seconds (better for iGPU)
 
             match self.context.device.wait_for_fences(
                 &[frame.in_flight_fence],
@@ -857,40 +874,87 @@ impl RenderingAPI for VulkanRenderer {
             self.image_layouts.undefined
         };
 
-        // Transition the resolve target (egui reads this after rendering)
-        self.context.transition_image_layout(
-            frame.command_buffer,
-            self.viewport_image,
-            old_color_layout,
-            self.image_layouts.renderable,
-            vk::ImageAspectFlags::COLOR,
-        );
+        if self.aa_amount == AntiAliasingAmount::X0 { 
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.viewport_image,
+                old_color_layout,
+                self.image_layouts.renderable,
+                vk::ImageAspectFlags::COLOR,
+            );
 
-        let old_depth_layout = if self.viewport_depth_initialized {
-            self.image_layouts.depth
+            let old_depth_layout = if self.viewport_depth_initialized {
+                self.image_layouts.depth
+            } else {
+                self.image_layouts.undefined
+            };
+
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.viewport_depth_image,
+                old_depth_layout,
+                self.image_layouts.depth,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
+            self.context.begin_rendering(
+                frame.command_buffer,
+                self.viewport_image_view,
+                ImageView::null(),
+                self.viewport_depth_view,
+                ClearColorValue {
+                    float32: [0.05, 0.05, 0.05, 1.0],
+                },
+                vk::Rect2D::default().extent(self.viewport_extent),
+            );
         } else {
-            self.image_layouts.undefined
-        };
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.viewport_image,
+                old_color_layout,
+                self.image_layouts.renderable,
+                vk::ImageAspectFlags::COLOR,
+            );
 
-        self.context.transition_image_layout(
-            frame.command_buffer,
-            self.viewport_depth_image,
-            old_depth_layout,
-            self.image_layouts.depth,
-            vk::ImageAspectFlags::DEPTH,
-        );
+            let msaa_old_layout = if self.viewport_target_initialized {
+                self.image_layouts.renderable
+            } else {
+                self.image_layouts.undefined
+            };
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.msaa_color_image,
+                msaa_old_layout,
+                self.image_layouts.renderable,
+                vk::ImageAspectFlags::COLOR,
+            );
 
-        // msaa_color_view → render target; viewport_image_view → resolve target
-        self.context.begin_rendering(
-            frame.command_buffer,
-            self.msaa_color_view,
-            self.viewport_image_view,
-            self.viewport_depth_view,
-            ClearColorValue {
-                float32: [0.05, 0.05, 0.05, 1.0],
-            },
-            vk::Rect2D::default().extent(self.viewport_extent),
-        );
+            let old_depth_layout = if self.viewport_depth_initialized {
+                self.image_layouts.depth
+            } else {
+                self.image_layouts.undefined
+            };
+
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.viewport_depth_image,
+                old_depth_layout,
+                self.image_layouts.depth,
+                vk::ImageAspectFlags::DEPTH,
+            );
+
+            // msaa_color_view → render target; viewport_image_view → resolve target
+            self.context.begin_rendering(
+                frame.command_buffer,
+                self.msaa_color_view,
+                self.viewport_image_view,
+                self.viewport_depth_view,
+                ClearColorValue {
+                    float32: [0.05, 0.05, 0.05, 1.0],
+                },
+                vk::Rect2D::default().extent(self.viewport_extent),
+            );
+        }
 
         unsafe {
             self.context.device.cmd_set_viewport(

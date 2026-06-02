@@ -496,6 +496,11 @@ impl ApplicationHandler for Core {
             let ri = rendering_info.as_ref().unwrap();
             let locked = ri.lock().unwrap();
 
+            world
+                .get_resource_mut::<AntiAliasing>()
+                .unwrap()
+                .available_options = locked.context.get_supported_sample_counts();
+
             let window_id = locked.window.id();
             let window = locked.window.clone();
 

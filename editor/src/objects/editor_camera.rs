@@ -37,8 +37,7 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
 
     let current_transform = cam_transform.clone();
     let wish_dir = current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
-    cam_transform.local_position += wish_dir * 300.0 * delta;
-    dbg!(&cam_transform.local_position);
+    cam_transform.local_position += wish_dir * 3.0 * delta;
 
     Ok(())
 }
