@@ -16,13 +16,13 @@ use apostasy_core::{
     },
     rendering::components::{
         camera::{
-            ActiveCamera, Camera, EditorCamera, GameCamera, get_perspective_projection,
+            ActiveCamera, Camera, EditorCamera,  get_perspective_projection,
             get_view_matrix,
         },
         model_renderer::ModelRenderer,
     },
     start,
-    ui::ui_context::{EguiContext, ViewportSize},
+    ui::ui_context::{ ViewportSize},
     update,
     winit::{
         event::MouseButton,
@@ -45,7 +45,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         .add_tag(ActiveCamera)
         .add_tag(EditorCamera);
 
-    let camera = world.add_object(camera);
+    world.add_object(camera);
 
     let floor = Object::new()
         .set_name("Floor")

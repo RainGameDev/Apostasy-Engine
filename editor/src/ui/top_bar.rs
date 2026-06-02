@@ -1,5 +1,5 @@
 use anyhow::Result;
-use apostasy_core::egui::{self, Panel};
+use apostasy_core::egui::{self};
 use apostasy_core::objects::world::World;
 use apostasy_core::ui::DRAG_SIZE;
 use apostasy_core::ui::ui_context::EguiContext;

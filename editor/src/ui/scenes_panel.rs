@@ -35,6 +35,8 @@ pub struct CellSearchState {
     pub obj_entries: Vec<ObjectRefEntry>,
     pub selected_cell: Option<String>,
     pub selected_obj: Option<ObjectId>,
+    pub clicked_cell: Option<String>,
+    pub clicked_obj: Option<ObjectId>,
     pub copied_obj: Option<Object>,
 }
 
@@ -69,6 +71,8 @@ impl Default for CellSearchState {
             obj_entries: vec![],
             selected_cell: None,
             selected_obj: None,
+            clicked_cell: None,
+            clicked_obj: None,
             copied_obj: None,
         }
     }
@@ -110,6 +114,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     // all pending mutations collected during UI, applied after
     let mut pending_selected_obj: Option<ObjectId> =
         world.get_resource::<CellSearchState>()?.selected_obj;
+    let mut pending_clicked_obj: Option<ObjectId> =
+        world.get_resource::<CellSearchState>()?.clicked_obj;
     let mut pending_selected_cell: Option<String> = world
         .get_resource::<CellSearchState>()?
         .selected_cell
@@ -522,12 +528,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                                     for (idx, entry) in filtered.iter().enumerate() {
                                         let is_sel = pending_selected_obj == Some(entry.object_id);
+                                        let is_clicked = pending_clicked_obj == Some(entry.object_id);
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
                                             Sense::click(),
                                         );
                                         if row_resp.double_clicked() {
                                             pending_selected_obj = Some(entry.object_id);
+                                        }if row_resp.clicked() {
+                                            pending_clicked_obj = Some(entry.object_id);
                                         }
 
                                         // adds a popup menu
@@ -587,9 +596,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         let bg = if is_sel {
                                             SEL_BG
-                                        } else if row_resp.hovered() {
+                                        } else if row_resp.hovered(){ 
                                             HOVER_BG
-                                        } else if idx % 2 == 0 {
+                                        } else if is_clicked {
+                                            HOVER_BG
+                                        } 
+                                        else if idx % 2 == 0 {
                                             DARK_BG
                                         } else {
                                             ROW_ALT
@@ -684,6 +696,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     {
         let s = world.get_resource_mut::<CellSearchState>()?;
         s.selected_obj = pending_selected_obj;
+        s.clicked_obj = pending_clicked_obj;
         s.selected_cell = pending_selected_cell;
         s.cell_filter = pending_cell_filter;
         s.obj_filter = pending_obj_filter;

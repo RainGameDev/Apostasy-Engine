@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    egui::{self, Color32, ComboBox, Id, Image, Label, Margin, RichText, Sense, Slider, Window},
+    egui::{self, Color32, ComboBox, Image, Label, Margin, RichText, Sense, Slider, Window},
     objects::world::World,
     rendering::shared::{
         UpdateRenderer,

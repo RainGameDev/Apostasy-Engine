@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId, type_name};
+use std::any::{Any, TypeId};
 
 use anyhow::Result;
 use apostasy_core::{
