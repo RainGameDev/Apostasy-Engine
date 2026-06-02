@@ -15,14 +15,11 @@ use apostasy_core::{
         velocity::Velocity,
     },
     rendering::components::{
-        camera::{
-            ActiveCamera, Camera, EditorCamera,  get_perspective_projection,
-            get_view_matrix,
-        },
+        camera::{ActiveCamera, Camera, EditorCamera, get_perspective_projection, get_view_matrix},
         model_renderer::ModelRenderer,
     },
     start,
-    ui::ui_context::{ ViewportSize},
+    ui::ui_context::ViewportSize,
     update,
     winit::{
         event::MouseButton,
@@ -30,7 +27,7 @@ use apostasy_core::{
     },
 };
 
-use crate::ui::{scenes_panel::CellSearchState, viewport_panel::ViewportInfo};
+use crate::ui::{cell_panel::CellSearchState, viewport_panel::ViewportInfo};
 
 #[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {

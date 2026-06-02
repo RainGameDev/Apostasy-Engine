@@ -1,15 +1,15 @@
 use anyhow::Result;
 use apostasy_core::{
     objects::{
+        Object,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
-        Object,
     },
     start, update,
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 
-use crate::ui::scenes_panel::CellSearchState;
+use crate::ui::cell_panel::CellSearchState;
 
 #[start(mode = "editor")]
 pub fn init(world: &mut World) -> Result<()> {

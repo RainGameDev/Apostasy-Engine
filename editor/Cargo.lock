@@ -250,6 +250,8 @@ dependencies = [
  "apostasy-core",
  "apostasy-macros",
  "inventory",
+ "serde",
+ "serde_yaml",
 ]
 
 [[package]]

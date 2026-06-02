@@ -14,7 +14,7 @@ use apostasy_core::{
 };
 use apostasy_macros::Resource;
 
-use crate::ui::{DARK_BG, PANEL_BG, scenes_panel::CellSearchState};
+use crate::ui::{DARK_BG, PANEL_BG, cell_panel::CellSearchState};
 
 #[derive(Resource, Default, Clone)]
 pub struct ComponentPickerState {

@@ -528,14 +528,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                                     for (idx, entry) in filtered.iter().enumerate() {
                                         let is_sel = pending_selected_obj == Some(entry.object_id);
-                                        let is_clicked = pending_clicked_obj == Some(entry.object_id);
+                                        let is_clicked =
+                                            pending_clicked_obj == Some(entry.object_id);
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
                                             Sense::click(),
                                         );
                                         if row_resp.double_clicked() {
                                             pending_selected_obj = Some(entry.object_id);
-                                        }if row_resp.clicked() {
+                                        }
+                                        if row_resp.clicked() {
                                             pending_clicked_obj = Some(entry.object_id);
                                         }
 
@@ -596,12 +598,11 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         let bg = if is_sel {
                                             SEL_BG
-                                        } else if row_resp.hovered(){ 
+                                        } else if row_resp.hovered() {
                                             HOVER_BG
                                         } else if is_clicked {
                                             HOVER_BG
-                                        } 
-                                        else if idx % 2 == 0 {
+                                        } else if idx % 2 == 0 {
                                             DARK_BG
                                         } else {
                                             ROW_ALT
