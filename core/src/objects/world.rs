@@ -11,9 +11,8 @@ use crate::{
         resource::{Resource, ResourceMap},
         scene::{ObjectId, Scene},
         systems::{
-            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer,
-            HasMode, HasPriority, LateUpdateSystem, PreRenderSystem, StartSystem,
-            UpdateSystem,
+            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
+            LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
         },
         tag::Tag,
     },
@@ -48,9 +47,12 @@ impl World {
 
         self.start_systems = Self::collect_sorted(inventory::iter::<StartSystem>(), engine_mode);
         self.update_systems = Self::collect_sorted(inventory::iter::<UpdateSystem>(), engine_mode);
-        self.fixed_update_systems = Self::collect_sorted(inventory::iter::<FixedUpdateSystem>(), engine_mode);
-        self.late_update_systems = Self::collect_sorted(inventory::iter::<LateUpdateSystem>(), engine_mode);
-        self.prerender_systems = Self::collect_sorted(inventory::iter::<PreRenderSystem>(), engine_mode);
+        self.fixed_update_systems =
+            Self::collect_sorted(inventory::iter::<FixedUpdateSystem>(), engine_mode);
+        self.late_update_systems =
+            Self::collect_sorted(inventory::iter::<LateUpdateSystem>(), engine_mode);
+        self.prerender_systems =
+            Self::collect_sorted(inventory::iter::<PreRenderSystem>(), engine_mode);
         self.insert_resource(FixedUpdateTimer {
             accumulator: 0.0,
             fixed_timestep: 1.0 / 20.0,

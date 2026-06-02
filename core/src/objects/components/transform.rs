@@ -123,7 +123,7 @@ impl Inspect for Transform {
     }
 }
 
-#[update(priority = 0)]
+#[update(mode = "all", priority = 0)]
 pub fn transform_update(world: &mut World) -> Result<()> {
     let scene = &mut world.scene;
 

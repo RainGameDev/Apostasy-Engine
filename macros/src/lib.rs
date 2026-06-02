@@ -169,7 +169,7 @@ impl Parse for SystemArgs {
                         return Err(syn::Error::new_spanned(
                             mode_lit,
                             "expected `game`, `editor`, or `all`",
-                        ))
+                        ));
                     }
                 });
             } else {
@@ -198,7 +198,9 @@ pub fn start(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
-    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
+    let mode = args
+        .mode
+        .unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -224,7 +226,9 @@ pub fn prerender(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
-    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
+    let mode = args
+        .mode
+        .unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -250,7 +254,9 @@ pub fn update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
-    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
+    let mode = args
+        .mode
+        .unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -276,7 +282,9 @@ pub fn fixed_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
-    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
+    let mode = args
+        .mode
+        .unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
@@ -302,7 +310,9 @@ pub fn late_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let priority = args.priority.unwrap_or(0);
-    let mode = args.mode.unwrap_or(quote! { apostasy_core::EngineMode::Game });
+    let mode = args
+        .mode
+        .unwrap_or(quote! { apostasy_core::EngineMode::Game });
 
     let expanded = quote! {
         #input_fn
