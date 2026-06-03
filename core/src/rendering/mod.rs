@@ -124,7 +124,14 @@ impl RenderingInfo {
         rendering_api: RenderingBackend,
         aa_amount: AntiAliasingAmount,
     ) -> Arc<Mutex<Self>> {
-        let window = Arc::new(event_loop.create_window(Default::default()).unwrap());
+        let window = Arc::new(
+            event_loop
+                .create_window(
+                    winit::window::WindowAttributes::default()
+                        .with_inner_size(winit::dpi::LogicalSize::new(3840.0, 2160.0)),
+                )
+                .unwrap(),
+        );
 
         let rendering_info = Arc::new(Mutex::new(RenderingInfo {
             context: VulkanRenderingContext::new(RenderingContextAttributes {

@@ -4,8 +4,10 @@ use apostasy_core::egui::{
 };
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
-
-use crate::ui::{DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL};
+use super::{
+    DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL,
+};
+use super::shared::{ScreenSize, WindowLayout, save_layout};
 
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
@@ -73,6 +75,9 @@ pub struct ObjectWindowState {
     pub sort_col: SortColumn,
     pub sort_dir: SortDir,
     pub selected_entry: Option<String>,
+
+    pub needs_layout_restore: bool,
+    pub is_first_frame: bool,
 }
 
 impl Default for ObjectWindowState {
@@ -133,6 +138,8 @@ impl Default for ObjectWindowState {
             sort_col: SortColumn::EditorId,
             sort_dir: SortDir::Asc,
             selected_entry: None,
+            needs_layout_restore: true,
+            is_first_frame: true,
         }
     }
 }
@@ -140,18 +147,49 @@ impl Default for ObjectWindowState {
 #[update(mode = "editor")]
 pub fn object_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-
     if world.get_resource::<ObjectWindowState>().is_err() {
         world.insert_resource(ObjectWindowState::default());
     }
+    if !world.has_resource::<WindowLayout>() {
+        return Ok(());
+    }
+
+    // get the screen dimensions and window layout info
+    let (sw, sh) = if let Ok(screen) = world.get_resource::<ScreenSize>() {
+        (screen.w, screen.h)
+    } else {
+        let screen = ctx.content_rect();
+        (screen.width(), screen.height())
+    };
+    let layout = world.get_resource::<WindowLayout>().ok();
+    let state = if let Some(layout) = layout {
+        layout.object_window.clone()
+    } else {
+        return Ok(());
+    };
+
+    let pos = state.to_pos(sw, sh);
+    let size = state.to_size(sw, sh);
+
+    let mut window = Window::new("Object Window")
+        .default_pos(pos)
+        .default_size(size)
+        .resizable(true)
+        .movable(true);
+
     let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
+    if object_window_resource.needs_layout_restore {
+        window = window
+            .current_pos(pos)
+            .fixed_size(size)
+            .constrain(false);
+        object_window_resource.needs_layout_restore = false;
+    }
     if !object_window_resource.open {
         return Ok(());
     }
 
-    Window::new("Object Window")
-        .default_pos([60.0, 60.0])
-        .default_size([640.0, 520.0])
+    let window = window
         .resizable(true)
         .movable(true)
         .frame(
@@ -543,6 +581,14 @@ pub fn object_window(world: &mut World) -> Result<()> {
                 }
             }
         });
+
+    if let Some(response) = window {
+        let rect = response.response.rect;
+
+        let layout = world.get_resource_mut::<WindowLayout>()?;
+        layout.object_window.update_from_rect(rect, sw, sh);
+        save_layout(layout);
+    }
 
     Ok(())
 }

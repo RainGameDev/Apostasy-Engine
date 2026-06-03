@@ -8,9 +8,10 @@ use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
 use crate::ui::assets_panel::paint_clipped;
-use crate::ui::{
+use super::{
     DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, PANEL_BG, ROW_ALT, SEL_BG, TEXT_COL,
 };
+use super::shared::{ScreenSize, WindowLayout, save_layout};
 
 #[derive(Clone)]
 pub struct CellEntry {
@@ -38,6 +39,7 @@ pub struct CellSearchState {
     pub clicked_cell: Option<String>,
     pub clicked_obj: Option<ObjectId>,
     pub copied_obj: Option<Object>,
+    pub needs_layout_restore: bool,
 }
 
 impl Default for CellSearchState {
@@ -74,6 +76,7 @@ impl Default for CellSearchState {
             clicked_cell: None,
             clicked_obj: None,
             copied_obj: None,
+            needs_layout_restore: true,
         }
     }
 }
@@ -86,7 +89,6 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
     }
-
     let obj_entries: Vec<ObjectRefEntry> = world
         .get_all_objects()
         .iter()
@@ -133,9 +135,40 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let font_hdr = egui::FontId::proportional(13.0);
     let font_row = egui::FontId::proportional(12.0);
 
-    Window::new("Cell Search")
-        .default_pos([100.0, 100.0])
-        .default_size([760.0, 340.0])
+    // get the window layout info
+    let (sw, sh) = if let Ok(screen) = world.get_resource::<ScreenSize>() {
+        (screen.w, screen.h)
+    } else {
+        let screen = ctx.content_rect();
+        (screen.width(), screen.height())
+    };
+
+    let layout = world.get_resource::<WindowLayout>().ok();
+    let state = if let Some(layout) = layout {
+        layout.cell_search.clone()
+    } else {
+        return Ok(());
+    };
+
+    let pos = state.to_pos(sw, sh);
+    let size = state.to_size(sw, sh);
+
+    let mut window = Window::new("Cell Panel")
+        .default_pos(pos)
+        .default_size(size)
+        .resizable(true)
+        .movable(true);
+
+    let cell_search_state = world.get_resource_mut::<CellSearchState>()?;
+    if cell_search_state.needs_layout_restore {
+        window = window
+            .current_pos(pos)
+            .fixed_size(size)
+            .constrain(false);
+        cell_search_state.needs_layout_restore = false;
+    }
+
+    let window = window
         .resizable(true)
         .movable(true)
         .frame(
@@ -701,6 +734,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.selected_cell = pending_selected_cell;
         s.cell_filter = pending_cell_filter;
         s.obj_filter = pending_obj_filter;
+    }
+
+    if let Some(response) = window {
+        let rect = response.response.rect;
+        let layout = world.get_resource_mut::<WindowLayout>()?;
+        layout.cell_search.update_from_rect(rect, sw, sh);
+        save_layout(layout);
     }
 
     // act on pending world mutations now that the UI borrow is released

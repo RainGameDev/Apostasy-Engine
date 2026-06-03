@@ -352,11 +352,6 @@ impl VulkanRenderer {
             vk::ImageAspectFlags::DEPTH,
         )?;
 
-        log!(
-            "resize_viewport: requested AA={:?}, image samples={:?}",
-            aa_amount,
-            aa_samples
-        );
         if aa_amount == AntiAliasingAmount::X0 && aa_samples != SampleCountFlags::TYPE_1 {
             log!("Warning: AA requested X0 but created image samples != TYPE_1");
         }
@@ -874,7 +869,7 @@ impl RenderingAPI for VulkanRenderer {
             self.image_layouts.undefined
         };
 
-        if self.aa_amount == AntiAliasingAmount::X0 { 
+        if self.aa_amount == AntiAliasingAmount::X0 {
             self.context.transition_image_layout(
                 frame.command_buffer,
                 self.viewport_image,

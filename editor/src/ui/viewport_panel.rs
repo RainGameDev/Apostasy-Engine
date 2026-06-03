@@ -14,13 +14,54 @@ use apostasy_macros::Resource;
 #[derive(Resource, Clone, Default)]
 pub struct ViewportInfo {
     pub is_hovered: bool,
+    pub needs_layout_restore: bool,
 }
 
-use crate::ui::DARK_BG;
+use crate::ui::shared::{ScreenSize, WindowLayout, save_layout};
+use super::DARK_BG;
+
 #[update(mode = "editor")]
 pub fn viewport(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());
+    }
+
+    if !world.has_resource::<WindowLayout>() {
+        return Ok(());
+    }
+
+    let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    if !world.has_resource::<ScreenSize>() {
+        let screen = ctx.content_rect();
+        world.insert_resource(ScreenSize { w: screen.width(), h: screen.height() });
+    }
+    let screen_size = world.get_resource::<ScreenSize>()?;
+    let sw = screen_size.w;
+    let sh = screen_size.h;
+
+    let layout = world.get_resource::<WindowLayout>().ok();
+    let state = if let Some(layout) = layout {
+        layout.viewport.clone()
+    } else {
+        return Ok(());
+    };
+
+    let pos = state.to_pos(sw, sh);
+    let size = state.to_size(sw, sh);
+
+    let mut window = Window::new("Viewport")
+        .default_pos(pos)
+        .default_size(size)
+        .resizable(true)
+        .movable(true);
+
+    let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
+    if viewport_info.needs_layout_restore {
+        window = window
+            .current_pos(pos)
+            .fixed_size(size)
+            .constrain(false);
+        viewport_info.needs_layout_restore = false;
     }
 
     let available_options = world
@@ -28,19 +69,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .unwrap()
         .available_options
         .clone();
-
     let anti_aliasing = world.get_resource_mut::<AntiAliasing>().unwrap();
     let aa_before = anti_aliasing.amount;
     let mut aa_selected = anti_aliasing.amount;
 
-    let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let mut frame_rect_out = None;
     let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
     let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
 
-    let mut frame_rect_out = None;
-
-    let vp = Window::new("Viewport")
-        .default_size([960.0, 540.0])
+    let vp = window
         .resizable(true)
         .movable(true)
         .title_bar(true)
@@ -89,15 +126,14 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 let image = Image::new((texture_id, available_size));
                 ui.put(frame_rect, image);
             } else {
-                let label =
-                    Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
+                let label = Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
                 ui.put(frame_rect, label);
             }
         });
 
     if let Some(response) = vp {
-        let window_rect = response.response.rect;
-        let current_size = window_rect.size();
+        let rect = response.response.rect;
+        let current_size = rect.size();
 
         viewport_size.logical_width = current_size.x;
         viewport_size.logical_height = current_size.y;
@@ -121,10 +157,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
             viewport_size.logical_height = frame_rect.height();
         }
 
-        world.get_resource_mut::<AntiAliasing>().unwrap().amount = aa_selected;
-
-        let viewport_info = world.get_resource_mut::<ViewportInfo>().unwrap();
+        let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
         viewport_info.is_hovered = response.response.hovered();
+
+        let layout = world.get_resource_mut::<WindowLayout>()?;
+        layout.viewport.update_from_rect(rect, sw, sh);
+        save_layout(layout);
     }
 
     if aa_before != aa_selected {
