@@ -8,6 +8,7 @@ use crate::{
     voxels::biome::{BiomeDefinition, BiomeRegistry, StructureDefinition, TerrainShaping},
 };
 
+#[derive(Clone)]
 pub struct BiomeLoader {
     pub registry: Arc<RwLock<BiomeRegistry>>,
 }
@@ -173,34 +174,12 @@ impl YamlAssetLoader for BiomeLoader {
 
         Ok(())
     }
+
+    fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
+        Box::new(self.clone())
+    }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// terrain_shaping parser
-//
-// Supports two authoring styles in YAML:
-//
-// Style A – named preset (quickest):
-//   terrain_shaping:
-//     preset: flat          # flat | rolling | hilly | mountainous | ocean
-//
-// Style B – explicit fields (full control), any subset may be omitted:
-//   terrain_shaping:
-//     ridge_strength:      0.03
-//     peak_strength:       0.03
-//     valley_strength:     0.0
-//     continental_scale:   10.0
-//     height_curve:        1.0
-//
-// Style B fields override the chosen preset, so you can start from a preset
-// and tweak individual values:
-//   terrain_shaping:
-//     preset: rolling
-//     ridge_strength: 0.05   # slightly flatter ridges than the rolling preset
-//
-// If the block is absent entirely, TerrainShaping::flat() is used as the
-// safest default (no unexpected hills in new biomes).
-// ─────────────────────────────────────────────────────────────────────────────
 fn parse_terrain_shaping(raw: &serde_yaml::Value) -> Result<TerrainShaping> {
     // Block absent → safe flat default.
     if raw.is_null() || raw.as_mapping().map(|m| m.is_empty()).unwrap_or(false) {

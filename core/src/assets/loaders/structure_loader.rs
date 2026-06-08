@@ -7,6 +7,7 @@ use crate::{
     voxels::structure::{StructureAsset, StructureId, StructureRegistry},
 };
 
+#[derive(Clone)]
 pub struct StructureLoader {
     pub registry: Arc<RwLock<StructureRegistry>>,
 }
@@ -143,5 +144,8 @@ impl YamlAssetLoader for StructureLoader {
         registry.id_to_name.insert(id, full_name);
 
         Ok(())
+    }
+    fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
+        Box::new(self.clone())
     }
 }

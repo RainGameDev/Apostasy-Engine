@@ -1,4 +1,5 @@
 use anyhow::Result;
+use apostasy_macros::Resource;
 use ash::vk::CommandPool;
 use std::collections::HashMap;
 use std::path::Path;
@@ -10,6 +11,7 @@ use crate::assets::shader_registry::ShaderRegistry;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::{log, log_warn};
 
+#[derive(Clone, Resource)]
 pub struct AssetManager {
     yaml_loaders: HashMap<String, Box<dyn YamlAssetLoader>>,
     pub model_loader: ModelLoader,

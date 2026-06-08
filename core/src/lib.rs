@@ -193,7 +193,14 @@ impl Core {
                 WindowEvent::RedrawRequested => {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
-                    let model_registry = world.get_resource::<ModelRegistry>().unwrap().clone();
+                    let model_registry = world
+                        .get_resource::<AssetManager>()
+                        .unwrap()
+                        .clone()
+                        .model_loader
+                        .registry
+                        .read()
+                        .unwrap();
 
                     world.get_resource_mut::<WindowInfo>().unwrap().window_size =
                         rendering_info.window.outer_size().into();

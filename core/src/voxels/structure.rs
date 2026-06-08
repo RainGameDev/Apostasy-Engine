@@ -9,7 +9,7 @@ pub type StructureId = u16;
 ///
 /// `defs` holds the ordered list of assets, while the hash maps provide
 /// fast lookup by full name or by id.
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct StructureRegistry {
     pub defs: Vec<StructureAsset>,
     pub name_to_id: HashMap<String, StructureId>,

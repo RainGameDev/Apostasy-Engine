@@ -23,7 +23,7 @@ impl ShaderStage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ShaderAsset {
     pub name: String,
     pub path: PathBuf,
@@ -74,6 +74,14 @@ fn fs_metadata_modified(path: &Path) -> Option<SystemTime> {
 
 pub struct ShaderRegistry {
     shaders: RwLock<HashMap<String, Arc<RwLock<ShaderAsset>>>>,
+}
+impl Clone for ShaderRegistry {
+    fn clone(&self) -> Self {
+        let shaders = self.shaders.read().unwrap().clone();
+        Self {
+            shaders: RwLock::new(shaders),
+        }
+    }
 }
 
 impl Default for ShaderRegistry {

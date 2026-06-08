@@ -9,6 +9,7 @@ use crate::{
     objects::component::{BoxedComponent, get_component_registration},
 };
 
+#[derive(Clone)]
 pub struct ItemLoader {
     pub registry: Arc<RwLock<ItemRegistry>>,
 }
@@ -90,5 +91,8 @@ impl YamlAssetLoader for ItemLoader {
         registry.id_to_name.insert(id, full_name);
 
         Ok(())
+    }
+    fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
+        Box::new(self.clone())
     }
 }

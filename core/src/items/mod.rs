@@ -49,7 +49,7 @@ impl ItemDefinition {
     }
 }
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct ItemRegistry {
     pub defs: HashMap<String, ItemDefinition>,
     pub name_to_id: HashMap<String, ItemId>,

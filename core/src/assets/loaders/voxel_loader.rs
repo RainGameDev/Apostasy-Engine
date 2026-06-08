@@ -12,6 +12,7 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
 pub struct VoxelLoader {
     pub registry: Arc<RwLock<VoxelRegistry>>,
     pub atlas_builder: Arc<RwLock<AtlasBuilder>>,
@@ -118,6 +119,9 @@ impl YamlAssetLoader for VoxelLoader {
         registry.id_to_name.insert(id, full_name);
 
         Ok(())
+    }
+    fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
+        Box::new(self.clone())
     }
 }
 

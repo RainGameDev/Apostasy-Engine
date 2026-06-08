@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::Result;
-use apostasy_macros::Resource;
 use ash::vk::CommandPool;
 use hashbrown::HashMap;
 use walkdir::WalkDir;
@@ -20,12 +19,12 @@ use crate::{
     },
 };
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct ModelRegistry {
     pub paths: HashMap<String, GpuModel>, // name to gltf
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ModelLoader {
     pub registry: Arc<RwLock<ModelRegistry>>,
 }
