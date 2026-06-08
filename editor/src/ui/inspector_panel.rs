@@ -106,66 +106,75 @@ pub fn inspector(world: &mut World) -> Result<()> {
                     }),
             )
             .default_pos([100.0, 100.0])
+            .default_size([340.0, 520.0])
+            .min_size([320.0, 260.0])
+            .max_size([680.0, 860.0])
+            .resizable(true)
             .movable(true)
             .show(&ctx, |ui| {
                 ui.add_space(8.0);
-                for (component, (type_id, f)) in obj.get_components_mut().into_iter().zip(fns) {
-                    egui::Frame::new()
-                        .fill(PANEL_BG)
-                        .stroke(Stroke::new(1.0, DIV_COL))
-                        .corner_radius(4.0)
-                        .inner_margin(4.0)
-                        .show(ui, |ui| {
-                            let name_full =
-                                component.type_name().split("::").collect::<Vec<&str>>();
-                            let final_name = name_full.last().unwrap().to_string();
+                egui::ScrollArea::vertical()
+                    .id_salt("inspector_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for (component, (type_id, f)) in obj.get_components_mut().into_iter().zip(fns) {
+                            egui::Frame::new()
+                                .fill(PANEL_BG)
+                                .stroke(Stroke::new(1.0, DIV_COL))
+                                .corner_radius(4.0)
+                                .inner_margin(4.0)
+                                .show(ui, |ui| {
+                                    let name_full =
+                                        component.type_name().split("::").collect::<Vec<&str>>();
+                                    let final_name = name_full.last().unwrap().to_string();
 
-                            ui.horizontal(|ui| {
-                                ui.label(final_name);
+                                    ui.horizontal(|ui| {
+                                        ui.label(final_name);
 
-                                ui.button("󰍜").context_menu(|ui| {
-                                    ui.set_min_width(196.0);
+                                        ui.button("󰍜").context_menu(|ui| {
+                                            ui.set_min_width(196.0);
+                                            ui.separator();
+                                            if ui
+                                                .add_sized(DRAG_SIZE, egui::Button::new("Remove Component"))
+                                                .clicked()
+                                            {
+                                                component_to_remove = Some(type_id);
+                                            }
+
+                                            if ui
+                                                .add_sized(DRAG_SIZE, egui::Button::new("Copy Component"))
+                                                .clicked()
+                                            {
+                                                component_to_copy = Some(component.clone());
+                                            }
+                                            if ui
+                                                .add_sized(DRAG_SIZE, egui::Button::new("Cut Component"))
+                                                .clicked()
+                                            {
+                                                component_to_remove = Some(type_id);
+                                                component_to_copy = Some(component.clone());
+                                            }
+                                            if ui
+                                                .add_sized(DRAG_SIZE, egui::Button::new("Paste Component"))
+                                                .clicked()
+                                            {
+                                                if copied_component.is_some() {
+                                                    to_paste_component = true;
+                                                }
+                                            }
+                                            ui.separator();
+                                        });
+                                    });
                                     ui.separator();
-                                    if ui
-                                        .add_sized(DRAG_SIZE, egui::Button::new("Remove Component"))
-                                        .clicked()
-                                    {
-                                        component_to_remove = Some(type_id);
-                                    }
-
-                                    if ui
-                                        .add_sized(DRAG_SIZE, egui::Button::new("Copy Component"))
-                                        .clicked()
-                                    {
-                                        component_to_copy = Some(component.clone());
-                                    }
-                                    if ui
-                                        .add_sized(DRAG_SIZE, egui::Button::new("Cut Component"))
-                                        .clicked()
-                                    {
-                                        component_to_remove = Some(type_id);
-                                        component_to_copy = Some(component.clone());
-                                    }
-                                    if ui
-                                        .add_sized(DRAG_SIZE, egui::Button::new("Paste Component"))
-                                        .clicked()
-                                    {
-                                        if copied_component.is_some() {
-                                            to_paste_component = true;
+                                    ui.indent("indent", |ui| {
+                                        if ui.button("- Remove Component").clicked() {
+                                            component_to_remove = Some(type_id);
                                         }
-                                    }
-                                    ui.separator();
+                                        f(component.as_any_mut(), ui);
+                                    });
                                 });
-                            });
-                            ui.separator();
-                            ui.indent("indent", |ui| {
-                                if ui.button("- Remove Component").clicked() {
-                                    component_to_remove = Some(type_id);
-                                }
-                                f(component.as_any_mut(), ui);
-                            });
-                        });
-                }
+                        }
+                    });
 
                 ui.separator();
 
@@ -180,12 +189,14 @@ pub fn inspector(world: &mut World) -> Result<()> {
                     egui::Frame::popup(&ctx.global_style())
                         .fill(DARK_BG)
                         .show(ui, |ui| {
-                            ui.set_min_width(200.0);
+                            let popup_width = ui.available_width().max(280.0);
+                            ui.set_min_width(popup_width);
+                            ui.set_min_height(85.0);
+                            ui.set_max_height(85.0);
 
                             // Search bar
                             let search_resp = ui.text_edit_singleline(&mut new_search);
                             if picker_open != new_picker_open {
-                                // request focus
                                 search_resp.request_focus();
                             }
                             ui.add_space(4.0);
@@ -193,7 +204,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
                             let query = new_search.to_lowercase();
 
                             egui::ScrollArea::vertical()
-                                .max_height(200.0)
+                                .max_height(52.0)
                                 .show(ui, |ui| {
                                     let mut any_shown = false;
 
