@@ -11,7 +11,7 @@ use crate::ui::assets_panel::paint_clipped;
 use super::{
     DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, PANEL_BG, ROW_ALT, SEL_BG, TEXT_COL,
 };
-use super::shared::{ScreenSize, WindowLayout, save_layout};
+use super::shared::{WindowLayout, save_layout};
 
 #[derive(Clone)]
 pub struct CellEntry {
@@ -39,7 +39,6 @@ pub struct CellSearchState {
     pub clicked_cell: Option<String>,
     pub clicked_obj: Option<ObjectId>,
     pub copied_obj: Option<Object>,
-    pub needs_layout_restore: bool,
 }
 
 impl Default for CellSearchState {
@@ -76,7 +75,6 @@ impl Default for CellSearchState {
             clicked_cell: None,
             clicked_obj: None,
             copied_obj: None,
-            needs_layout_restore: true,
         }
     }
 }
@@ -136,13 +134,6 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let font_row = egui::FontId::proportional(12.0);
 
     // get the window layout info
-    let (sw, sh) = if let Ok(screen) = world.get_resource::<ScreenSize>() {
-        (screen.w, screen.h)
-    } else {
-        let screen = ctx.content_rect();
-        (screen.width(), screen.height())
-    };
-
     let layout = world.get_resource::<WindowLayout>().ok();
     let state = if let Some(layout) = layout {
         layout.cell_search.clone()
@@ -150,23 +141,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         return Ok(());
     };
 
-    let pos = state.to_pos(sw, sh);
-    let size = state.to_size(sw, sh);
+    let pos = state.to_pos();
+    let size = state.to_size();
 
-    let mut window = Window::new("Cell Panel")
+    let window = Window::new("Cell Panel")
         .default_pos(pos)
         .default_size(size)
         .resizable(true)
         .movable(true);
-
-    let cell_search_state = world.get_resource_mut::<CellSearchState>()?;
-    if cell_search_state.needs_layout_restore {
-        window = window
-            .current_pos(pos)
-            .fixed_size(size)
-            .constrain(false);
-        cell_search_state.needs_layout_restore = false;
-    }
 
     let window = window
         .resizable(true)
@@ -739,7 +721,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     if let Some(response) = window {
         let rect = response.response.rect;
         let layout = world.get_resource_mut::<WindowLayout>()?;
-        layout.cell_search.update_from_rect(rect, sw, sh);
+        layout.cell_search.update_from_rect(rect);
         save_layout(layout);
     }
 

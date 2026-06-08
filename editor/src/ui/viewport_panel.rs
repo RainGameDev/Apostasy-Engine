@@ -17,8 +17,8 @@ pub struct ViewportInfo {
     pub needs_layout_restore: bool,
 }
 
-use crate::ui::shared::{ScreenSize, WindowLayout, save_layout};
 use super::DARK_BG;
+use crate::ui::shared::{WindowLayout, save_layout};
 
 #[update(mode = "editor")]
 pub fn viewport(world: &mut World) -> Result<()> {
@@ -31,14 +31,6 @@ pub fn viewport(world: &mut World) -> Result<()> {
     }
 
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-    if !world.has_resource::<ScreenSize>() {
-        let screen = ctx.content_rect();
-        world.insert_resource(ScreenSize { w: screen.width(), h: screen.height() });
-    }
-    let screen_size = world.get_resource::<ScreenSize>()?;
-    let sw = screen_size.w;
-    let sh = screen_size.h;
-
     let layout = world.get_resource::<WindowLayout>().ok();
     let state = if let Some(layout) = layout {
         layout.viewport.clone()
@@ -46,8 +38,8 @@ pub fn viewport(world: &mut World) -> Result<()> {
         return Ok(());
     };
 
-    let pos = state.to_pos(sw, sh);
-    let size = state.to_size(sw, sh);
+    let pos = state.to_pos();
+    let size = state.to_size();
 
     let mut window = Window::new("Viewport")
         .default_pos(pos)
@@ -57,10 +49,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
     if viewport_info.needs_layout_restore {
-        window = window
-            .current_pos(pos)
-            .fixed_size(size)
-            .constrain(false);
+        window = window.current_pos(pos).fixed_size(size).constrain(false);
         viewport_info.needs_layout_restore = false;
     }
 
@@ -126,7 +115,8 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 let image = Image::new((texture_id, available_size));
                 ui.put(frame_rect, image);
             } else {
-                let label = Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
+                let label =
+                    Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
                 ui.put(frame_rect, label);
             }
         });
@@ -161,7 +151,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         viewport_info.is_hovered = response.response.hovered();
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
-        layout.viewport.update_from_rect(rect, sw, sh);
+        layout.viewport.update_from_rect(rect);
         save_layout(layout);
     }
 

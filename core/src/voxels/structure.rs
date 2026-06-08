@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::Result;
-use apostasy_macros::Resource;
+
 
 pub type StructureId = u16;
 

@@ -2,22 +2,7 @@ use apostasy_core::egui::{self, Pos2, Vec2};
 use apostasy_macros::Resource;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Resource)]
-pub struct ScreenSize {
-    pub w: f32,
-    pub h: f32,
-}
-
-impl Default for ScreenSize {
-    fn default() -> Self {
-        Self {
-            w: 1920.0,
-            h: 1080.0,
-        }
-    }
-}
-
-/// Normalized position and size for a window
+/// Fixed position and size for a window (in pixels)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NormalizedWindow {
     pub pos: [f32; 2],
@@ -25,20 +10,16 @@ pub struct NormalizedWindow {
 }
 
 impl NormalizedWindow {
-    pub fn to_pos(&self, sw: f32, sh: f32) -> Pos2 {
-        let size = self.to_size(sw, sh);
-        let cx = self.pos[0] * sw;
-        let cy = self.pos[1] * sh;
-        Pos2::new(cx - size.x / 2.0, cy - size.y / 2.0)
+    pub fn to_pos(&self) -> Pos2 {
+        Pos2::new(self.pos[0], self.pos[1])
     }
-    pub fn to_size(&self, sw: f32, sh: f32) -> Vec2 {
-        Vec2::new(self.size[0] * sw, self.size[1] * sh)
+    pub fn to_size(&self) -> Vec2 {
+        Vec2::new(self.size[0], self.size[1])
     }
 
-    pub fn update_from_rect(&mut self, rect: egui::Rect, sw: f32, sh: f32) {
-        let center = rect.center();
-        self.pos = [center.x / sw, center.y / sh];
-        self.size = [rect.size().x / sw, rect.size().y / sh];
+    pub fn update_from_rect(&mut self, rect: egui::Rect) {
+        self.pos = [rect.left(), rect.top()];
+        self.size = [rect.size().x, rect.size().y];
     }
 }
 
@@ -53,16 +34,16 @@ impl Default for WindowLayout {
     fn default() -> Self {
         Self {
             cell_search: NormalizedWindow {
-                pos: [0.05, 0.05],
-                size: [0.40, 0.32],
+                pos: [96.0, 54.0],
+                size: [768.0, 346.0],
             },
             object_window: NormalizedWindow {
-                pos: [0.03, 0.06],
-                size: [0.33, 0.48],
+                pos: [58.0, 65.0],
+                size: [634.0, 518.0],
             },
             viewport: NormalizedWindow {
-                pos: [0.50, 0.05],
-                size: [0.50, 0.50],
+                pos: [960.0, 54.0],
+                size: [960.0, 540.0],
             },
         }
     }

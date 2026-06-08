@@ -3,7 +3,7 @@ use std::any::{Any, TypeId};
 use anyhow::Result;
 use apostasy_core::{
     egui::{self, Margin, Stroke, Window},
-    log, log_warn,
+    log_warn,
     objects::{
         component::{BoxedComponent, Component, InspectorRegistry},
         fmt_key,

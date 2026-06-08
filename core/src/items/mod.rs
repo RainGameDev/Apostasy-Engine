@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use apostasy_macros::Resource;
+
 use hashbrown::HashMap;
 
 use crate::objects::component::BoxedComponent;

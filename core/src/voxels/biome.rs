@@ -1,7 +1,7 @@
 use std::sync::RwLock;
 
 use anyhow::{Error, Result};
-use apostasy_macros::Resource;
+
 use hashbrown::HashMap;
 use noise::{NoiseFn, Perlin};
 

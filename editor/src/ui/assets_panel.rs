@@ -7,7 +7,7 @@ use apostasy_macros::Resource;
 use super::{
     DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL,
 };
-use super::shared::{ScreenSize, WindowLayout, save_layout};
+use super::shared::{WindowLayout, save_layout};
 
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
@@ -76,7 +76,6 @@ pub struct ObjectWindowState {
     pub sort_dir: SortDir,
     pub selected_entry: Option<String>,
 
-    pub needs_layout_restore: bool,
     pub is_first_frame: bool,
 }
 
@@ -138,7 +137,6 @@ impl Default for ObjectWindowState {
             sort_col: SortColumn::EditorId,
             sort_dir: SortDir::Asc,
             selected_entry: None,
-            needs_layout_restore: true,
             is_first_frame: true,
         }
     }
@@ -154,13 +152,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    // get the screen dimensions and window layout info
-    let (sw, sh) = if let Ok(screen) = world.get_resource::<ScreenSize>() {
-        (screen.w, screen.h)
-    } else {
-        let screen = ctx.content_rect();
-        (screen.width(), screen.height())
-    };
+    // get the window layout info
     let layout = world.get_resource::<WindowLayout>().ok();
     let state = if let Some(layout) = layout {
         layout.object_window.clone()
@@ -168,23 +160,16 @@ pub fn object_window(world: &mut World) -> Result<()> {
         return Ok(());
     };
 
-    let pos = state.to_pos(sw, sh);
-    let size = state.to_size(sw, sh);
+    let pos = state.to_pos();
+    let size = state.to_size();
 
-    let mut window = Window::new("Object Window")
+    let window = Window::new("Object Window")
         .default_pos(pos)
         .default_size(size)
         .resizable(true)
         .movable(true);
 
     let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
-    if object_window_resource.needs_layout_restore {
-        window = window
-            .current_pos(pos)
-            .fixed_size(size)
-            .constrain(false);
-        object_window_resource.needs_layout_restore = false;
-    }
     if !object_window_resource.open {
         return Ok(());
     }
@@ -586,7 +571,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         let rect = response.response.rect;
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
-        layout.object_window.update_from_rect(rect, sw, sh);
+        layout.object_window.update_from_rect(rect);
         save_layout(layout);
     }
 
