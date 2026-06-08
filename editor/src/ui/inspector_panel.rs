@@ -3,7 +3,7 @@ use std::any::{Any, TypeId};
 use anyhow::Result;
 use apostasy_core::{
     egui::{self, Margin, Stroke, Window},
-    log_warn,
+    log, log_warn,
     objects::{
         component::{BoxedComponent, Component, InspectorRegistry},
         fmt_key,
@@ -63,12 +63,13 @@ pub fn inspector(world: &mut World) -> Result<()> {
                 .collect();
 
         // Collect names already on this object
-        let existing_component_names: Vec<&'static str> = world
+
+        let existing_component_names: Vec<&str> = world
             .get_object(id)
             .unwrap()
             .get_components()
             .into_iter()
-            .map(|c| c.type_name())
+            .map(|c| c.type_name().split("::").last().unwrap_or(c.type_name()))
             .collect();
 
         let label_text = format!("Inspector: {} ({})", obj_name, fmt_key(id));
@@ -203,12 +204,13 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                             continue;
                                         }
 
-                                        let already_present = existing_component_names
-                                            .iter()
-                                            .any(|&e| e.to_lowercase() == name.to_lowercase());
+                                        let name = name.split("::").collect::<Vec<&str>>();
+                                        let name = name.last().unwrap();
+                                        let already_present =
+                                            existing_component_names.contains(name);
 
                                         ui.add_enabled_ui(!already_present, |ui| {
-                                            let resp = ui.selectable_label(false, name);
+                                            let resp = ui.selectable_label(false, *name);
                                             if resp.clicked() && !already_present {
                                                 component_to_add = Some(name.to_string());
                                                 new_picker_open = false;

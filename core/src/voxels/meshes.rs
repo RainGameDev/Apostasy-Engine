@@ -7,6 +7,8 @@ use ash::vk::{self, Buffer, CommandPool, DeviceMemory};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::loaders::biome_loader::BiomeLoader;
 use crate::objects::Object;
 use crate::objects::scene::ObjectId;
 use crate::objects::world::World;
@@ -304,10 +306,19 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             .expect("no VoxelRegistry resource")
             .clone(),
     );
+
+    if !world.has_resource::<AssetManager>() {
+        world.insert_resource(AssetManager::new());
+    }
+    let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
+
     let biome_registry = Arc::new(
-        world
-            .get_resource::<BiomeRegistry>()
-            .expect("no BiomeRegistry resource")
+        asset_manager
+            .get_loader::<BiomeLoader>()
+            .unwrap()
+            .registry
+            .read()
+            .unwrap()
             .clone(),
     );
 

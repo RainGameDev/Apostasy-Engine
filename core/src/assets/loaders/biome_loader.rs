@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    any::Any,
+    sync::{Arc, RwLock},
+};
 
 use anyhow::{Error, Result};
 use hashbrown::HashMap;
@@ -82,11 +85,11 @@ impl YamlAssetLoader for BiomeLoader {
             .as_f64()
             .ok_or_else(|| anyhow::anyhow!("Missing 'temperature'"))?;
 
-        // ── terrain_shaping block (all fields optional, falls back to a named
-        //    preset or field-by-field defaults if the block is absent) ────────
+        // terrain_shaping block (all fields optional, falls back to a named
+        //    preset or field by field defaults if the block is absent)
         let terrain_shaping = parse_terrain_shaping(&raw["terrain_shaping"])?;
 
-        // ── Structures ────────────────────────────────────────────────────────
+        // Structures
         let mut structures: Vec<StructureDefinition> = Vec::new();
         if let Some(structures_seq) = raw["structures"].as_sequence() {
             for struct_yaml in structures_seq {
@@ -129,7 +132,7 @@ impl YamlAssetLoader for BiomeLoader {
             }
         }
 
-        // ── Ambient graphics ──────────────────────────────────────────────────
+        // Ambient graphics
         let water_color = parse_color(&raw["ambient_graphics"]["water_color"], (63, 118, 228))?;
         let foliage_color = parse_color(&raw["ambient_graphics"]["foliage_color"], (77, 140, 61))?;
 
@@ -177,6 +180,13 @@ impl YamlAssetLoader for BiomeLoader {
 
     fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

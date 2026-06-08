@@ -33,6 +33,18 @@ impl AssetManager {
         }
     }
 
+    pub fn get_loader<L: YamlAssetLoader + 'static>(&self) -> Option<&L> {
+        self.yaml_loaders
+            .values()
+            .find_map(|l| l.as_any().downcast_ref::<L>())
+    }
+
+    pub fn get_loader_mut<L: YamlAssetLoader + 'static>(&mut self) -> Option<&mut L> {
+        self.yaml_loaders
+            .values_mut()
+            .find_map(|l| l.as_any_mut().downcast_mut::<L>())
+    }
+
     pub fn register_loader<L: YamlAssetLoader + 'static>(&mut self, loader: L) {
         self.yaml_loaders
             .insert(loader.class_name().to_string(), Box::new(loader));

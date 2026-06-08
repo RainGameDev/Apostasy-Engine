@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    any::Any,
+    sync::{Arc, RwLock},
+};
 
 use anyhow::{Error, Result};
 
@@ -147,5 +150,12 @@ impl YamlAssetLoader for StructureLoader {
     }
     fn clone_box(&self) -> Box<dyn YamlAssetLoader> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

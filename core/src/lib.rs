@@ -193,14 +193,9 @@ impl Core {
                 WindowEvent::RedrawRequested => {
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
-                    let model_registry = world
-                        .get_resource::<AssetManager>()
-                        .unwrap()
-                        .clone()
-                        .model_loader
-                        .registry
-                        .read()
-                        .unwrap();
+                    let asset_manager = world.get_resource::<AssetManager>().unwrap().clone();
+
+                    let model_registry = asset_manager.model_loader.registry.read().unwrap();
 
                     world.get_resource_mut::<WindowInfo>().unwrap().window_size =
                         rendering_info.window.outer_size().into();
@@ -544,20 +539,17 @@ impl ApplicationHandler for Core {
 
         // TODO: clean this up
         {
-            let mut asset_manager = AssetManager::new();
+            if !world.has_resource::<AssetManager>() {
+                world.insert_resource(AssetManager::new());
+            }
+            let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
             asset_manager.model_loader = model_loader;
 
-            let a = asset_manager
+            asset_manager
                 .load_models(Path::new("res/"), Arc::new(context.clone()), command_pool)
                 .unwrap();
 
-            let model_loader = ModelLoader {
-                registry: Arc::new(RwLock::new(a)),
-            };
-
-            let mut asset_manager = AssetManager::new();
-            asset_manager.model_loader = model_loader;
-            let b = asset_manager
+            asset_manager
                 .load_models(
                     Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
                     Arc::new(context),
@@ -565,7 +557,7 @@ impl ApplicationHandler for Core {
                 )
                 .unwrap();
 
-            world.insert_resource(b);
+            // world.insert_resource(b);
         }
 
         let context = self

@@ -15,9 +15,13 @@ pub(crate) fn add_item_system_package(world: &mut World) {
 
     let item_registry = Arc::new(RwLock::new(ItemRegistry::default()));
 
+    if !world.has_resource::<AssetManager>() {
+        world.insert_resource(AssetManager::new());
+    }
+    let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
+
     {
         {
-            let mut asset_manager = AssetManager::new();
             asset_manager.register_loader(ItemLoader {
                 registry: Arc::clone(&item_registry),
             });
@@ -32,12 +36,5 @@ pub(crate) fn add_item_system_package(world: &mut World) {
 
             asset_manager.load_directory(Path::new("res/")).unwrap();
         }
-
-        let item_registry = Arc::try_unwrap(item_registry)
-            .expect("ItmeRegistry still has multiple owners")
-            .into_inner()
-            .expect("ItemRegistry RwLock poisoned");
-
-        world.insert_resource(item_registry);
     }
 }
