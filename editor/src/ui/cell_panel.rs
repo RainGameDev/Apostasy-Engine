@@ -8,6 +8,7 @@ use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
 use crate::ui::assets_panel::paint_clipped;
+use crate::ui::inspector_panel::InspectorPanelState;
 use super::{
     DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, PANEL_BG, ROW_ALT, SEL_BG, TEXT_COL,
 };
@@ -572,6 +573,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             }
                                             if ui.button("Inspect").clicked() {
                                                 pending_selected_obj = Some(entry.object_id);
+                                                if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>() {
+                                                    inspector_state.visible = true;
+                                                }
                                                 ui.close();
                                             }
 

@@ -5,10 +5,17 @@ use apostasy_core::ui::DRAG_SIZE;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::update;
 
+use crate::ui::inspector_panel::InspectorPanelState;
+
 #[update(mode = "editor")]
 pub fn top_bar(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let screen_width = ctx.viewport_rect().width();
+
+    if !world.has_resource::<InspectorPanelState>() {
+        world.insert_resource(InspectorPanelState::default());
+    }
+    let inspector_state = world.get_resource_mut::<InspectorPanelState>()?;
 
     egui::Area::new(egui::Id::new("top_bar"))
         .fixed_pos(egui::pos2(0.0, 0.0))
@@ -35,10 +42,14 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                     .clicked()
                                 {}
                                 ui.add_space(8.0);
-                                if ui
-                                    .add(egui::Button::new("View").min_size(DRAG_SIZE))
-                                    .clicked()
-                                {}
+                                ui.menu_button("View", |ui| {
+                                    if ui
+                                        .selectable_label(inspector_state.visible, "Inspector")
+                                        .clicked()
+                                    {
+                                        inspector_state.visible = !inspector_state.visible;
+                                    }
+                                });
                             });
                             ui.separator();
                         });

@@ -27,7 +27,7 @@ use apostasy_core::{
     },
 };
 
-use crate::ui::{cell_panel::CellSearchState, viewport_panel::ViewportInfo};
+use crate::ui::{cell_panel::CellSearchState, inspector_panel::InspectorPanelState, viewport_panel::ViewportInfo};
 
 #[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
@@ -220,6 +220,9 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
                 if let Some(hit) = hit {
                     cell_search_state.selected_obj = Some(hit.object_id);
+                    if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>() {
+                        inspector_state.visible = true;
+                    }
                 } else {
                     cell_search_state.selected_obj = None;
                 }
