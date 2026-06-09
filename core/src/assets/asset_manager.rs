@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::assets::gltf::{ModelLoader, ModelRegistry};
 use crate::assets::loader::YamlAssetLoader;
+use crate::assets::shader::list_available_shaders;
 use crate::assets::shader_registry::ShaderRegistry;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
 use crate::{log, log_warn};
@@ -93,6 +94,35 @@ impl AssetManager {
 
         Ok(registry.clone())
     }
+    pub fn model_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .model_loader
+            .registry
+            .read()
+            .unwrap()
+            .paths
+            .keys()
+            .cloned()
+            .collect();
+        names.sort();
+        names
+    }
+
+    pub fn shader_names(&self) -> Vec<String> {
+        list_available_shaders()
+    }
+
+    /// Returns (class_name, [(namespace, name)]) for all registered loaders.
+    pub fn all_loader_entries(&self) -> Vec<(String, Vec<(String, String)>)> {
+        let mut result: Vec<(String, Vec<(String, String)>)> = self
+            .yaml_loaders
+            .iter()
+            .map(|(class, loader)| (class.clone(), loader.list_entries()))
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
+    }
+
     /// Recursively load all .yaml files in a directory
     pub fn load_directory(&mut self, path: &Path) -> Result<()> {
         for entry in std::fs::read_dir(path)? {
@@ -100,6 +130,11 @@ impl AssetManager {
             let path = entry.path();
 
             if path.is_dir() {
+                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if dir_name == ".editor" {
+                        continue;
+                    }
+                }
                 self.load_directory(&path)?;
             } else if path.extension().and_then(|e| e.to_str()) == Some("yaml")
                 && let Err(e) = self.load_file(&path)

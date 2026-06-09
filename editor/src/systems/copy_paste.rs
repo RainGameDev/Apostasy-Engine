@@ -15,18 +15,18 @@ use crate::ui::cell_panel::CellSearchState;
 pub fn init(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 
-    inputs.register_keybind(
+    inputs.register_default_keybind(
         "ControlModifier",
         KeyBind::new(PhysicalKey::Code(KeyCode::ControlLeft), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Paste",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyV), KeyAction::Press),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Copy",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press),
-    )?;
+    );
     Ok(())
 }
 

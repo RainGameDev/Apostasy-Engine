@@ -1,13 +1,12 @@
+use super::shared::{WindowLayout, save_layout};
+use super::{DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL};
 use anyhow::Result;
+use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::egui::{
     Color32, CursorIcon, FontId, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
 };
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
-use super::{
-    DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL,
-};
-use super::shared::{WindowLayout, save_layout};
 
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
@@ -81,64 +80,90 @@ pub struct ObjectWindowState {
 
 impl Default for ObjectWindowState {
     fn default() -> Self {
-        let world_p = ["Data", "World"].map(|s| s.to_string());
-        let enemies_p = ["Data", "Enemies"].map(|s| s.to_string());
-        let data_p = ["Data"].map(|s| s.to_string());
-
-        let world_node = FilterNode::branch(
-            "World",
-            &data_p,
-            vec![
-                FilterNode::leaf("Climate", &world_p),
-                FilterNode::leaf("Lighting", &world_p),
-                FilterNode::leaf("Locations", &world_p),
-                FilterNode::leaf("Cells", &world_p),
-            ],
-        );
-        let enemies_node = FilterNode::branch(
-            "Enemies",
-            &data_p,
-            vec![
-                FilterNode::leaf("Enemy Bases", &enemies_p),
-                FilterNode::leaf("Enemy Upgrades", &enemies_p),
-            ],
-        );
-        let data_node = FilterNode::branch("Data", &[], vec![world_node, enemies_node]);
-
-        let mut entries = Vec::new();
-        let paths: &[&[&str]] = &[
-            &["Data", "World", "Climate"],
-            &["Data", "World", "Lighting"],
-            &["Data", "World", "Locations"],
-            &["Data", "World", "Cells"],
-            &["Data", "Enemies", "Enemy Bases"],
-            &["Data", "Enemies", "Enemy Upgrades"],
-        ];
-        for (i, path) in paths.iter().enumerate() {
-            for j in 0..8u32 {
-                let n = (i as u32) * 8 + j;
-                entries.push(ObjectEntry {
-                    editor_id: format!("ED_{:04}", n),
-                    name: format!("{}_{}", path.last().unwrap_or(&""), j),
-                    count: n * 3 + 1,
-                    category_path: path.iter().map(|s| s.to_string()).collect(),
-                });
-            }
-        }
-
         Self {
             open: true,
             show_used_in_cell: false,
             col_widths: [190.0, 130.0, 150.0],
-            filter_tree: vec![data_node],
+            filter_tree: vec![FilterNode::branch("Data", &[], vec![])],
             selected_filter: None,
-            entries,
+            entries: Vec::new(),
             filter_string: "".to_string(),
             sort_col: SortColumn::EditorId,
             sort_dir: SortDir::Asc,
             selected_entry: None,
             is_first_frame: true,
         }
+    }
+}
+
+impl ObjectWindowState {
+    pub fn populate(
+        &mut self,
+        registry_data: Vec<(String, Vec<(String, String)>)>,
+        models: Vec<String>,
+        shaders: Vec<String>,
+    ) {
+        let mut tree = Vec::new();
+        let mut entries = Vec::new();
+
+        // "Data" branch yaml-loaded definitions
+        let data_path = vec!["Data".to_string()];
+        let mut data_children = Vec::new();
+        for (class_name, class_entries) in &registry_data {
+            if class_entries.is_empty() {
+                continue;
+            }
+            let class_path = vec!["Data".to_string(), class_name.clone()];
+            data_children.push(FilterNode::leaf(class_name, &data_path));
+            for (namespace, name) in class_entries {
+                entries.push(ObjectEntry {
+                    editor_id: format!("{}:{}:{}", namespace, class_name, name),
+                    name: name.clone(),
+                    count: 0,
+                    category_path: class_path.clone(),
+                });
+            }
+        }
+        if !data_children.is_empty() {
+            tree.push(FilterNode::branch("Data", &[], data_children));
+        }
+
+        // "Graphics" branch models and shaders
+        let gfx_path = vec!["Graphics".to_string()];
+        let mut gfx_children = Vec::new();
+
+        if !models.is_empty() {
+            let models_path = vec!["Graphics".to_string(), "Models".to_string()];
+            gfx_children.push(FilterNode::leaf("Models", &gfx_path));
+            for name in &models {
+                entries.push(ObjectEntry {
+                    editor_id: format!("model:{}", name),
+                    name: name.clone(),
+                    count: 0,
+                    category_path: models_path.clone(),
+                });
+            }
+        }
+
+        if !shaders.is_empty() {
+            let shaders_path = vec!["Graphics".to_string(), "Shaders".to_string()];
+            gfx_children.push(FilterNode::leaf("Shaders", &gfx_path));
+            for name in &shaders {
+                entries.push(ObjectEntry {
+                    editor_id: format!("shader:{}", name),
+                    name: name.clone(),
+                    count: 0,
+                    category_path: shaders_path.clone(),
+                });
+            }
+        }
+
+        if !gfx_children.is_empty() {
+            tree.push(FilterNode::branch("Graphics", &[], gfx_children));
+        }
+
+        self.filter_tree = tree;
+        self.entries = entries;
     }
 }
 
@@ -169,7 +194,26 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .resizable(true)
         .movable(true);
 
+    let needs_populate = world
+        .get_resource::<ObjectWindowState>()
+        .map(|s| s.is_first_frame)
+        .unwrap_or(false);
+    let populate_data = if needs_populate {
+        world
+            .get_resource::<AssetManager>()
+            .ok()
+            .map(|am| (am.all_loader_entries(), am.model_names(), am.shader_names()))
+    } else {
+        None
+    };
+
     let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
+    if object_window_resource.is_first_frame {
+        if let Some((registry_data, models, shaders)) = populate_data {
+            object_window_resource.populate(registry_data, models, shaders);
+        }
+        object_window_resource.is_first_frame = false;
+    }
     if !object_window_resource.open {
         return Ok(());
     }

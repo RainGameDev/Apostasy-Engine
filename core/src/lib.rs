@@ -133,7 +133,15 @@ impl Core {
     ) -> Self {
         let mut world = World::default();
         world.insert_resource(engine_mode);
-        world.insert_resource(InputManager::default());
+        {
+            let mut input_manager = InputManager::default();
+            let keybinds_path = format!(
+                "{}/res/.editor/keybinds.yaml",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            input_manager.load_or_init_keybinds(keybinds_path);
+            world.insert_resource(input_manager);
+        }
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
         world.insert_resource(AntiAliasing::default());
@@ -689,12 +697,10 @@ pub fn init_core_with_mode(
 pub fn editor_start(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>()?;
 
-    inputs
-        .register_keybind(
-            "Reload Shaders",
-            KeyBind::new(PhysicalKey::Code(KeyCode::F5), KeyAction::Press),
-        )
-        .unwrap();
+    inputs.register_default_keybind(
+        "Reload Shaders",
+        KeyBind::new(PhysicalKey::Code(KeyCode::F5), KeyAction::Press),
+    );
     Ok(())
 }
 

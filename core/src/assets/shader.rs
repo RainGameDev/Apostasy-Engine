@@ -124,6 +124,36 @@ fn compile_shader(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Scans all known shader directories and returns unique source shader filenames
+/// (`.vert` / `.frag` only; `.spv` files are excluded).
+pub fn list_available_shaders() -> Vec<String> {
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in SHADER_DIRECTORIES {
+        let path = Path::new(dir);
+        if !path.exists() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                if ext == "vert" || ext == "frag" {
+                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                        if seen.insert(name.to_string()) {
+                            names.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
 pub enum ShaderKind {
     Vertex,
     Fragment,

@@ -1,0 +1,38 @@
+keybinds:
+  Right:
+    key: KeyD
+    action: Hold
+  ControlModifier:
+    key: ControlLeft
+    action: Hold
+  Forwards:
+    key: KeyW
+    action: Hold
+  Paste:
+    key: KeyV
+    action: Press
+  Downwards:
+    key: KeyQ
+    action: Hold
+  Jump:
+    key: Space
+    action: Press
+  Reload Shaders:
+    key: F5
+    action: Press
+  Copy:
+    key: KeyC
+    action: Press
+  Backwards:
+    key: KeyS
+    action: Hold
+  Left:
+    key: KeyA
+    action: Hold
+mousebinds:
+  RightMouseClick:
+    key: Right
+    action: Hold
+  MouseClick:
+    key: Left
+    action: Press

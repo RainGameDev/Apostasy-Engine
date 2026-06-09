@@ -7,6 +7,10 @@ pub trait YamlAssetLoader: Send + Sync {
     fn clone_box(&self) -> Box<dyn YamlAssetLoader>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    /// Returns (namespace, name) pairs for all loaded definitions.
+    fn list_entries(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 impl Clone for Box<dyn YamlAssetLoader> {

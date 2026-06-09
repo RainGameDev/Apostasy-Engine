@@ -62,7 +62,11 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .and_then(|state| state.selected_obj);
 
     let label_text = selected_id
-        .and_then(|id| world.get_object(id).map(|obj| format!("Inspector: {} ({})", obj.name, fmt_key(id))))
+        .and_then(|id| {
+            world
+                .get_object(id)
+                .map(|obj| format!("Inspector: {} ({})", obj.name, fmt_key(id)))
+        })
         .unwrap_or_else(|| "Inspector".to_string());
 
     let fns: Vec<(TypeId, fn(&mut dyn Any, &mut egui::Ui))> = if let Some(id) = selected_id {
@@ -114,8 +118,12 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let mut component_to_copy: Option<BoxedComponent> = None;
     let mut to_paste_component = false;
 
-    let screen_height = ctx
-        .input(|i| i.raw.screen_rect.map(|rect| rect.height()).unwrap_or(1080.0));
+    let screen_height = ctx.input(|i| {
+        i.raw
+            .screen_rect
+            .map(|rect| rect.height())
+            .unwrap_or(1080.0)
+    });
     let max_height = (screen_height - 100.0).max(260.0);
     let max_size = egui::vec2(680.0, max_height);
     let default_pos = window_pos.unwrap_or(egui::pos2(100.0, 100.0));
@@ -172,8 +180,10 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                     .corner_radius(4.0)
                                     .inner_margin(4.0)
                                     .show(ui, |ui| {
-                                        let name_full =
-                                            component.type_name().split("::").collect::<Vec<&str>>();
+                                        let name_full = component
+                                            .type_name()
+                                            .split("::")
+                                            .collect::<Vec<&str>>();
                                         let final_name = name_full.last().unwrap().to_string();
 
                                         ui.horizontal(|ui| {
@@ -217,10 +227,9 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                                         egui::Button::new("Paste Component"),
                                                     )
                                                     .clicked()
+                                                    && copied_component.is_some()
                                                 {
-                                                    if copied_component.is_some() {
-                                                        to_paste_component = true;
-                                                    }
+                                                    to_paste_component = true;
                                                 }
                                                 ui.separator();
                                             });
@@ -272,16 +281,13 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                 let mut any_shown = false;
 
                                 for &name in &all_component_names {
-                                    if !query.is_empty()
-                                        && !name.to_lowercase().contains(&query)
-                                    {
+                                    if !query.is_empty() && !name.to_lowercase().contains(&query) {
                                         continue;
                                     }
 
                                     let name = name.split("::").collect::<Vec<&str>>();
                                     let name = name.last().unwrap();
-                                    let already_present =
-                                        existing_component_names.contains(name);
+                                    let already_present = existing_component_names.contains(name);
 
                                     ui.add_enabled_ui(!already_present, |ui| {
                                         let resp = ui.selectable_label(false, *name);
@@ -290,9 +296,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                             new_picker_open = false;
                                         }
                                         if already_present {
-                                            resp.on_disabled_hover_text(
-                                                "Already on this object",
-                                            );
+                                            resp.on_disabled_hover_text("Already on this object");
                                         }
                                     });
 
@@ -301,11 +305,10 @@ pub fn inspector(world: &mut World) -> Result<()> {
 
                                 if !any_shown {
                                     ui.label(
-                                        egui::RichText::new("No components found")
-                                            .italics()
-                                            .weak(),
+                                        egui::RichText::new("No components found").italics().weak(),
                                     );
                                 }
+                                ui.allocate_space(ui.available_size());
                             });
 
                         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {

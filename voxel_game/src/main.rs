@@ -45,54 +45,54 @@ pub fn input_init(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>()?;
 
     // Movement
-    inputs.register_keybind(
+    inputs.register_default_keybind(
         "Left",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyA), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Right",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Forwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyW), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Backwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyS), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Downwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyQ), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Jump",
         KeyBind::new(PhysicalKey::Code(KeyCode::Space), KeyAction::Press),
-    )?;
+    );
 
     // Structure tools
-    inputs.register_keybind(
+    inputs.register_default_keybind(
         "SetStructureStart",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyT), KeyAction::Press),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "SetStructureEnd",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyY), KeyAction::Press),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "SaveStructure",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyH), KeyAction::Press),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "ToggleStructureSelection",
         KeyBind::new(PhysicalKey::Code(KeyCode::F6), KeyAction::Press),
-    )?;
+    );
 
     // Debug
-    inputs.register_keybind(
+    inputs.register_default_keybind(
         "ReloadShaders",
         KeyBind::new(PhysicalKey::Code(KeyCode::F1), KeyAction::Press),
-    )?;
+    );
 
     // Hotbar
     for (name, code) in [
@@ -106,17 +106,17 @@ pub fn input_init(world: &mut World) -> Result<()> {
         ("Hotbar8", KeyCode::Digit8),
         ("Hotbar9", KeyCode::Digit9),
     ] {
-        inputs.register_keybind(
+        inputs.register_default_keybind(
             name,
             KeyBind::new(PhysicalKey::Code(code), KeyAction::Press),
-        )?;
+        );
     }
 
     // Misc
-    inputs.register_keybind(
+    inputs.register_default_keybind(
         "Pause",
         KeyBind::new(PhysicalKey::Code(KeyCode::Escape), KeyAction::Press),
-    )?;
+    );
 
     // Mouse
     inputs.register_mousebind("Break", MouseBind::new(MouseButton::Left, KeyAction::Hold))?;

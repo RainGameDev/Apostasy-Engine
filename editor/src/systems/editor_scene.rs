@@ -1,5 +1,14 @@
+use std::sync::{Arc, RwLock};
 use apostasy_core::{
     anyhow::Result,
+    assets::{
+        asset_manager::AssetManager,
+        loaders::{
+            biome_loader::BiomeLoader,
+            structure_loader::StructureLoader,
+            voxel_loader::VoxelLoader,
+        },
+    },
     cgmath::{SquareMatrix, Vector3, Zero},
     objects::{
         Object,
@@ -21,6 +30,12 @@ use apostasy_core::{
     start,
     ui::ui_context::ViewportSize,
     update,
+    voxels::{
+        biome::BiomeRegistry,
+        structure::StructureRegistry,
+        texture_atlas::AtlasBuilder,
+        voxel::VoxelRegistry,
+    },
     winit::{
         event::MouseButton,
         keyboard::{KeyCode, PhysicalKey},
@@ -28,6 +43,40 @@ use apostasy_core::{
 };
 
 use crate::ui::{cell_panel::CellSearchState, inspector_panel::InspectorPanelState, viewport_panel::ViewportInfo};
+
+/// Registers all asset loaders and loads yaml definitions from the game res directory.
+#[start(mode = "editor")]
+pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
+    if !world.has_resource::<AssetManager>() {
+        world.insert_resource(AssetManager::new());
+    }
+
+    let biome_registry = Arc::new(RwLock::new(BiomeRegistry::default()));
+    let voxel_registry = Arc::new(RwLock::new(VoxelRegistry::default()));
+    let structure_registry = Arc::new(RwLock::new(StructureRegistry::default()));
+    let atlas_builder = Arc::new(RwLock::new(AtlasBuilder::new(16)));
+
+    {
+        let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
+        asset_manager.register_loader(BiomeLoader {
+            registry: Arc::clone(&biome_registry),
+        });
+        asset_manager.register_loader(VoxelLoader {
+            registry: Arc::clone(&voxel_registry),
+            atlas_builder: Arc::clone(&atlas_builder),
+        });
+        asset_manager.register_loader(StructureLoader {
+            registry: Arc::clone(&structure_registry),
+        });
+
+        let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
+        if game_res.exists() {
+            let _ = asset_manager.load_directory(&game_res);
+        }
+    }
+
+    Ok(())
+}
 
 #[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
@@ -122,38 +171,38 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 
-    inputs.register_mousebind(
+    inputs.register_default_mousebind(
         "MouseClick",
         MouseBind::new(MouseButton::Left, KeyAction::Press),
-    )?;
-    inputs.register_mousebind(
+    );
+    inputs.register_default_mousebind(
         "RightMouseClick",
         MouseBind::new(MouseButton::Right, KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Left",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyA), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Right",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Forwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyW), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Backwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyS), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Downwards",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyQ), KeyAction::Hold),
-    )?;
-    inputs.register_keybind(
+    );
+    inputs.register_default_keybind(
         "Jump",
         KeyBind::new(PhysicalKey::Code(KeyCode::Space), KeyAction::Press),
-    )?;
+    );
 
     Ok(())
 }

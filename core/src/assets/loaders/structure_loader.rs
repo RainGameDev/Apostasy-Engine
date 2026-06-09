@@ -158,4 +158,8 @@ impl YamlAssetLoader for StructureLoader {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+    fn list_entries(&self) -> Vec<(String, String)> {
+        let registry = self.registry.read().unwrap();
+        registry.defs.iter().map(|d| (d.namespace.clone(), d.name.clone())).collect()
+    }
 }
