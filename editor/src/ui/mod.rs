@@ -1,7 +1,10 @@
 use anyhow::Result;
-use apostasy_core::objects::world::World;
-use apostasy_core::start;
-use apostasy_core::ui::FontRegistry;
+use apostasy_core::{
+    objects::world::World,
+    rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing},
+    start,
+    ui::{ui_context::ViewportSize, FontRegistry},
+};
 
 pub mod shared;
 pub use self::shared::*;
@@ -21,7 +24,7 @@ use assets_panel::ObjectWindowState;
 use cell_panel::CellSearchState;
 use inspector_panel::InspectorPanelState;
 use preferences_panel::EditorPreferences;
-use viewport_panel::ViewportInfo;
+use viewport_panel::{EditorGraphics, ViewportInfo};
 
 #[start(mode = "all")]
 pub fn init(world: &mut World) -> Result<()> {
@@ -57,6 +60,18 @@ pub fn init(world: &mut World) -> Result<()> {
             reg.set_active(prefs.active_font);
         }
     }
+
+    use crate::objects::editor_camera::EditorCameraSettings;
+    world.insert_resource(EditorCameraSettings { move_speed: prefs.camera_speed });
+
+    let graphics = EditorGraphics::load();
+    if let Ok(vs) = world.get_resource_mut::<ViewportSize>() {
+        vs.supersample = graphics.supersample;
+    }
+    if let Ok(aa) = world.get_resource_mut::<AntiAliasing>() {
+        aa.amount = graphics.anti_aliasing;
+    }
+    world.insert_resource(UpdateRenderer);
 
     Ok(())
 }

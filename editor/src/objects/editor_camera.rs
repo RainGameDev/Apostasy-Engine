@@ -14,7 +14,7 @@ use apostasy_macros::Resource;
 
 use crate::{
     systems::object_focus::IsObjectFocused,
-    ui::{cell_panel::CellSearchState, viewport_panel::ViewportInfo},
+    ui::{cell_panel::CellSearchState, preferences_panel::EditorPreferences, viewport_panel::ViewportInfo},
 };
 
 #[derive(Resource, Clone)]
@@ -84,11 +84,13 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     world.remove_resource::<IsObjectFocused>();
 
     if is_looking && scroll_delta.1 != 0.0 {
-        world.get_resource_mut::<EditorCameraSettings>()?.move_speed = clamp(
+        let new_speed = clamp(
             world.get_resource::<EditorCameraSettings>()?.move_speed + scroll_delta.1 * 5.0,
             1.0,
             256.0,
         );
+        world.get_resource_mut::<EditorCameraSettings>()?.move_speed = new_speed;
+        EditorPreferences::save_camera_speed(new_speed);
     }
 
     Ok(())

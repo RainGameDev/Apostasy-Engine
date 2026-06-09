@@ -65,14 +65,20 @@ impl Default for WindowLayout {
     }
 }
 
+const LAYOUT_PATH: &str = "res/.editor/editor_layout.yaml";
+
 pub fn save_layout(layout: &WindowLayout) {
+    let path = std::path::Path::new(LAYOUT_PATH);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     if let Ok(yaml) = serde_yaml::to_string(layout) {
-        std::fs::write("editor_layout.yaml", yaml).unwrap();
+        let _ = std::fs::write(path, yaml);
     }
 }
 
 pub fn load_layout() -> WindowLayout {
-    std::fs::read_to_string("editor_layout.yaml")
+    std::fs::read_to_string(LAYOUT_PATH)
         .ok()
         .and_then(|s| serde_yaml::from_str(&s).ok())
         .unwrap_or_default()

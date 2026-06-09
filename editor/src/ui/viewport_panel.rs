@@ -34,6 +34,43 @@ use crate::{
     ui::shared::{WindowLayout, save_layout},
 };
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct EditorGraphics {
+    #[serde(default = "EditorGraphics::default_supersample")]
+    pub supersample: f32,
+    #[serde(default)]
+    pub anti_aliasing: AntiAliasingAmount,
+}
+
+impl Default for EditorGraphics {
+    fn default() -> Self {
+        Self { supersample: 1.0, anti_aliasing: AntiAliasingAmount::X0 }
+    }
+}
+
+impl EditorGraphics {
+    pub const PATH: &'static str = "res/.editor/editor_graphics.yaml";
+
+    fn default_supersample() -> f32 { 1.0 }
+
+    pub fn load() -> Self {
+        std::fs::read_to_string(Self::PATH)
+            .ok()
+            .and_then(|s| serde_yaml::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        let path = std::path::Path::new(Self::PATH);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(yaml) = serde_yaml::to_string(self) {
+            let _ = std::fs::write(path, yaml);
+        }
+    }
+}
+
 #[update(mode = "editor")]
 pub fn viewport(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
@@ -71,9 +108,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
         viewport_info.needs_layout_restore = false;
     }
 
-    let (available_options, aa_before, mut aa_selected) = {
+    let (available_options, aa_before, mut aa_selected, ss_before) = {
         let aa = world.get_resource::<AntiAliasing>().unwrap();
-        (aa.available_options.clone(), aa.amount, aa.amount)
+        let ss = world.get_resource::<ViewportSize>().unwrap().supersample;
+        (aa.available_options.clone(), aa.amount, aa.amount, ss)
     };
 
     let mut camera_speed = world
@@ -193,10 +231,16 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.insert_resource(UpdateRenderer);
     }
 
-    world
-        .get_resource_mut::<EditorCameraSettings>()
-        .unwrap()
-        .move_speed = camera_speed;
+    let ss_after = world.get_resource::<ViewportSize>().unwrap().supersample;
+    if aa_before != aa_selected || ss_before != ss_after {
+        EditorGraphics { supersample: ss_after, anti_aliasing: aa_selected }.save();
+    }
+
+    let prev_speed = world.get_resource::<EditorCameraSettings>().unwrap().move_speed;
+    if (camera_speed - prev_speed).abs() > f32::EPSILON {
+        world.get_resource_mut::<EditorCameraSettings>().unwrap().move_speed = camera_speed;
+        crate::ui::preferences_panel::EditorPreferences::save_camera_speed(camera_speed);
+    }
 
     Ok(())
 }

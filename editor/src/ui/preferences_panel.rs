@@ -10,6 +10,8 @@ pub struct EditorPreferences {
     pub theme: Theme,
     pub font_size: u8,
     pub active_font: String,
+    #[serde(default = "EditorPreferences::default_camera_speed")]
+    pub camera_speed: f32,
 }
 
 impl Default for EditorPreferences {
@@ -18,12 +20,15 @@ impl Default for EditorPreferences {
             theme: Theme::default(),
             font_size: 13,
             active_font: String::new(),
+            camera_speed: 5.0,
         }
     }
 }
 
 impl EditorPreferences {
     pub const PATH: &'static str = "res/.editor/editor_preferences.yaml";
+
+    fn default_camera_speed() -> f32 { 5.0 }
 
     pub fn load() -> Self {
         std::fs::read_to_string(Self::PATH)
@@ -40,6 +45,12 @@ impl EditorPreferences {
         if let Ok(yaml) = serde_yaml::to_string(self) {
             let _ = std::fs::write(path, yaml);
         }
+    }
+
+    pub fn save_camera_speed(speed: f32) {
+        let mut prefs = Self::load();
+        prefs.camera_speed = speed;
+        prefs.save();
     }
 }
 
@@ -116,12 +127,11 @@ impl EditorTabPending {
             }
         }
         if style_changed || font_changed {
-            EditorPreferences {
-                theme: self.theme,
-                font_size: self.font_size,
-                active_font: self.font.clone(),
-            }
-            .save();
+            let mut prefs = EditorPreferences::load();
+            prefs.theme = self.theme;
+            prefs.font_size = self.font_size;
+            prefs.active_font = self.font.clone();
+            prefs.save();
         }
         Ok(())
     }
