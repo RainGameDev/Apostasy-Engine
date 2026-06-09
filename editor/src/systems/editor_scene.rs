@@ -1,12 +1,9 @@
-use std::sync::{Arc, RwLock};
 use apostasy_core::{
     anyhow::Result,
     assets::{
         asset_manager::AssetManager,
         loaders::{
-            biome_loader::BiomeLoader,
-            structure_loader::StructureLoader,
-            voxel_loader::VoxelLoader,
+            biome_loader::BiomeLoader, structure_loader::StructureLoader, voxel_loader::VoxelLoader,
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
@@ -31,9 +28,7 @@ use apostasy_core::{
     ui::ui_context::ViewportSize,
     update,
     voxels::{
-        biome::BiomeRegistry,
-        structure::StructureRegistry,
-        texture_atlas::AtlasBuilder,
+        biome::BiomeRegistry, structure::StructureRegistry, texture_atlas::AtlasBuilder,
         voxel::VoxelRegistry,
     },
     winit::{
@@ -41,8 +36,11 @@ use apostasy_core::{
         keyboard::{KeyCode, PhysicalKey},
     },
 };
+use std::sync::{Arc, RwLock};
 
-use crate::ui::{cell_panel::CellSearchState, inspector_panel::InspectorPanelState, viewport_panel::ViewportInfo};
+use crate::ui::{
+    cell_panel::CellSearchState, inspector_panel::InspectorPanelState, viewport_panel::ViewportInfo,
+};
 
 /// Registers all asset loaders and loads yaml definitions from the game res directory.
 #[start(mode = "editor")]
@@ -176,6 +174,11 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         MouseBind::new(MouseButton::Left, KeyAction::Press),
     );
     inputs.register_default_mousebind(
+        "MiddleMouseClick",
+        MouseBind::new(MouseButton::Middle, KeyAction::Hold),
+    );
+
+    inputs.register_default_mousebind(
         "RightMouseClick",
         MouseBind::new(MouseButton::Right, KeyAction::Hold),
     );
@@ -202,6 +205,11 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     inputs.register_default_keybind(
         "Jump",
         KeyBind::new(PhysicalKey::Code(KeyCode::Space), KeyAction::Press),
+    );
+
+    inputs.register_default_keybind(
+        "FocusObject",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
     );
 
     Ok(())

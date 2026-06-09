@@ -15,10 +15,10 @@ object_window:
 viewport:
   pos:
   - 0.0
-  - 48.0
+  - 0.0
   size:
   - 1266.0
-  - 923.78125
+  - 1397.4688
 viewport_open: true
 object_window_open: true
 cell_open: true

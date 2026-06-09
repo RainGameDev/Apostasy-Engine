@@ -29,7 +29,10 @@ impl Default for ViewportInfo {
 }
 
 use super::EditorStyle;
-use crate::ui::shared::{WindowLayout, save_layout};
+use crate::{
+    objects::editor_camera::EditorCameraSettings,
+    ui::shared::{WindowLayout, save_layout},
+};
 
 #[update(mode = "editor")]
 pub fn viewport(world: &mut World) -> Result<()> {
@@ -37,14 +40,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.insert_resource(ViewportInfo::default());
     }
 
-    if !world.has_resource::<WindowLayout>() {
-        return Ok(());
-    }
-
-    if !world
+    let is_open = world
         .get_resource::<ViewportInfo>()
         .map(|v| v.open)
-        .unwrap_or(true)
+        .unwrap_or(true);
+    if !is_open
+        || !world.has_resource::<WindowLayout>()
+        || !world.has_resource::<EditorCameraSettings>()
     {
         return Ok(());
     }
@@ -54,15 +56,8 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .get_resource::<EditorStyle>()
         .cloned()
         .unwrap_or_default();
-    let layout = world.get_resource::<WindowLayout>().ok();
-    let state = if let Some(layout) = layout {
-        layout.viewport.clone()
-    } else {
-        return Ok(());
-    };
-
-    let pos = state.to_pos();
-    let size = state.to_size();
+    let state = world.get_resource::<WindowLayout>()?.viewport.clone();
+    let (pos, size) = (state.to_pos(), state.to_size());
 
     let mut window = Window::new("Viewport")
         .default_pos(pos)
@@ -76,15 +71,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
         viewport_info.needs_layout_restore = false;
     }
 
-    let available_options = world
-        .get_resource::<AntiAliasing>()
-        .unwrap()
-        .available_options
-        .clone();
-    let anti_aliasing = world.get_resource_mut::<AntiAliasing>().unwrap();
-    let aa_before = anti_aliasing.amount;
-    let mut aa_selected = anti_aliasing.amount;
+    let (available_options, aa_before, mut aa_selected) = {
+        let aa = world.get_resource::<AntiAliasing>().unwrap();
+        (aa.available_options.clone(), aa.amount, aa.amount)
+    };
 
+    let mut camera_speed = world
+        .get_resource::<EditorCameraSettings>()
+        .unwrap()
+        .move_speed;
     let mut frame_rect_out = None;
     let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
     let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
@@ -107,8 +102,14 @@ pub fn viewport(world: &mut World) -> Result<()> {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
             );
             bar.add_space(6.0);
+
+            // "Super Sampling"
+
             bar.label("Resolution scale");
             bar.add(Slider::new(&mut viewport_size.supersample, 1.0..=4.0).text("SSAA"));
+
+            // Anti Aliasing
+
             ComboBox::from_label("MSAA")
                 .selected_text(format!("{:?}", aa_selected))
                 .show_ui(&mut bar, |ui| {
@@ -124,6 +125,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         }
                     }
                 });
+
+            // camera speed
+
+            bar.label("Camera Speed");
+            bar.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
+
+            // Some othershit idc
 
             let available_size = ui.available_size();
             ui.separator();
@@ -184,6 +192,11 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.get_resource_mut::<AntiAliasing>().unwrap().amount = aa_selected;
         world.insert_resource(UpdateRenderer);
     }
+
+    world
+        .get_resource_mut::<EditorCameraSettings>()
+        .unwrap()
+        .move_speed = camera_speed;
 
     Ok(())
 }

@@ -1,35 +1,77 @@
 use apostasy_core::{
     anyhow::Result,
-    cgmath::Vector3,
-    objects::systems::DeltaTime,
+    cgmath::{Vector3, num_traits::clamp},
     objects::{
-        components::transform::Transform, resources::input_manager::InputManager, world::World,
+        components::transform::{self, Transform},
+        resources::input_manager::InputManager,
+        systems::DeltaTime,
+        world::World,
     },
     rendering::components::camera::EditorCamera,
     update,
 };
+use apostasy_macros::Resource;
 
-use crate::ui::viewport_panel::ViewportInfo;
+use crate::{
+    systems::object_focus::IsObjectFocused,
+    ui::{cell_panel::CellSearchState, viewport_panel::ViewportInfo},
+};
+
+#[derive(Resource, Clone)]
+pub struct EditorCameraSettings {
+    pub move_speed: f32,
+}
+
+impl Default for EditorCameraSettings {
+    fn default() -> Self {
+        Self { move_speed: 5.0 }
+    }
+}
 
 #[update(mode = "editor")]
 pub fn editor_camera_move(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());
     }
-    let viewport_info = world.get_resource::<ViewportInfo>()?;
+    let viewport_info = world.get_resource::<ViewportInfo>()?.clone();
 
+    if !world.has_resource::<EditorCameraSettings>() {
+        world.insert_resource(EditorCameraSettings::default());
+    }
+    let editor_camera_settings = world.get_resource::<EditorCameraSettings>()?.clone();
+
+    let is_object_focused = world.has_resource::<IsObjectFocused>();
+
+    // inputs
     let inputs = world.get_resource::<InputManager>().unwrap();
     let is_looking = inputs.is_mousebind_active("RightMouseClick");
+    let is_middle_mouse = inputs.is_mousebind_active("MiddleMouseClick");
+    let mouse_delta = inputs.mouse_delta;
+    let scroll_delta = inputs.scroll_delta;
+    let direction = inputs.input_vector_2d("Left", "Right", "Backwards", "Forwards");
+    let delta = world.get_resource::<DeltaTime>()?.0;
+
+    // camera
+    let camera = world.get_object_with_tag_mut::<EditorCamera>()?;
+    let cam_transform = camera.get_component_mut::<Transform>()?;
+
+    if is_middle_mouse {
+        if !is_object_focused {
+            cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
+            cam_transform.local_euler_angles.x =
+                cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
+            cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+        }
+
+        let current_transform = cam_transform.clone();
+        let wish_dir =
+            current_transform.global_rotation * Vector3::new(scroll_delta.0, 0.0, scroll_delta.1);
+        cam_transform.local_position -= wish_dir * 3000.0 * delta;
+    }
 
     if !viewport_info.is_hovered || !is_looking {
         return Ok(());
     }
-
-    let mouse_delta = inputs.mouse_delta;
-    let direction = inputs.input_vector_2d("Left", "Right", "Backwards", "Forwards");
-    let delta = world.get_resource::<DeltaTime>()?.0;
-    let camera = world.get_object_with_tag_mut::<EditorCamera>()?;
-    let cam_transform = camera.get_component_mut::<Transform>()?;
 
     cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
     cam_transform.local_euler_angles.x = cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
@@ -37,7 +79,17 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
 
     let current_transform = cam_transform.clone();
     let wish_dir = current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
-    cam_transform.local_position += wish_dir * 3.0 * delta;
+    cam_transform.local_position += wish_dir * editor_camera_settings.move_speed * delta;
+
+    world.remove_resource::<IsObjectFocused>();
+
+    if is_looking && scroll_delta.1 != 0.0 {
+        world.get_resource_mut::<EditorCameraSettings>()?.move_speed = clamp(
+            world.get_resource::<EditorCameraSettings>()?.move_speed + scroll_delta.1 * 5.0,
+            1.0,
+            256.0,
+        );
+    }
 
     Ok(())
 }

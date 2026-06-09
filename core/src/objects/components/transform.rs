@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_macros::{Component, update};
-use cgmath::{Deg, Euler, Quaternion, Rotation, Vector3};
+use cgmath::{Deg, Euler, InnerSpace, Matrix3, Quaternion, Rotation, Rotation3, Vector3};
 
 use crate::{
     objects::{component::Inspect, scene::ObjectId, world::World},
@@ -63,6 +63,52 @@ impl Transform {
     }
     pub fn calculate_global_right(&self) -> Vector3<f32> {
         self.global_rotation.rotate_vector(RIGHT)
+    }
+
+    /// Orbits the object around `pivot` by `angle_deg` degrees along `axis` in world space
+    /// Updates both position and orientation, roll is preserved (usually zero)
+    pub fn rotate_around(&mut self, pivot: Vector3<f32>, axis: Vector3<f32>, angle_deg: f32) {
+        let q = Quaternion::from_axis_angle(axis.normalize(), Deg(angle_deg));
+
+        let offset = self.local_position - pivot;
+        self.local_position = pivot + q.rotate_vector(offset);
+
+        let new_q = (q * self.local_rotation).normalize();
+
+        // Extract YXZ Euler angles matching the Ry*Rx*Rz composition in transform_update
+        // Matrix is column-major: m[col][row]. Derived from expanding Ry Rx Rz
+        //   m[2][1] = sin(x),  m[2][0] = -cx sy,  m[2][2] = cx cy
+        //   m[0][1] = cx sz,   m[1][1] = cx cz
+        let m = Matrix3::from(new_q);
+        let sin_x = m[2][1].clamp(-1.0, 1.0);
+        let x = sin_x.asin();
+        let cos_x = x.cos();
+        let (y, z) = if cos_x.abs() > 1e-6 {
+            ((-m[2][0]).atan2(m[2][2]), m[0][1].atan2(m[1][1]))
+        } else if sin_x > 0.0 {
+            // Gimbal lock x ~= +90(degrees) y-z collapses, absorb into y
+            (m[1][0].atan2(m[0][0]), 0.0)
+        } else {
+            // Gimbal lock x ~= -90(degrees) y+z collapses, absorb into y
+            ((-m[1][0]).atan2(m[0][0]), 0.0)
+        };
+        self.local_rotation = new_q;
+        self.local_euler_angles = Vector3::new(x.to_degrees(), y.to_degrees(), z.to_degrees());
+    }
+
+    /// Rotates the position so it's forward axis points towards the target in worldspace
+    /// Roll is always zeroed
+    pub fn look_at(&mut self, target: Vector3<f32>) {
+        let delta = target - self.global_position;
+        let len = delta.magnitude();
+        if len < f32::EPSILON {
+            return;
+        }
+        let dir = delta / len;
+
+        let pitch = dir.y.asin().to_degrees();
+        let yaw = (-dir.x).atan2(-dir.z).to_degrees();
+        self.local_euler_angles = Vector3::new(pitch, yaw, 0.0);
     }
 }
 

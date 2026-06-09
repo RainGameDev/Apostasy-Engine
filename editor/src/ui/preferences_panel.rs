@@ -5,10 +5,6 @@ use apostasy_macros::Resource;
 
 use super::{EditorStyle, style::Theme};
 
-// ---------------------------------------------------------------------------
-// Persistent preferences — saved to / loaded from disk
-// ---------------------------------------------------------------------------
-
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct EditorPreferences {
     pub theme: Theme,

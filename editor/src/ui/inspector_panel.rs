@@ -43,7 +43,10 @@ impl Default for InspectorPanelState {
 #[update(mode = "editor")]
 pub fn inspector(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
 
     if !world.has_resource::<ComponentPickerState>() {
         world.insert_resource(ComponentPickerState::default());
@@ -314,28 +317,26 @@ pub fn inspector(world: &mut World) -> Result<()> {
             }
         });
 
-    if let Some(response) = window {
-        if let Ok(state) = world.get_resource_mut::<InspectorPanelState>() {
-            state.window_pos = Some(response.response.rect.min);
-            state.window_size = Some(response.response.rect.size());
-        }
+    if let Some(response) = window
+        && let Ok(state) = world.get_resource_mut::<InspectorPanelState>()
+    {
+        state.window_pos = Some(response.response.rect.min);
+        state.window_size = Some(response.response.rect.size());
     }
 
-    if let Some(type_id) = component_to_remove {
-        if let Some(id) = selected_id {
-            if let Some(obj) = world.get_object_mut(id) {
-                obj.remove_component_by_type_id(type_id);
-            }
-        }
+    if let Some(type_id) = component_to_remove
+        && let Some(id) = selected_id
+        && let Some(obj) = world.get_object_mut(id)
+    {
+        obj.remove_component_by_type_id(type_id);
     }
 
-    if to_paste_component {
-        if let Some(id) = selected_id {
-            if let Some(obj) = world.get_object_mut(id) {
-                dbg!(component_to_copy.clone());
-                obj.add_boxed_component(copied_component.clone().unwrap());
-            }
-        }
+    if to_paste_component
+        && let Some(id) = selected_id
+        && let Some(obj) = world.get_object_mut(id)
+    {
+        dbg!(component_to_copy.clone());
+        obj.add_boxed_component(copied_component.clone().unwrap());
     }
 
     if let Ok(state) = world.get_resource_mut::<ComponentPickerState>() {
@@ -346,14 +347,12 @@ pub fn inspector(world: &mut World) -> Result<()> {
         }
     }
 
-    if let Some(name) = component_to_add {
-        if let Some(id) = selected_id {
-            if let Some(obj) = world.get_object_mut(id) {
-                if let Err(e) = obj.add_component_by_name(&name) {
-                    log_warn!("Failed to add component '{}': {}", name, e);
-                }
-            }
-        }
+    if let Some(name) = component_to_add
+        && let Some(id) = selected_id
+        && let Some(obj) = world.get_object_mut(id)
+        && let Err(e) = obj.add_component_by_name(&name)
+    {
+        log_warn!("Failed to add component '{}': {}", name, e);
     }
 
     if let Ok(state) = world.get_resource_mut::<InspectorPanelState>() {
