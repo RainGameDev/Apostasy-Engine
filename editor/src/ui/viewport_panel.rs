@@ -11,10 +11,21 @@ use apostasy_core::{
 };
 use apostasy_macros::Resource;
 
-#[derive(Resource, Clone, Default)]
+#[derive(Resource, Clone)]
 pub struct ViewportInfo {
     pub is_hovered: bool,
     pub needs_layout_restore: bool,
+    pub open: bool,
+}
+
+impl Default for ViewportInfo {
+    fn default() -> Self {
+        Self {
+            is_hovered: false,
+            needs_layout_restore: false,
+            open: true,
+        }
+    }
 }
 
 use super::DARK_BG;
@@ -27,6 +38,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
     }
 
     if !world.has_resource::<WindowLayout>() {
+        return Ok(());
+    }
+
+    if !world.get_resource::<ViewportInfo>().map(|v| v.open).unwrap_or(true) {
         return Ok(());
     }
 
