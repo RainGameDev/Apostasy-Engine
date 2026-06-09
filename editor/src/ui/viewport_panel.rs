@@ -41,12 +41,19 @@ pub fn viewport(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    if !world.get_resource::<ViewportInfo>().map(|v| v.open).unwrap_or(true) {
+    if !world
+        .get_resource::<ViewportInfo>()
+        .map(|v| v.open)
+        .unwrap_or(true)
+    {
         return Ok(());
     }
 
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
     let layout = world.get_resource::<WindowLayout>().ok();
     let state = if let Some(layout) = layout {
         layout.viewport.clone()
@@ -89,31 +96,37 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .drag_area(egui::WindowDrag::TitleBar)
         .frame(style.window_frame(&ctx))
         .show(&ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Resolution scale");
-                ui.add(Slider::new(&mut viewport_size.supersample, 1.0..=4.0).text("SSAA"));
-
-                ComboBox::from_label("MSAA")
-                    .selected_text(format!("{:?}", aa_selected))
-                    .show_ui(ui, |ui| {
-                        let options = [
-                            (AntiAliasingAmount::X0, "None"),
-                            (AntiAliasingAmount::X2, "X2"),
-                            (AntiAliasingAmount::X4, "X4"),
-                            (AntiAliasingAmount::X8, "X8"),
-                        ];
-
-                        for (amount, label) in options {
-                            if available_options.contains(&amount) {
-                                ui.selectable_value(&mut aa_selected, amount, label);
-                            }
+            let bar_h = style.header_height();
+            let (bar_rect, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), bar_h),
+                egui::Sense::hover(),
+            );
+            let mut bar = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(bar_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            bar.add_space(6.0);
+            bar.label("Resolution scale");
+            bar.add(Slider::new(&mut viewport_size.supersample, 1.0..=4.0).text("SSAA"));
+            ComboBox::from_label("MSAA")
+                .selected_text(format!("{:?}", aa_selected))
+                .show_ui(&mut bar, |ui| {
+                    let options = [
+                        (AntiAliasingAmount::X0, "None"),
+                        (AntiAliasingAmount::X2, "X2"),
+                        (AntiAliasingAmount::X4, "X4"),
+                        (AntiAliasingAmount::X8, "X8"),
+                    ];
+                    for (amount, label) in options {
+                        if available_options.contains(&amount) {
+                            ui.selectable_value(&mut aa_selected, amount, label);
                         }
-                    });
-            });
-
-            ui.separator();
+                    }
+                });
 
             let available_size = ui.available_size();
+            ui.separator();
             if available_size.x <= 0.0 || available_size.y <= 0.0 {
                 return;
             }

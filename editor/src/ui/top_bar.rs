@@ -9,6 +9,7 @@ use crate::ui::assets_panel::ObjectWindowState;
 use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::PreferencesState;
+use crate::ui::shared::{WindowLayout, save_layout};
 use crate::ui::viewport_panel::ViewportInfo;
 use crate::ui::EditorStyle;
 
@@ -121,6 +122,21 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     if toggle_inspector {
         if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
             s.visible = !s.visible;
+        }
+    }
+    if toggle_viewport || toggle_object_window || toggle_cell || toggle_inspector {
+        let viewport_open      = world.get_resource::<ViewportInfo>().map(|s| s.open).unwrap_or(true);
+        let object_window_open = world.get_resource::<ObjectWindowState>().map(|s| s.open).unwrap_or(true);
+        let cell_open          = world.get_resource::<CellSearchState>().map(|s| s.open).unwrap_or(true);
+        let inspector_visible  = world.get_resource::<InspectorPanelState>().map(|s| s.visible).unwrap_or(false);
+        if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
+            layout.viewport_open      = viewport_open;
+            layout.object_window_open = object_window_open;
+            layout.cell_open          = cell_open;
+            layout.inspector_visible  = inspector_visible;
+        }
+        if let Ok(layout) = world.get_resource::<WindowLayout>() {
+            save_layout(layout);
         }
     }
     if toggle_preferences {

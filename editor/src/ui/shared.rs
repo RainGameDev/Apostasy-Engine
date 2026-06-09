@@ -23,11 +23,23 @@ impl NormalizedWindow {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Resource, Serialize, Debug, Deserialize)]
 pub struct WindowLayout {
     pub cell_search: NormalizedWindow,
     pub object_window: NormalizedWindow,
     pub viewport: NormalizedWindow,
+    #[serde(default = "default_true")]
+    pub viewport_open: bool,
+    #[serde(default = "default_true")]
+    pub object_window_open: bool,
+    #[serde(default = "default_true")]
+    pub cell_open: bool,
+    #[serde(default)]
+    pub inspector_visible: bool,
 }
 
 impl Default for WindowLayout {
@@ -45,6 +57,10 @@ impl Default for WindowLayout {
                 pos: [960.0, 54.0],
                 size: [960.0, 540.0],
             },
+            viewport_open: true,
+            object_window_open: true,
+            cell_open: true,
+            inspector_visible: false,
         }
     }
 }

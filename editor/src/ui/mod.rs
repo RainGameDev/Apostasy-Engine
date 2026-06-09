@@ -17,13 +17,35 @@ pub mod top_bar;
 pub mod ui_manager;
 pub mod viewport_panel;
 
+use assets_panel::ObjectWindowState;
+use cell_panel::CellSearchState;
+use inspector_panel::InspectorPanelState;
 use preferences_panel::EditorPreferences;
+use viewport_panel::ViewportInfo;
 
 #[start(mode = "all")]
 pub fn init(world: &mut World) -> Result<()> {
     world.remove_resource::<WindowLayout>();
-    world.insert_resource(load_layout());
-    dbg!(world.get_resource::<WindowLayout>().unwrap());
+    let layout = load_layout();
+
+    world.insert_resource(ViewportInfo {
+        open: layout.viewport_open,
+        ..Default::default()
+    });
+    world.insert_resource(ObjectWindowState {
+        open: layout.object_window_open,
+        ..Default::default()
+    });
+    world.insert_resource(CellSearchState {
+        open: layout.cell_open,
+        ..Default::default()
+    });
+    world.insert_resource(InspectorPanelState {
+        visible: layout.inspector_visible,
+        ..Default::default()
+    });
+
+    world.insert_resource(layout);
 
     let prefs = EditorPreferences::load();
     let mut style = EditorStyle::from_theme(prefs.theme);
