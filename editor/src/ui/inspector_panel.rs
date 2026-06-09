@@ -94,6 +94,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
         let mut to_paste_component: bool = false;
 
         Window::new(label_text)
+            .order(egui::Order::Foreground)
             .frame(
                 egui::Frame::window(&ctx.global_style())
                     .fill(DARK_BG)
@@ -117,7 +118,9 @@ pub fn inspector(world: &mut World) -> Result<()> {
                     .id_salt("inspector_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for (component, (type_id, f)) in obj.get_components_mut().into_iter().zip(fns) {
+                        for (component, (type_id, f)) in
+                            obj.get_components_mut().into_iter().zip(fns)
+                        {
                             egui::Frame::new()
                                 .fill(PANEL_BG)
                                 .stroke(Stroke::new(1.0, DIV_COL))
@@ -135,27 +138,39 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                             ui.set_min_width(196.0);
                                             ui.separator();
                                             if ui
-                                                .add_sized(DRAG_SIZE, egui::Button::new("Remove Component"))
+                                                .add_sized(
+                                                    DRAG_SIZE,
+                                                    egui::Button::new("Remove Component"),
+                                                )
                                                 .clicked()
                                             {
                                                 component_to_remove = Some(type_id);
                                             }
 
                                             if ui
-                                                .add_sized(DRAG_SIZE, egui::Button::new("Copy Component"))
+                                                .add_sized(
+                                                    DRAG_SIZE,
+                                                    egui::Button::new("Copy Component"),
+                                                )
                                                 .clicked()
                                             {
                                                 component_to_copy = Some(component.clone());
                                             }
                                             if ui
-                                                .add_sized(DRAG_SIZE, egui::Button::new("Cut Component"))
+                                                .add_sized(
+                                                    DRAG_SIZE,
+                                                    egui::Button::new("Cut Component"),
+                                                )
                                                 .clicked()
                                             {
                                                 component_to_remove = Some(type_id);
                                                 component_to_copy = Some(component.clone());
                                             }
                                             if ui
-                                                .add_sized(DRAG_SIZE, egui::Button::new("Paste Component"))
+                                                .add_sized(
+                                                    DRAG_SIZE,
+                                                    egui::Button::new("Paste Component"),
+                                                )
                                                 .clicked()
                                             {
                                                 if copied_component.is_some() {
