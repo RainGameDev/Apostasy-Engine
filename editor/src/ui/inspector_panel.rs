@@ -9,12 +9,12 @@ use apostasy_core::{
         fmt_key,
         world::World,
     },
-    ui::{DIV_COL, DRAG_SIZE, ui_context::EguiContext},
+    ui::{DRAG_SIZE, ui_context::EguiContext},
     update,
 };
 use apostasy_macros::Resource;
 
-use crate::ui::{DARK_BG, PANEL_BG, cell_panel::CellSearchState};
+use crate::ui::{EditorStyle, cell_panel::CellSearchState};
 
 #[derive(Resource, Default, Clone)]
 pub struct ComponentPickerState {
@@ -43,6 +43,7 @@ impl Default for InspectorPanelState {
 #[update(mode = "editor")]
 pub fn inspector(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
 
     if !world.has_resource::<ComponentPickerState>() {
         world.insert_resource(ComponentPickerState::default());
@@ -135,17 +136,12 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .id(egui::Id::new("inspector_window"))
         .open(&mut visible)
         .order(egui::Order::Foreground)
-        .frame(
-            egui::Frame::window(&ctx.global_style())
-                .fill(DARK_BG)
-                .outer_margin(Margin::same(0))
-                .inner_margin(Margin {
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    top: 0,
-                }),
-        );
+        .frame(style.window_frame(&ctx).inner_margin(Margin {
+            left: 8,
+            right: 8,
+            bottom: 8,
+            top: 0,
+        }));
 
     if let (Some(pos), Some(size)) = (window_pos, window_size) {
         window = window.default_rect(Rect::from_min_size(pos, size.min(max_size)));
@@ -175,8 +171,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                 obj.get_components_mut().into_iter().zip(fns)
                             {
                                 egui::Frame::new()
-                                    .fill(PANEL_BG)
-                                    .stroke(Stroke::new(1.0, DIV_COL))
+                                    .fill(style.panel_bg)
+                                    .stroke(Stroke::new(1.0, style.div_col))
                                     .corner_radius(4.0)
                                     .inner_margin(4.0)
                                     .show(ui, |ui| {
@@ -260,7 +256,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
 
             if new_picker_open {
                 egui::Frame::popup(&ctx.global_style())
-                    .fill(DARK_BG)
+                    .fill(style.dark_bg)
                     .show(ui, |ui| {
                         let popup_width = ui.available_width().max(280.0);
                         ui.set_min_width(popup_width);

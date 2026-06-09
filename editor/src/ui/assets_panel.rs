@@ -1,9 +1,9 @@
 use super::shared::{WindowLayout, save_layout};
-use super::{DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, ROW_ALT, SEL_BG, TEXT_COL};
+use super::EditorStyle;
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::egui::{
-    Color32, CursorIcon, FontId, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
+    Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
 };
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
@@ -170,6 +170,7 @@ impl ObjectWindowState {
 #[update(mode = "editor")]
 pub fn object_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
     if world.get_resource::<ObjectWindowState>().is_err() {
         world.insert_resource(ObjectWindowState::default());
     }
@@ -221,11 +222,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
     let window = window
         .resizable(true)
         .movable(true)
-        .frame(
-            egui::Frame::window(&ctx.global_style())
-                .fill(DARK_BG)
-                .inner_margin(Margin::same(0)),
-        )
+        .frame(style.window_frame(&ctx))
         .show(&ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
 
@@ -235,22 +232,22 @@ pub fn object_window(world: &mut World) -> Result<()> {
             let total_w = ui.available_width();
             let count_w = (total_w - filter_w - edid_w - name_w).max(50.0);
             let table_w = edid_w + name_w + count_w;
-            let header_h = 26.0;
-            let row_h = 20.0;
+            let header_h = style.header_height();
+            let row_h = style.row_height();
 
             // header bar
             let (header_rect, _) =
                 ui.allocate_exact_size(Vec2::new(total_w, header_h), Sense::hover());
-            ui.painter().rect_filled(header_rect, 0.0, HEADER_BG);
+            ui.painter().rect_filled(header_rect, 0.0, style.header_bg);
 
-            let font_hdr = egui::FontId::proportional(13.0);
+            let font_hdr = style.font_ui();
 
             ui.painter().text(
                 Pos2::new(header_rect.left() + 6.0, header_rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 "Filter",
                 font_hdr.clone(),
-                TEXT_COL,
+                style.text_col,
             );
             ui.add_sized(
                 Vec2::new(filter_w, 18.0),
@@ -312,13 +309,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     col_w - 12.0,
                     &format!("{}{}", label, arrow),
                     font_hdr.clone(),
-                    TEXT_COL,
+                    style.text_col,
                 );
             }
 
             ui.painter().line_segment(
                 [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(1.0, DIV_COL),
+                Stroke::new(1.0, style.div_col),
             );
 
             // body
@@ -375,7 +372,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             Pos2::new(left_rect.left(), sep_y),
                             Pos2::new(left_rect.right(), sep_y),
                         ],
-                        Stroke::new(1.0, DIV_COL),
+                        Stroke::new(1.0, style.div_col),
                     );
                     ui.add_space(3.0);
 
@@ -384,10 +381,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         &object_window_resource.filter_tree.clone(),
                         0,
                         &object_window_resource.selected_filter,
-                        TEXT_COL,
-                        DIM_COL,
-                        SEL_BG,
+                        style.text_col,
+                        style.dim_col,
+                        style.sel_bg,
                         filter_w,
+                        style.row_height(),
+                        style.font_ui(),
+                        style.font_small(),
                         &mut toggle_path,
                         &mut select_path,
                     );
@@ -405,7 +405,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     Pos2::new(left_rect.right(), left_rect.top()),
                     Pos2::new(left_rect.right(), left_rect.bottom()),
                 ],
-                Stroke::new(1.0, DIV_COL),
+                Stroke::new(1.0, style.div_col),
             );
 
             // parse filter string
@@ -483,20 +483,20 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         }
 
                         let bg = if is_selected {
-                            SEL_BG
+                            style.sel_bg
                         } else if row_resp.hovered() {
-                            HOVER_BG
+                            style.hover_bg
                         } else if idx % 2 == 0 {
-                            DARK_BG
+                            style.dark_bg
                         } else {
-                            ROW_ALT
+                            style.row_alt
                         };
 
                         ui.painter().rect_filled(row_rect, 0.0, bg);
 
                         let rl = row_rect.left();
                         let cy = row_rect.center().y;
-                        let fnt = egui::FontId::proportional(12.0);
+                        let fnt = style.font_ui();
 
                         paint_clipped(
                             ui,
@@ -504,7 +504,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             edid_w - 12.0,
                             &entry.editor_id,
                             fnt.clone(),
-                            DIM_COL,
+                            style.dim_col,
                         );
                         paint_clipped(
                             ui,
@@ -512,7 +512,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             name_w - 12.0,
                             &entry.name,
                             fnt.clone(),
-                            DIM_COL,
+                            style.dim_col,
                         );
                         paint_clipped(
                             ui,
@@ -520,7 +520,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             count_w - 12.0,
                             &entry.count.to_string(),
                             fnt.clone(),
-                            DIM_COL,
+                            style.dim_col,
                         );
 
                         ui.painter().line_segment(
@@ -533,7 +533,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                     Pos2::new(rl + offset, row_rect.top()),
                                     Pos2::new(rl + offset, row_rect.bottom()),
                                 ],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
                         }
                     }
@@ -546,9 +546,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     for i in 0..remaining_rows {
                         let idx = rows_drawn + i;
                         let bg = if idx.is_multiple_of(2) {
-                            DARK_BG
+                            style.dark_bg
                         } else {
-                            ROW_ALT
+                            style.row_alt
                         };
                         let (row_rect, _) =
                             ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::hover());
@@ -565,7 +565,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                     Pos2::new(rl + offset, row_rect.top()),
                                     Pos2::new(rl + offset, row_rect.bottom()),
                                 ],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
                         }
                     }
@@ -632,10 +632,12 @@ pub fn draw_tree(
     dim_col: Color32,
     sel_bg: Color32,
     panel_w: f32,
+    row_h: f32,
+    font: egui::FontId,
+    font_arrow: egui::FontId,
     toggle_path: &mut Option<Vec<String>>,
     select_path: &mut Option<Option<Vec<String>>>,
 ) {
-    let row_h = 20.0;
     let indent_px = depth as f32 * 14.0 + 6.0;
 
     for node in nodes {
@@ -672,7 +674,7 @@ pub fn draw_tree(
                 Pos2::new(row_rect.left() + indent_px, cy),
                 egui::Align2::LEFT_CENTER,
                 if node.expanded { "▼" } else { "▶" },
-                egui::FontId::proportional(9.0),
+                font_arrow.clone(),
                 col,
             );
         }
@@ -684,7 +686,7 @@ pub fn draw_tree(
             Pos2::new(label_x, cy),
             max_w,
             &node.label,
-            egui::FontId::proportional(12.0),
+            font.clone(),
             col,
         );
 
@@ -701,6 +703,9 @@ pub fn draw_tree(
                 dim_col,
                 sel_bg,
                 panel_w,
+                row_h,
+                font.clone(),
+                font_arrow.clone(),
                 toggle_path,
                 select_path,
             );

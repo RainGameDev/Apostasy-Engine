@@ -1,5 +1,5 @@
 use anyhow::Result;
-use apostasy_core::egui::{Color32, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
+use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
 use apostasy_core::objects::scene::ObjectId;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::{Object, fmt_key};
@@ -9,10 +9,8 @@ use apostasy_macros::Resource;
 
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
-use super::{
-    DARK_BG, DIM_COL, DIV_COL, HEADER_BG, HOVER_BG, PANEL_BG, ROW_ALT, SEL_BG, TEXT_COL,
-};
 use super::shared::{WindowLayout, save_layout};
+use super::EditorStyle;
 
 #[derive(Clone)]
 pub struct CellEntry {
@@ -84,6 +82,7 @@ impl Default for CellSearchState {
 #[update(mode = "editor")]
 pub fn cell_search(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
 
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
@@ -129,10 +128,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let mut pending_add = false;
     let mut object_to_copy: Option<Object> = None;
 
-    let row_h = 20.0;
-    let header_h = 26.0;
-    let font_hdr = egui::FontId::proportional(13.0);
-    let font_row = egui::FontId::proportional(12.0);
+    let row_h = style.row_height();
+    let header_h = style.header_height();
+    let font_hdr = style.font_ui();
+    let font_row = style.font_ui();
 
     // get the window layout info
     let layout = world.get_resource::<WindowLayout>().ok();
@@ -154,11 +153,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let window = window
         .resizable(true)
         .movable(true)
-        .frame(
-            egui::Frame::window(&ctx.global_style())
-                .fill(DARK_BG)
-                .inner_margin(Margin::same(0)),
-        )
+        .frame(style.window_frame(&ctx))
         .show(&ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
 
@@ -182,8 +177,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                     left.spacing_mut().item_spacing = Vec2::ZERO;
 
                     let frame = egui::Frame::new()
-                        .fill(PANEL_BG)
-                        .stroke(Stroke::new(1.0, DIV_COL))
+                        .fill(style.panel_bg)
+                        .stroke(Stroke::new(1.0, style.div_col))
                         .corner_radius(4.0)
                         .inner_margin(4.0)
                         .show(&mut left, |ui| {
@@ -201,18 +196,18 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     sw: 0,
                                     se: 0,
                                 },
-                                HEADER_BG,
+                                style.header_bg,
                             );
                             ui.painter().text(
                                 title_rect.center(),
                                 egui::Align2::CENTER_CENTER,
                                 "Cell Search",
                                 font_hdr.clone(),
-                                TEXT_COL,
+                                style.text_col,
                             );
                             ui.painter().line_segment(
                                 [title_rect.left_bottom(), title_rect.right_bottom()],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
 
                             // search box
@@ -220,7 +215,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.horizontal(|ui| {
                                 ui.add_space(4.0);
                                 ui.add_sized(
-                                    Vec2::new(avail_w - 8.0, 20.0),
+                                    Vec2::new(avail_w - 8.0, row_h),
                                     egui::TextEdit::singleline(&mut pending_cell_filter)
                                         .hint_text("Placeholder..."),
                                 )
@@ -238,7 +233,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     Pos2::new(ui.cursor().min.x, ui.cursor().min.y),
                                     Pos2::new(ui.cursor().min.x + avail_w, ui.cursor().min.y),
                                 ],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
 
                             // column widths
@@ -249,7 +244,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             // column headers
                             let (hdr_rect, _) = ui
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
-                            ui.painter().rect_filled(hdr_rect, 0.0, HEADER_BG);
+                            ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
                             for (label, offset) in [
                                 ("EditorID", 0.0_f32),
                                 ("Name", eid_w),
@@ -260,12 +255,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     egui::Align2::LEFT_CENTER,
                                     label,
                                     font_hdr.clone(),
-                                    TEXT_COL,
+                                    style.text_col,
                                 );
                             }
                             ui.painter().line_segment(
                                 [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
                             for offset in [eid_w, eid_w + name_w] {
                                 ui.painter().line_segment(
@@ -273,7 +268,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         Pos2::new(hdr_rect.left() + offset, hdr_rect.top()),
                                         Pos2::new(hdr_rect.left() + offset, hdr_rect.bottom()),
                                     ],
-                                    Stroke::new(1.0, DIV_COL),
+                                    Stroke::new(1.0, style.div_col),
                                 );
                             }
 
@@ -322,13 +317,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             pending_selected_cell = Some(entry.editor_id.clone());
                                         }
                                         let bg = if is_sel {
-                                            SEL_BG
+                                            style.sel_bg
                                         } else if row_resp.hovered() {
-                                            HOVER_BG
+                                            style.hover_bg
                                         } else if idx % 2 == 0 {
-                                            DARK_BG
+                                            style.dark_bg
                                         } else {
-                                            ROW_ALT
+                                            style.row_alt
                                         };
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
 
@@ -340,7 +335,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             eid_w - 10.0,
                                             &entry.editor_id,
                                             font_row.clone(),
-                                            DIM_COL,
+                                            style.dim_col,
                                         );
                                         paint_clipped(
                                             ui,
@@ -348,7 +343,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             name_w - 10.0,
                                             &entry.name,
                                             font_row.clone(),
-                                            DIM_COL,
+                                            style.dim_col,
                                         );
                                         paint_clipped(
                                             ui,
@@ -356,7 +351,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             loc_w - 10.0,
                                             &entry.location,
                                             font_row.clone(),
-                                            DIM_COL,
+                                            style.dim_col,
                                         );
 
                                         ui.painter().line_segment(
@@ -369,7 +364,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                     Pos2::new(rl + offset, row_rect.top()),
                                                     Pos2::new(rl + offset, row_rect.bottom()),
                                                 ],
-                                                Stroke::new(1.0, DIV_COL),
+                                                Stroke::new(1.0, style.div_col),
                                             );
                                         }
                                     }
@@ -381,9 +376,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     for i in 0..remaining_rows {
                                         let idx = rows_drawn + i;
                                         let bg = if idx.is_multiple_of(2) {
-                                            DARK_BG
+                                            style.dark_bg
                                         } else {
-                                            ROW_ALT
+                                            style.row_alt
                                         };
                                         let (row_rect, _) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
@@ -401,7 +396,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                     Pos2::new(rl + offset, row_rect.top()),
                                                     Pos2::new(rl + offset, row_rect.bottom()),
                                                 ],
-                                                Stroke::new(1.0, DIV_COL),
+                                                Stroke::new(1.0, style.div_col),
                                             );
                                         }
                                     }
@@ -422,8 +417,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                     right.spacing_mut().item_spacing = Vec2::ZERO;
 
                     egui::Frame::new()
-                        .fill(PANEL_BG)
-                        .stroke(Stroke::new(1.0, DIV_COL))
+                        .fill(style.panel_bg)
+                        .stroke(Stroke::new(1.0, style.div_col))
                         .corner_radius(4.0)
                         .inner_margin(4.0)
                         .show(&mut right, |ui| {
@@ -441,18 +436,18 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     sw: 4,
                                     se: 4,
                                 },
-                                HEADER_BG,
+                                style.header_bg,
                             );
                             ui.painter().text(
                                 title_rect.center(),
                                 egui::Align2::CENTER_CENTER,
                                 "Object Search",
                                 font_hdr.clone(),
-                                TEXT_COL,
+                                style.text_col,
                             );
                             ui.painter().line_segment(
                                 [title_rect.left_bottom(), title_rect.right_bottom()],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
 
                             // search box
@@ -460,7 +455,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.horizontal(|ui| {
                                 ui.add_space(4.0);
                                 ui.add_sized(
-                                    Vec2::new(avail_w - 8.0, 20.0),
+                                    Vec2::new(avail_w - 8.0, row_h),
                                     egui::TextEdit::singleline(&mut pending_obj_filter)
                                         .hint_text("Placeholder..."),
                                 )
@@ -477,7 +472,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     Pos2::new(ui.cursor().min.x, ui.cursor().min.y),
                                     Pos2::new(ui.cursor().min.x + avail_w, ui.cursor().min.y),
                                 ],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
 
                             // column widths
@@ -487,26 +482,26 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             // column headers
                             let (hdr_rect, _) = ui
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
-                            ui.painter().rect_filled(hdr_rect, 0.0, HEADER_BG);
+                            ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
                             for (label, offset) in [("Obj Name", 0.0_f32), ("Id", name_w)] {
                                 ui.painter().text(
                                     Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
                                     egui::Align2::LEFT_CENTER,
                                     label,
                                     font_hdr.clone(),
-                                    TEXT_COL,
+                                    style.text_col,
                                 );
                             }
                             ui.painter().line_segment(
                                 [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
                             ui.painter().line_segment(
                                 [
                                     Pos2::new(hdr_rect.left() + name_w, hdr_rect.top()),
                                     Pos2::new(hdr_rect.left() + name_w, hdr_rect.bottom()),
                                 ],
-                                Stroke::new(1.0, DIV_COL),
+                                Stroke::new(1.0, style.div_col),
                             );
 
                             // rows
@@ -616,15 +611,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         });
 
                                         let bg = if is_sel {
-                                            SEL_BG
+                                            style.sel_bg
                                         } else if row_resp.hovered() {
-                                            HOVER_BG
+                                            style.hover_bg
                                         } else if is_clicked {
-                                            HOVER_BG
+                                            style.hover_bg
                                         } else if idx % 2 == 0 {
-                                            DARK_BG
+                                            style.dark_bg
                                         } else {
-                                            ROW_ALT
+                                            style.row_alt
                                         };
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
 
@@ -636,7 +631,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             name_w - 10.0,
                                             &entry.obj_name,
                                             font_row.clone(),
-                                            DIM_COL,
+                                            style.dim_col,
                                         );
                                         paint_clipped(
                                             ui,
@@ -644,7 +639,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             id_w - 10.0,
                                             &entry.id,
                                             font_row.clone(),
-                                            DIM_COL,
+                                            style.dim_col,
                                         );
 
                                         ui.painter().line_segment(
@@ -656,7 +651,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 Pos2::new(rl + name_w, row_rect.top()),
                                                 Pos2::new(rl + name_w, row_rect.bottom()),
                                             ],
-                                            Stroke::new(1.0, DIV_COL),
+                                            Stroke::new(1.0, style.div_col),
                                         );
                                     }
 
@@ -667,9 +662,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     for i in 0..remaining_rows {
                                         let idx = rows_drawn + i;
                                         let bg = if idx.is_multiple_of(2) {
-                                            DARK_BG
+                                            style.dark_bg
                                         } else {
-                                            ROW_ALT
+                                            style.row_alt
                                         };
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
@@ -703,7 +698,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 Pos2::new(rl + name_w, row_rect.top()),
                                                 Pos2::new(rl + name_w, row_rect.bottom()),
                                             ],
-                                            Stroke::new(1.0, DIV_COL),
+                                            Stroke::new(1.0, style.div_col),
                                         );
                                     }
                                 });

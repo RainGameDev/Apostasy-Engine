@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    egui::{self, Color32, ComboBox, Image, Label, Margin, RichText, Sense, Slider, Window},
+    egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
     objects::world::World,
     rendering::shared::{
         UpdateRenderer,
@@ -28,7 +28,7 @@ impl Default for ViewportInfo {
     }
 }
 
-use super::DARK_BG;
+use super::EditorStyle;
 use crate::ui::shared::{WindowLayout, save_layout};
 
 #[update(mode = "editor")]
@@ -46,6 +46,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
     }
 
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
     let layout = world.get_resource::<WindowLayout>().ok();
     let state = if let Some(layout) = layout {
         layout.viewport.clone()
@@ -86,11 +87,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .movable(true)
         .title_bar(true)
         .drag_area(egui::WindowDrag::TitleBar)
-        .frame(
-            egui::Frame::window(&ctx.global_style())
-                .fill(DARK_BG)
-                .inner_margin(Margin::same(0)),
-        )
+        .frame(style.window_frame(&ctx))
         .show(&ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Resolution scale");

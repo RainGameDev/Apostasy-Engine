@@ -1,18 +1,27 @@
 use anyhow::Result;
 use apostasy_core::egui::{self};
 use apostasy_core::objects::world::World;
-use apostasy_core::ui::DRAG_SIZE;
 use apostasy_core::ui::ui_context::EguiContext;
+use apostasy_core::ui::FontRegistry;
 use apostasy_core::update;
 
 use crate::ui::assets_panel::ObjectWindowState;
 use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
+use crate::ui::preferences_panel::PreferencesState;
 use crate::ui::viewport_panel::ViewportInfo;
+use crate::ui::EditorStyle;
 
 #[update(mode = "editor")]
 pub fn top_bar(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+
+    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    style.apply_to_context(&ctx);
+    if let Ok(reg) = world.get_resource_mut::<FontRegistry>() {
+        reg.apply_if_needed(&ctx);
+    }
+
     let screen_width = ctx.viewport_rect().width();
 
     let viewport_open = world
@@ -36,6 +45,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let mut toggle_object_window = false;
     let mut toggle_cell = false;
     let mut toggle_inspector = false;
+    let mut toggle_preferences = false;
 
     egui::Area::new(egui::Id::new("top_bar"))
         .fixed_pos(egui::pos2(0.0, 0.0))
@@ -43,24 +53,24 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             egui::Frame::new()
                 .fill(ui.visuals().panel_fill)
                 .show(ui, |ui| {
-                    ui.set_min_size(egui::vec2(screen_width, 40.0));
-                    let button_height = DRAG_SIZE.y;
-                    let offset = (40.0 - button_height) / 6.0;
+                    let bar_h = style.row_height() * 2.0;
+                    ui.set_min_size(egui::vec2(screen_width, bar_h));
+                    let offset = bar_h * 0.1;
                     ui.horizontal(|ui| {
                         ui.add_space(8.0);
                         ui.vertical(|ui| {
                             ui.separator();
                             ui.add_space(offset);
                             ui.horizontal(|ui| {
-                                if ui
-                                    .add(egui::Button::new("Files").min_size(DRAG_SIZE))
-                                    .clicked()
-                                {}
+                                if ui.button("Files").clicked() {}
                                 ui.add_space(8.0);
-                                if ui
-                                    .add(egui::Button::new("Edit").min_size(DRAG_SIZE))
-                                    .clicked()
-                                {}
+                                ui.menu_button("Edit", |ui| {
+                                    ui.set_min_width(120.0);
+                                    if ui.button("Preferences").clicked() {
+                                        toggle_preferences = true;
+                                        ui.close();
+                                    }
+                                });
                                 ui.add_space(8.0);
                                 ui.menu_button("View", |ui| {
                                     if ui.selectable_label(viewport_open, "Viewport").clicked() {
@@ -111,6 +121,16 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     if toggle_inspector {
         if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
             s.visible = !s.visible;
+        }
+    }
+    if toggle_preferences {
+        if let Ok(s) = world.get_resource_mut::<PreferencesState>() {
+            s.open = !s.open;
+        } else {
+            world.insert_resource(PreferencesState {
+                open: true,
+                ..Default::default()
+            });
         }
     }
 

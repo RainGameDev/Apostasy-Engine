@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Color32, Context, FontDefinitions, FontFamily};
+use egui::{Color32, Context};
 use egui_ash_renderer::{DynamicRendering, Options, Renderer};
 use egui_winit::State;
 use std::sync::Arc;
@@ -9,6 +9,8 @@ use crate::rendering::vulkan::{
     rendering_context::VulkanRenderingContext, swapchain::VulkanSwapchain,
 };
 
+pub mod fonts;
+pub use fonts::FontRegistry;
 pub mod ui_context;
 use std::sync::Mutex;
 
@@ -40,34 +42,7 @@ impl UIRenderer {
                 ..Default::default()
             },
         )?;
-        let mut fonts = FontDefinitions::default();
-
-        fonts.font_data.insert(
-            "monocraft".to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../../res/fonts/monocraft.ttc"
-            ))),
-        );
-
-        fonts
-            .families
-            .entry(FontFamily::Proportional)
-            .or_default()
-            .insert(0, "monocraft".to_owned());
-
-        fonts
-            .families
-            .entry(FontFamily::Monospace)
-            .or_default()
-            .insert(0, "monocraft".to_owned());
-
-        fonts.families.insert(
-            FontFamily::Name("monocraft".into()),
-            vec!["monocraft".to_owned()],
-        );
-
         let context = Context::default();
-        context.set_fonts(fonts);
 
         // TODO: make style
         // context.set_style(style);

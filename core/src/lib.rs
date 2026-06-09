@@ -49,6 +49,7 @@ use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
 use crate::states::ShouldExit;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
+use crate::ui::FontRegistry;
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
@@ -602,7 +603,18 @@ impl ApplicationHandler for Core {
             .get_viewport_texture_id()
             .expect("Viewport texture id missing");
 
+        let mut font_registry = FontRegistry::default();
+        // Core fonts (path baked in at compile time).
+        font_registry.load_dir(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/res/fonts"
+        )));
+        // App fonts (relative to working directory at runtime).
+        font_registry.load_dir(std::path::Path::new("res/fonts"));
+        font_registry.apply_if_needed(&egui_context);
+
         world.insert_resource(EguiContext(egui_context));
+        world.insert_resource(font_registry);
         world.insert_resource(ViewportTexture(viewport_texture_id));
         world.insert_resource(ViewportSize::default());
         world.insert_resource(context);
