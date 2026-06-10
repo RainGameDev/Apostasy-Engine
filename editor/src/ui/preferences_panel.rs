@@ -1,9 +1,21 @@
 use anyhow::Result;
-use apostasy_core::ui::FontRegistry;
-use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
+use apostasy_core::{
+    egui,
+    objects::world::World,
+    rendering::shared::{
+        UpdateRenderer,
+        anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+    },
+    ui::{
+        FontRegistry,
+        ui_context::{EguiContext, ViewportSize},
+    },
+    update,
+};
 use apostasy_macros::Resource;
 
 use super::{EditorStyle, style::Theme};
+use crate::{objects::editor_camera::EditorCameraSettings, ui::viewport_panel::EditorGraphics};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct EditorPreferences {
@@ -28,7 +40,9 @@ impl Default for EditorPreferences {
 impl EditorPreferences {
     pub const PATH: &'static str = "res/.editor/editor_preferences.yaml";
 
-    fn default_camera_speed() -> f32 { 5.0 }
+    fn default_camera_speed() -> f32 {
+        5.0
+    }
 
     pub fn load() -> Self {
         std::fs::read_to_string(Self::PATH)
@@ -54,65 +68,132 @@ impl EditorPreferences {
     }
 }
 
-struct Tab {
-    name: &'static str,
-    settings: &'static [&'static str],
+struct PageMeta {
+    label: &'static str,
+    terms: &'static [&'static str],
 }
 
-const TABS: &[Tab] = &[Tab {
-    name: "Editor",
-    settings: &["Theme", "Font", "Font Size"],
-}];
+const PAGES: &[PageMeta] = &[
+    PageMeta {
+        label: "Editor",
+        terms: &["Theme", "Font", "Font Size"],
+    },
+    PageMeta {
+        label: "Viewport",
+        terms: &["Camera Speed"],
+    },
+    PageMeta {
+        label: "Graphics",
+        terms: &["SSAA", "MSAA"],
+    },
+];
 
-fn tab_matches(tab: &Tab, query: &str) -> bool {
-    if query.is_empty() {
-        return true;
+fn page_matches(page: &PageMeta, query: &str) -> bool {
+    query.is_empty()
+        || page.label.to_lowercase().contains(query)
+        || page.terms.iter().any(|t| t.to_lowercase().contains(query))
+}
+fn draw_setting(
+    ui: &mut egui::Ui,
+    dim_col: egui::Color32,
+    name: &str,
+    query: &str,
+    draw: impl FnOnce(&mut egui::Ui),
+) {
+    if !query.is_empty() && !name.to_lowercase().contains(query) {
+        return;
     }
-    tab.name.to_lowercase().contains(query)
-        || tab
-            .settings
-            .iter()
-            .any(|s| s.to_lowercase().contains(query))
+    ui.label(egui::RichText::new(name).color(dim_col));
+    ui.add_space(4.0);
+    draw(ui);
+    ui.add_space(8.0);
 }
+// Editor tab
 
-#[derive(Resource, Clone)]
-pub struct PreferencesState {
-    pub open: bool,
-    pub selected_tab: usize,
-    pub tab_search: String,
-}
-
-impl Default for PreferencesState {
-    fn default() -> Self {
-        Self {
-            open: false,
-            selected_tab: 0,
-            tab_search: String::new(),
-        }
-    }
-}
-
-struct EditorTabPending {
+struct EditorPage {
     theme: Theme,
-    font: String,
     font_size: u8,
+    font: String,
+    available_fonts: Vec<String>,
 }
 
-impl EditorTabPending {
-    fn from_resources(style: &EditorStyle, fonts: &FontRegistry) -> Self {
+impl EditorPage {
+    fn from_world(world: &World) -> Self {
+        let style = world
+            .get_resource::<EditorStyle>()
+            .ok()
+            .cloned()
+            .unwrap_or_default();
+        let fonts = world
+            .get_resource::<FontRegistry>()
+            .ok()
+            .cloned()
+            .unwrap_or_default();
         Self {
             theme: style.theme,
-            font: fonts.active.clone(),
             font_size: style.font_size,
+            font: fonts.active,
+            available_fonts: fonts.fonts,
         }
     }
 
-    fn apply_changes(
-        &self,
-        style: &EditorStyle,
-        fonts: &FontRegistry,
-        world: &mut World,
-    ) -> Result<()> {
+    fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
+        let text_col = style.text_col;
+        let dim_col = style.dim_col;
+
+        draw_setting(ui, dim_col, "Theme", query, |ui| {
+            egui::ComboBox::from_id_salt("theme_combo")
+                .selected_text(egui::RichText::new(self.theme.label()).color(text_col))
+                .show_ui(ui, |ui| {
+                    for theme in [
+                        Theme::Dark,
+                        Theme::Light,
+                        Theme::CatppuccinMocha,
+                        Theme::CatppuccinMacchiato,
+                        Theme::CatppuccinFrappe,
+                        Theme::CatppuccinLatte,
+                        Theme::GruvboxDarkHard,
+                        Theme::GruvboxDarkMedium,
+                        Theme::GruvboxDarkSoft,
+                        Theme::GruvboxLightHard,
+                        Theme::GruvboxLightMedium,
+                        Theme::GruvboxLightSoft,
+                    ] {
+                        ui.selectable_value(&mut self.theme, theme, theme.label());
+                    }
+                });
+        });
+
+        draw_setting(ui, dim_col, "Font Size", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.font_size, 8u8..=16u8).integer());
+        });
+
+        if !self.available_fonts.is_empty() {
+            let fonts = self.available_fonts.clone();
+            draw_setting(ui, dim_col, "Font", query, |ui| {
+                egui::ComboBox::from_id_salt("font_combo")
+                    .selected_text(egui::RichText::new(self.font.as_str()).color(text_col))
+                    .show_ui(ui, |ui| {
+                        for font in &fonts {
+                            ui.selectable_value(&mut self.font, font.clone(), font.as_str());
+                        }
+                    });
+            });
+        }
+    }
+
+    fn apply(&self, world: &mut World) -> Result<()> {
+        let style = world
+            .get_resource::<EditorStyle>()
+            .ok()
+            .cloned()
+            .unwrap_or_default();
+        let fonts = world
+            .get_resource::<FontRegistry>()
+            .ok()
+            .cloned()
+            .unwrap_or_default();
+
         let style_changed = self.theme != style.theme || self.font_size != style.font_size;
         let font_changed = self.font != fonts.active;
 
@@ -137,105 +218,157 @@ impl EditorTabPending {
     }
 }
 
-struct SettingCtx<'a> {
-    ui: &'a mut egui::Ui,
-    style: &'a EditorStyle,
-    query: &'a str,
-    show_all: bool,
+// Viewport tab
+
+struct ViewportPage {
+    camera_speed: f32,
 }
 
-impl<'a> SettingCtx<'a> {
-    fn visible(&self, name: &str) -> bool {
-        self.show_all || name.to_lowercase().contains(self.query)
+impl ViewportPage {
+    fn from_world(world: &World) -> Self {
+        Self {
+            camera_speed: world
+                .get_resource::<EditorCameraSettings>()
+                .map(|s| s.move_speed)
+                .unwrap_or(5.0),
+        }
     }
 
-    fn label(&mut self, name: &str) {
-        self.ui
-            .label(egui::RichText::new(name).color(self.style.dim_col));
-        self.ui.add_space(4.0);
+    fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
+        draw_setting(ui, style.dim_col, "Camera Speed", query, |ui| {
+            ui.add(
+                egui::Slider::new(&mut self.camera_speed, 1.0_f32..=256.0)
+                    .logarithmic(true)
+                    .suffix(" m/s"),
+            );
+        });
     }
 
-    fn gap(&mut self) {
-        self.ui.add_space(8.0);
-    }
-}
-
-fn setting_theme(ctx: &mut SettingCtx, value: &mut Theme) {
-    if !ctx.visible("Theme") {
-        return;
-    }
-    ctx.label("Theme");
-    egui::ComboBox::from_id_salt("theme_combo")
-        .selected_text(egui::RichText::new(value.label()).color(ctx.style.text_col))
-        .show_ui(ctx.ui, |ui| {
-            for theme in [
-                Theme::Dark,
-                Theme::Light,
-                Theme::CatppuccinMocha,
-                Theme::CatppuccinMacchiato,
-                Theme::CatppuccinFrappe,
-                Theme::CatppuccinLatte,
-                Theme::GruvboxDarkHard,
-                Theme::GruvboxDarkMedium,
-                Theme::GruvboxDarkSoft,
-                Theme::GruvboxLightHard,
-                Theme::GruvboxLightMedium,
-                Theme::GruvboxLightSoft,
-            ] {
-                ui.selectable_value(value, theme, theme.label());
+    fn apply(&self, world: &mut World) -> Result<()> {
+        let current = world
+            .get_resource::<EditorCameraSettings>()
+            .map(|s| s.move_speed)
+            .unwrap_or(5.0);
+        if (self.camera_speed - current).abs() > f32::EPSILON {
+            if let Ok(s) = world.get_resource_mut::<EditorCameraSettings>() {
+                s.move_speed = self.camera_speed;
             }
+            EditorPreferences::save_camera_speed(self.camera_speed);
+        }
+        Ok(())
+    }
+}
+
+// Graphics tab
+
+struct GraphicsPage {
+    supersample: f32,
+    anti_aliasing: AntiAliasingAmount,
+    available_aa: Vec<AntiAliasingAmount>,
+}
+
+impl GraphicsPage {
+    fn from_world(world: &World) -> Self {
+        let (available_aa, anti_aliasing) = world
+            .get_resource::<AntiAliasing>()
+            .map(|aa| (aa.available_options.clone(), aa.amount))
+            .unwrap_or_default();
+        Self {
+            supersample: world
+                .get_resource::<ViewportSize>()
+                .map(|v| v.supersample)
+                .unwrap_or(1.0),
+            anti_aliasing,
+            available_aa,
+        }
+    }
+
+    fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
+        let (text_col, dim_col) = (style.text_col, style.dim_col);
+
+        draw_setting(ui, dim_col, "Supersampling (SSAA)", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.supersample, 1.0_f32..=4.0));
         });
-    ctx.gap();
-}
 
-fn setting_font_size(ctx: &mut SettingCtx, value: &mut u8) {
-    if !ctx.visible("Font Size") {
-        return;
+        let available = self.available_aa.clone();
+        let aa_label = match self.anti_aliasing {
+            AntiAliasingAmount::X0 => "None",
+            AntiAliasingAmount::X2 => "X2",
+            AntiAliasingAmount::X4 => "X4",
+            AntiAliasingAmount::X8 => "X8",
+        };
+        draw_setting(ui, dim_col, "Anti-Aliasing (MSAA)", query, |ui| {
+            egui::ComboBox::from_id_salt("prefs_msaa_combo")
+                .selected_text(egui::RichText::new(aa_label).color(text_col))
+                .show_ui(ui, |ui| {
+                    for (amount, label) in [
+                        (AntiAliasingAmount::X0, "None"),
+                        (AntiAliasingAmount::X2, "X2"),
+                        (AntiAliasingAmount::X4, "X4"),
+                        (AntiAliasingAmount::X8, "X8"),
+                    ] {
+                        if available.contains(&amount) {
+                            ui.selectable_value(&mut self.anti_aliasing, amount, label);
+                        }
+                    }
+                });
+        });
     }
-    ctx.label("Font Size");
 
-    ctx.ui.add(egui::Slider::new(value, 8u8..=16u8).integer());
-    ctx.gap();
-}
+    fn apply(&self, world: &mut World) -> Result<()> {
+        let (aa_cur, ss_cur) = world
+            .get_resource::<AntiAliasing>()
+            .map(|aa| {
+                (
+                    aa.amount,
+                    world
+                        .get_resource::<ViewportSize>()
+                        .map(|v| v.supersample)
+                        .unwrap_or(1.0),
+                )
+            })
+            .unwrap_or_default();
 
-fn setting_font(ctx: &mut SettingCtx, fonts: &[String], value: &mut String) {
-    if !ctx.visible("Font") || fonts.is_empty() {
-        return;
-    }
-    ctx.label("Font");
-    egui::ComboBox::from_id_salt("font_combo")
-        .selected_text(egui::RichText::new(value.as_str()).color(ctx.style.text_col))
-        .show_ui(ctx.ui, |ui| {
-            for font in fonts {
-                ui.selectable_value(value, font.clone(), font.as_str());
+        let aa_changed = self.anti_aliasing != aa_cur;
+        let ss_changed = (self.supersample - ss_cur).abs() > f32::EPSILON;
+
+        if aa_changed {
+            if let Ok(aa) = world.get_resource_mut::<AntiAliasing>() {
+                aa.amount = self.anti_aliasing;
             }
-        });
-    ctx.gap();
+            world.insert_resource(UpdateRenderer);
+        }
+        if ss_changed {
+            if let Ok(vs) = world.get_resource_mut::<ViewportSize>() {
+                vs.supersample = self.supersample;
+            }
+        }
+        if aa_changed || ss_changed {
+            EditorGraphics {
+                supersample: self.supersample,
+                anti_aliasing: self.anti_aliasing,
+            }
+            .save();
+        }
+        Ok(())
+    }
 }
 
-fn draw_editor_tab(
-    ui: &mut egui::Ui,
-    style: &EditorStyle,
-    fonts: &[String],
-    pending: &mut EditorTabPending,
-    query: &str,
-    show_all: bool,
-) {
-    ui.add_space(14.0);
-    ui.horizontal(|ui| {
-        ui.add_space(14.0);
-        ui.vertical(|ui| {
-            let mut ctx = SettingCtx {
-                ui,
-                style,
-                query,
-                show_all,
-            };
-            setting_theme(&mut ctx, &mut pending.theme);
-            setting_font_size(&mut ctx, &mut pending.font_size);
-            setting_font(&mut ctx, fonts, &mut pending.font);
-        });
-    });
+#[derive(Resource, Clone)]
+pub struct PreferencesState {
+    pub open: bool,
+    pub selected_tab: usize,
+    pub tab_search: String,
+}
+
+impl Default for PreferencesState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            selected_tab: 0,
+            tab_search: String::new(),
+        }
+    }
 }
 
 #[update(mode = "editor")]
@@ -243,7 +376,6 @@ pub fn preferences(world: &mut World) -> Result<()> {
     if !world.has_resource::<PreferencesState>() {
         world.insert_resource(PreferencesState::default());
     }
-
     if !world.get_resource::<PreferencesState>()?.open {
         return Ok(());
     }
@@ -251,15 +383,15 @@ pub fn preferences(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let style = world
         .get_resource::<EditorStyle>()
-        .cloned()
-        .unwrap_or_default();
-    let font_reg = world
-        .get_resource::<FontRegistry>()
+        .ok()
         .cloned()
         .unwrap_or_default();
     let mut state = world.get_resource::<PreferencesState>()?.clone();
     let mut window_open = state.open;
-    let mut pending = EditorTabPending::from_resources(&style, &font_reg);
+
+    let mut editor = EditorPage::from_world(world);
+    let mut viewport = ViewportPage::from_world(world);
+    let mut graphics = GraphicsPage::from_world(world);
 
     egui::Window::new("Preferences")
         .id(egui::Id::new("preferences_window"))
@@ -272,8 +404,7 @@ pub fn preferences(world: &mut World) -> Result<()> {
             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
 
             let avail = ui.available_rect_before_wrap();
-            let total_w = avail.width();
-            let total_h = avail.height();
+            let (total_w, total_h) = (avail.width(), avail.height());
             let tab_w = 140.0_f32;
 
             let left_rect = egui::Rect::from_min_size(avail.min, egui::Vec2::new(tab_w, total_h));
@@ -281,7 +412,6 @@ pub fn preferences(world: &mut World) -> Result<()> {
                 avail.min + egui::Vec2::new(tab_w + 1.0, 0.0),
                 egui::Vec2::new((total_w - tab_w - 1.0).max(0.0), total_h),
             );
-
             ui.advance_cursor_after_rect(egui::Rect::from_min_size(
                 avail.min,
                 egui::Vec2::new(total_w, total_h),
@@ -295,7 +425,6 @@ pub fn preferences(world: &mut World) -> Result<()> {
             );
             left.spacing_mut().item_spacing = egui::Vec2::ZERO;
             left.painter().rect_filled(left_rect, 0.0, style.dark_bg);
-
             left.add_space(6.0);
             left.horizontal(|ui| {
                 ui.add_space(6.0);
@@ -308,14 +437,14 @@ pub fn preferences(world: &mut World) -> Result<()> {
 
             let query = state.tab_search.to_lowercase();
 
-            if !tab_matches(&TABS[state.selected_tab], &query) {
-                if let Some(first) = TABS.iter().position(|t| tab_matches(t, &query)) {
-                    state.selected_tab = first;
+            if !page_matches(&PAGES[state.selected_tab], &query) {
+                if let Some(i) = PAGES.iter().position(|p| page_matches(p, &query)) {
+                    state.selected_tab = i;
                 }
             }
 
-            for (i, tab) in TABS.iter().enumerate() {
-                if !tab_matches(tab, &query) {
+            for (i, page) in PAGES.iter().enumerate() {
+                if !page_matches(page, &query) {
                     continue;
                 }
                 let selected = state.selected_tab == i;
@@ -334,7 +463,7 @@ pub fn preferences(world: &mut World) -> Result<()> {
                 left.painter().text(
                     egui::Pos2::new(row_rect.left() + 10.0, row_rect.center().y),
                     egui::Align2::LEFT_CENTER,
-                    tab.name,
+                    page.label,
                     style.font_ui(),
                     if selected {
                         style.text_col
@@ -365,20 +494,24 @@ pub fn preferences(world: &mut World) -> Result<()> {
             right.spacing_mut().item_spacing = egui::Vec2::new(8.0, 8.0);
             right.painter().rect_filled(right_rect, 0.0, style.dark_bg);
 
-            if let Some(tab) = TABS.get(state.selected_tab) {
-                let show_all = query.is_empty() || tab.name.to_lowercase().contains(&query);
-                match state.selected_tab {
-                    0 => draw_editor_tab(
-                        &mut right,
-                        &style,
-                        &font_reg.fonts,
-                        &mut pending,
-                        &query,
-                        show_all,
-                    ),
+            // When the whole tab name matches the query, show all its settings.
+            let show_all = query.is_empty()
+                || PAGES
+                    .get(state.selected_tab)
+                    .map(|p| p.label.to_lowercase().contains(&query))
+                    .unwrap_or(true);
+            let effective_query = if show_all { "" } else { query.as_str() };
+
+            right.add_space(14.0);
+            right.horizontal(|ui| {
+                ui.add_space(14.0);
+                ui.vertical(|ui| match state.selected_tab {
+                    0 => editor.draw(ui, &style, effective_query),
+                    1 => viewport.draw(ui, &style, effective_query),
+                    2 => graphics.draw(ui, &style, effective_query),
                     _ => {}
-                }
-            }
+                });
+            });
         });
 
     {
@@ -388,7 +521,9 @@ pub fn preferences(world: &mut World) -> Result<()> {
         s.selected_tab = state.selected_tab;
     }
 
-    pending.apply_changes(&style, &font_reg, world)?;
+    editor.apply(world)?;
+    viewport.apply(world)?;
+    graphics.apply(world)?;
 
     Ok(())
 }
