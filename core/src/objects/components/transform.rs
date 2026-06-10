@@ -39,7 +39,34 @@ impl Default for Transform {
 }
 
 impl Transform {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        if let Some(seq) = value.get("local_position").and_then(|v| v.as_sequence()) {
+            if seq.len() >= 3 {
+                self.local_position = Vector3::new(
+                    seq[0].as_f64().unwrap_or(0.0) as f32,
+                    seq[1].as_f64().unwrap_or(0.0) as f32,
+                    seq[2].as_f64().unwrap_or(0.0) as f32,
+                );
+            }
+        }
+        if let Some(seq) = value.get("local_euler_angles").and_then(|v| v.as_sequence()) {
+            if seq.len() >= 3 {
+                self.local_euler_angles = Vector3::new(
+                    seq[0].as_f64().unwrap_or(0.0) as f32,
+                    seq[1].as_f64().unwrap_or(0.0) as f32,
+                    seq[2].as_f64().unwrap_or(0.0) as f32,
+                );
+            }
+        }
+        if let Some(seq) = value.get("local_scale").and_then(|v| v.as_sequence()) {
+            if seq.len() >= 3 {
+                self.local_scale = Vector3::new(
+                    seq[0].as_f64().unwrap_or(1.0) as f32,
+                    seq[1].as_f64().unwrap_or(1.0) as f32,
+                    seq[2].as_f64().unwrap_or(1.0) as f32,
+                );
+            }
+        }
         Ok(())
     }
     pub fn calculate_up(&self) -> Vector3<f32> {

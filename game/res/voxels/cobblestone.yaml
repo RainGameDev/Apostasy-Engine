@@ -6,4 +6,4 @@ textures:
 components:
   IsSolid: true
   BreakTicks: 25
-  Drops: "Apostasy:Item:Cobblestone"
+  Drops: Apostasy:Item:Cobblestone

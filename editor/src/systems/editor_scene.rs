@@ -3,7 +3,10 @@ use apostasy_core::{
     assets::{
         asset_manager::AssetManager,
         loaders::{
-            biome_loader::BiomeLoader, structure_loader::StructureLoader, voxel_loader::VoxelLoader,
+            biome_loader::BiomeLoader,
+            scene_loader::{SceneLoader, SceneRegistry},
+            structure_loader::StructureLoader,
+            voxel_loader::VoxelLoader,
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
@@ -11,6 +14,7 @@ use apostasy_core::{
         Object,
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
+        scene_serializer::load_scene,
         tags::Player,
         world::World,
     },
@@ -41,11 +45,12 @@ use std::sync::{Arc, RwLock};
 use crate::ui::{
     cell_panel::CellSearchState,
     inspector_panel::InspectorPanelState,
+    preferences_panel::EditorPreferences,
     viewport_panel::{ViewportContextMenu, ViewportInfo},
 };
 
 /// Registers all asset loaders and loads yaml definitions from the game res directory.
-#[start(mode = "editor")]
+#[start(mode = "editor", priority = 1)]
 pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
     if !world.has_resource::<AssetManager>() {
         world.insert_resource(AssetManager::new());
@@ -55,6 +60,7 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
     let voxel_registry = Arc::new(RwLock::new(VoxelRegistry::default()));
     let structure_registry = Arc::new(RwLock::new(StructureRegistry::default()));
     let atlas_builder = Arc::new(RwLock::new(AtlasBuilder::new(16)));
+    let scene_registry = Arc::new(RwLock::new(SceneRegistry::default()));
 
     {
         let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
@@ -68,10 +74,23 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
         asset_manager.register_loader(StructureLoader {
             registry: Arc::clone(&structure_registry),
         });
+        asset_manager.register_loader(SceneLoader {
+            registry: Arc::clone(&scene_registry),
+        });
 
         let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
         if game_res.exists() {
             let _ = asset_manager.load_directory(&game_res);
+        }
+
+        let core_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/res");
+        if core_res.exists() {
+            let _ = asset_manager.load_directory(&core_res);
+        }
+
+        let editor_scenes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
+        if editor_scenes.exists() {
+            let _ = asset_manager.load_directory(&editor_scenes);
         }
     }
 
@@ -93,81 +112,98 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
     world.add_object(camera);
 
-    let floor = Object::new()
-        .set_name("Floor")
-        .add_component(Transform {
-            local_scale: Vector3::new(15.0, 1.0, 15.0),
-            ..Default::default()
-        })
-        .add_component(ModelRenderer::default())
-        .add_component(Velocity::static_object())
-        .add_component(Collider::new_static(
-            ColliderShape::Cuboid {
-                size: Vector3::new(1.0, 1.0, 1.0),
-            },
-            Vector3::zero(),
-        ));
-    world.add_object(floor);
+    // Try loading: last opened scene → "default" scene → hard-coded test objects.
+    let last_scene_name = EditorPreferences::load().last_scene;
+    let startup_scene: Option<(String, serde_yaml::Value)> = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|l| {
+            let reg = l.registry.read().ok()?;
+            if !last_scene_name.is_empty() {
+                if let Some(v) = reg.scenes.get(last_scene_name.as_str()).cloned() {
+                    return Some((last_scene_name.clone(), v));
+                }
+            }
+            reg.scenes.get("default").map(|v| ("default".to_string(), v.clone()))
+        });
 
-    let cube = Object::new()
-        .set_name("Cube")
-        .add_component(Transform {
-            local_position: Vector3::new(4.0, 10.0, 0.0),
-            ..Default::default()
-        })
-        .add_component(ModelRenderer::default())
-        .add_component(Velocity::default())
-        .add_component(Gravity::default())
-        .add_component(Collider::default());
+    if let Some((scene_name, scene_value)) = startup_scene {
+        load_scene(world, &scene_value, &["EditorCamera"])?;
+        EditorPreferences::save_last_scene(&scene_name);
+    } else {
+        let floor = Object::new()
+            .set_name("Floor")
+            .add_component(Transform {
+                local_scale: Vector3::new(15.0, 1.0, 15.0),
+                ..Default::default()
+            })
+            .add_component(ModelRenderer::default())
+            .add_component(Velocity::static_object())
+            .add_component(Collider::new_static(
+                ColliderShape::Cuboid {
+                    size: Vector3::new(1.0, 1.0, 1.0),
+                },
+                Vector3::zero(),
+            ));
+        world.add_object(floor);
 
-    world.add_object(cube);
+        let cube = Object::new()
+            .set_name("Cube")
+            .add_component(Transform {
+                local_position: Vector3::new(4.0, 10.0, 0.0),
+                ..Default::default()
+            })
+            .add_component(ModelRenderer::default())
+            .add_component(Velocity::default())
+            .add_component(Gravity::default())
+            .add_component(Collider::default());
+        world.add_object(cube);
 
-    let cube = Object::new()
-        .set_name("Cube")
-        .add_component(Transform {
-            local_position: Vector3::new(-4.0, 15.0, 0.0),
-            ..Default::default()
-        })
-        .add_component(ModelRenderer::default())
-        .add_component(Velocity::default())
-        .add_component(Gravity::default())
-        .add_component(Collider::default());
+        let cube = Object::new()
+            .set_name("Cube")
+            .add_component(Transform {
+                local_position: Vector3::new(-4.0, 15.0, 0.0),
+                ..Default::default()
+            })
+            .add_component(ModelRenderer::default())
+            .add_component(Velocity::default())
+            .add_component(Gravity::default())
+            .add_component(Collider::default());
+        world.add_object(cube);
 
-    world.add_object(cube);
+        let sphere = Object::new()
+            .set_name("Sphere")
+            .add_component(Transform {
+                local_position: Vector3::new(1.0, 8.0, 0.0),
+                ..Default::default()
+            })
+            .add_component(ModelRenderer::from_path("sphere"))
+            .add_component(Velocity::default_sphere())
+            .add_component(Gravity::default())
+            .add_component(Collider::new(
+                ColliderShape::Sphere { radius: 1.0 },
+                Vector3::zero(),
+            ))
+            .add_tag(Player);
+        world.add_object(sphere);
 
-    let sphere = Object::new()
-        .set_name("Sphere")
-        .add_component(Transform {
-            local_position: Vector3::new(1.0, 8.0, 0.0),
-            ..Default::default()
-        })
-        .add_component(ModelRenderer::from_path("sphere"))
-        .add_component(Velocity::default_sphere())
-        .add_component(Gravity::default())
-        .add_component(Collider::new(
-            ColliderShape::Sphere { radius: 1.0 },
-            Vector3::zero(),
-        ))
-        .add_tag(Player);
-
-    world.add_object(sphere);
-
-    let sphere = Object::new()
-        .set_name("Sphere")
-        .add_component(Transform {
-            local_position: Vector3::new(0.0, 8.0, 0.0),
-            ..Default::default()
-        })
-        .add_component(ModelRenderer::from_path("sphere"))
-        .add_component(Velocity::default_sphere())
-        .add_component(Gravity::default())
-        .add_component(Collider::new(
-            ColliderShape::Sphere { radius: 1.0 },
-            Vector3::zero(),
-        ))
-        .add_tag(Player);
-
-    world.add_object(sphere);
+        let sphere = Object::new()
+            .set_name("Sphere")
+            .add_component(Transform {
+                local_position: Vector3::new(0.0, 8.0, 0.0),
+                ..Default::default()
+            })
+            .add_component(ModelRenderer::from_path("sphere"))
+            .add_component(Velocity::default_sphere())
+            .add_component(Gravity::default())
+            .add_component(Collider::new(
+                ColliderShape::Sphere { radius: 1.0 },
+                Vector3::zero(),
+            ))
+            .add_tag(Player);
+        world.add_object(sphere);
+    }
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 

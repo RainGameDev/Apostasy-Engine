@@ -1,12 +1,18 @@
-use super::shared::{WindowLayout, save_layout};
 use super::EditorStyle;
+use super::shared::{WindowLayout, save_layout};
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
+use apostasy_core::assets::loaders::scene_loader::SceneLoader;
 use apostasy_core::egui::{
     Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
 };
+use apostasy_core::objects::scene_serializer::load_scene;
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
+use std::sync::Arc;
+
+use crate::ui::asset_editor::AssetEditorState;
+use crate::ui::preferences_panel::EditorPreferences;
 
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
@@ -76,6 +82,10 @@ pub struct ObjectWindowState {
     pub selected_entry: Option<String>,
 
     pub is_first_frame: bool,
+
+    pub renaming_entry: Option<String>,
+    pub rename_buf: String,
+    pub rename_request_focus: bool,
 }
 
 impl Default for ObjectWindowState {
@@ -92,6 +102,10 @@ impl Default for ObjectWindowState {
             sort_dir: SortDir::Asc,
             selected_entry: None,
             is_first_frame: true,
+
+            renaming_entry: None,
+            rename_buf: String::new(),
+            rename_request_focus: false,
         }
     }
 }
@@ -170,7 +184,10 @@ impl ObjectWindowState {
 #[update(mode = "editor")]
 pub fn object_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
     if world.get_resource::<ObjectWindowState>().is_err() {
         world.insert_resource(ObjectWindowState::default());
     }
@@ -223,6 +240,12 @@ pub fn object_window(world: &mut World) -> Result<()> {
         }
         object_window_resource.is_first_frame = false;
     }
+
+    let mut pending_scene_load: Option<String> = None;
+    let mut pending_scene_delete: Option<String> = None;
+    let mut pending_scene_rename: Option<(String, String)> = None;
+    let mut pending_open_in_editor: Option<String> = None;
+    let mut pending_new_asset = false;
 
     let window = window
         .open(&mut window_open)
@@ -484,9 +507,44 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         let (row_rect, row_resp) =
                             ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
 
+                        let is_scene =
+                            entry.category_path.len() >= 2 && entry.category_path[1] == "scene";
+                        let is_renaming = object_window_resource.renaming_entry.as_deref()
+                            == Some(entry.editor_id.as_str());
+
                         if row_resp.clicked() {
                             object_window_resource.selected_entry = Some(entry.editor_id.clone());
                         }
+                        row_resp.context_menu(|ui| {
+                            if ui.button("Edit Asset").clicked() {
+                                pending_open_in_editor = Some(entry.editor_id.clone());
+                                ui.close();
+                            }
+                            if ui.button("New Asset").clicked() {
+                                pending_new_asset = true;
+                                ui.close();
+                            }
+
+                            if is_scene {
+                                ui.separator();
+                                if ui.button("Load").clicked() {
+                                    pending_scene_load = Some(entry.name.clone());
+                                    ui.close();
+                                }
+                                if ui.button("Rename").clicked() {
+                                    object_window_resource.renaming_entry =
+                                        Some(entry.editor_id.clone());
+                                    object_window_resource.rename_buf = entry.name.clone();
+                                    object_window_resource.rename_request_focus = true;
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Delete").clicked() {
+                                    pending_scene_delete = Some(entry.name.clone());
+                                    ui.close();
+                                }
+                            }
+                        });
 
                         let bg = if is_selected {
                             style.sel_bg
@@ -512,14 +570,40 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             fnt.clone(),
                             style.dim_col,
                         );
-                        paint_clipped(
-                            ui,
-                            Pos2::new(rl + edid_w + 6.0, cy),
-                            name_w - 12.0,
-                            &entry.name,
-                            fnt.clone(),
-                            style.dim_col,
-                        );
+                        if is_renaming {
+                            let name_rect = Rect::from_min_size(
+                                Pos2::new(rl + edid_w + 2.0, row_rect.top() + 1.0),
+                                Vec2::new(name_w - 4.0, row_h - 2.0),
+                            );
+                            let te =
+                                egui::TextEdit::singleline(&mut object_window_resource.rename_buf)
+                                    .font(fnt.clone());
+                            let te_resp = ui.put(name_rect, te);
+                            if object_window_resource.rename_request_focus {
+                                te_resp.request_focus();
+                                object_window_resource.rename_request_focus = false;
+                            }
+                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            if (te_resp.lost_focus() && !escape) || enter {
+                                let new_name = object_window_resource.rename_buf.trim().to_string();
+                                if !new_name.is_empty() && new_name != entry.name {
+                                    pending_scene_rename = Some((entry.name.clone(), new_name));
+                                }
+                                object_window_resource.renaming_entry = None;
+                            } else if escape {
+                                object_window_resource.renaming_entry = None;
+                            }
+                        } else {
+                            paint_clipped(
+                                ui,
+                                Pos2::new(rl + edid_w + 6.0, cy),
+                                name_w - 12.0,
+                                &entry.name,
+                                fnt.clone(),
+                                style.dim_col,
+                            );
+                        }
                         paint_clipped(
                             ui,
                             Pos2::new(rl + edid_w + name_w + 6.0, cy),
@@ -544,21 +628,29 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         }
                     }
 
-                    // filler rows to continue the alternating pattern
+                    // filler rows always at least 8 below the content
                     let rows_drawn = filtered.len();
                     let remaining_h = ui.available_height();
-                    let remaining_rows = (remaining_h / row_h).ceil() as usize;
+                    let filler_rows = (remaining_h / row_h).ceil() as usize;
+                    let filler_rows = filler_rows.max(8);
 
-                    for i in 0..remaining_rows {
+                    for i in 0..filler_rows {
                         let idx = rows_drawn + i;
                         let bg = if idx.is_multiple_of(2) {
                             style.dark_bg
                         } else {
                             style.row_alt
                         };
-                        let (row_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::hover());
+                        let (row_rect, row_resp) =
+                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
                         ui.painter().rect_filled(row_rect, 0.0, bg);
+
+                        row_resp.context_menu(|ui| {
+                            if ui.button("New Asset").clicked() {
+                                pending_new_asset = true;
+                                ui.close();
+                            }
+                        });
 
                         let rl = row_rect.left();
                         ui.painter().line_segment(
@@ -627,7 +719,120 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
     world.get_resource_mut::<ObjectWindowState>()?.open = window_open;
 
+    if let Some(name) = pending_scene_load {
+        ow_scene_load(world, &name);
+    }
+    if let Some(name) = pending_scene_delete {
+        ow_scene_delete(world, &name);
+        world
+            .get_resource_mut::<ObjectWindowState>()?
+            .is_first_frame = true;
+    }
+    if let Some((old, new)) = pending_scene_rename {
+        ow_scene_rename(world, &old, &new);
+        world
+            .get_resource_mut::<ObjectWindowState>()?
+            .is_first_frame = true;
+    }
+
+    if let Some(ref id) = pending_open_in_editor {
+        if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+            ow.selected_entry = Some(id.clone());
+        }
+        if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
+            ae.open = true;
+        }
+        if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
+            layout.asset_editor_open = true;
+        }
+        if let Ok(layout) = world.get_resource::<WindowLayout>() {
+            save_layout(layout);
+        }
+    }
+
+    if pending_new_asset {
+        if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
+            ae.new_open = true;
+            ae.new_name.clear();
+        }
+    }
+
     Ok(())
+}
+
+fn ow_scene_load(world: &mut World, name: &str) {
+    let scene_value: Option<serde_yaml::Value> = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|l| l.registry.read().ok()?.scenes.get(name).cloned());
+
+    if let Some(value) = scene_value {
+        EditorPreferences::save_last_scene(name);
+        let _ = load_scene(world, &value, &["EditorCamera"]);
+        if let Ok(s) = world.get_resource_mut::<crate::ui::cell_panel::CellSearchState>() {
+            s.selected_obj = None;
+        }
+    }
+}
+
+fn ow_scene_delete(world: &mut World, name: &str) {
+    let registry_arc = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<SceneLoader>())
+        .map(|l| Arc::clone(&l.registry));
+
+    if let Some(arc) = registry_arc {
+        if let Ok(mut reg) = arc.write() {
+            reg.scenes.remove(name);
+        }
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("res/scenes")
+        .join(format!("{}.yaml", name));
+    let _ = std::fs::remove_file(&path);
+
+    let prefs = EditorPreferences::load();
+    if prefs.last_scene == name {
+        EditorPreferences::save_last_scene("");
+    }
+}
+
+fn ow_scene_rename(world: &mut World, old_name: &str, new_name: &str) {
+    let registry_arc = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<SceneLoader>())
+        .map(|l| Arc::clone(&l.registry));
+
+    if let Some(arc) = registry_arc {
+        if let Ok(mut reg) = arc.write() {
+            if let Some(mut value) = reg.scenes.remove(old_name) {
+                if let serde_yaml::Value::Mapping(ref mut map) = value {
+                    map.insert(
+                        serde_yaml::Value::String("name".into()),
+                        serde_yaml::Value::String(new_name.into()),
+                    );
+                }
+                let scenes_dir =
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
+                let new_path = scenes_dir.join(format!("{}.yaml", new_name));
+                if let Ok(yaml) = serde_yaml::to_string(&value) {
+                    let _ = std::fs::write(&new_path, yaml);
+                }
+                let old_path = scenes_dir.join(format!("{}.yaml", old_name));
+                let _ = std::fs::remove_file(&old_path);
+                reg.scenes.insert(new_name.to_string(), value);
+            }
+        }
+    }
+
+    let prefs = EditorPreferences::load();
+    if prefs.last_scene == old_name {
+        EditorPreferences::save_last_scene(new_name);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

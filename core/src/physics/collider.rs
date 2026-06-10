@@ -187,7 +187,50 @@ impl Default for Collider {
 }
 
 impl Collider {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        let shape_str = value.get("shape").and_then(|v| v.as_str()).unwrap_or("Cuboid");
+        self.shape = match shape_str {
+            "Sphere" => ColliderShape::Sphere {
+                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
+            },
+            "Capsule" => ColliderShape::Capsule {
+                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32,
+                height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
+            },
+            "Cylinder" => ColliderShape::Cylinder {
+                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32,
+                height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
+            },
+            _ => {
+                let size = value.get("size").and_then(|v| v.as_sequence()).map(|seq| {
+                    if seq.len() >= 3 {
+                        Vector3::new(
+                            seq[0].as_f64().unwrap_or(1.0) as f32,
+                            seq[1].as_f64().unwrap_or(1.0) as f32,
+                            seq[2].as_f64().unwrap_or(1.0) as f32,
+                        )
+                    } else {
+                        Vector3::new(1.0, 1.0, 1.0)
+                    }
+                }).unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+                ColliderShape::Cuboid { size }
+            }
+        };
+        if let Some(seq) = value.get("offset").and_then(|v| v.as_sequence()) {
+            if seq.len() >= 3 {
+                self.offset = Vector3::new(
+                    seq[0].as_f64().unwrap_or(0.0) as f32,
+                    seq[1].as_f64().unwrap_or(0.0) as f32,
+                    seq[2].as_f64().unwrap_or(0.0) as f32,
+                );
+            }
+        }
+        if let Some(v) = value.get("is_static").and_then(|v| v.as_bool()) {
+            self.is_static = v;
+        }
+        if let Some(v) = value.get("is_area").and_then(|v| v.as_bool()) {
+            self.is_area = v;
+        }
         Ok(())
     }
 

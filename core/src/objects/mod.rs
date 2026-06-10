@@ -17,6 +17,7 @@ pub mod query;
 pub mod resource;
 pub mod resources;
 pub mod scene;
+pub mod scene_serializer;
 pub mod systems;
 pub mod tag;
 pub mod tags;

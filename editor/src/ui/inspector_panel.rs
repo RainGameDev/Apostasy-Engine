@@ -75,20 +75,21 @@ pub fn inspector(world: &mut World) -> Result<()> {
 
     let fns: Vec<(TypeId, fn(&mut dyn Any, &mut egui::Ui))> = if let Some(id) = selected_id {
         let registry = world.get_resource::<InspectorRegistry>()?;
-        world
-            .get_object(id)
-            .unwrap()
-            .get_components()
-            .into_iter()
-            .filter_map(|c: &Box<dyn Component + Send + Sync>| {
-                let type_id = std::any::Any::type_id(c.as_ref().as_any());
-                registry
-                    .inspectors
-                    .get(&type_id)
-                    .copied()
-                    .map(|f| (type_id, f))
-            })
-            .collect()
+        match world.get_object(id) {
+            Some(obj) => obj
+                .get_components()
+                .into_iter()
+                .filter_map(|c: &Box<dyn Component + Send + Sync>| {
+                    let type_id = std::any::Any::type_id(c.as_ref().as_any());
+                    registry
+                        .inspectors
+                        .get(&type_id)
+                        .copied()
+                        .map(|f| (type_id, f))
+                })
+                .collect(),
+            None => Vec::new(),
+        }
     } else {
         Vec::new()
     };

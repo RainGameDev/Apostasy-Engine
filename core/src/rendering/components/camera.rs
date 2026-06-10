@@ -53,7 +53,19 @@ impl Inspect for Camera {
 }
 
 impl Camera {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        if let Some(v) = value.get("fov_y").and_then(|v| v.as_f64()) {
+            self.fov_y = v as f32;
+        }
+        if let Some(v) = value.get("near").and_then(|v| v.as_f64()) {
+            self.near = v as f32;
+        }
+        if let Some(v) = value.get("far").and_then(|v| v.as_f64()) {
+            self.far = v as f32;
+        }
+        if let Some(v) = value.get("is_main").and_then(|v| v.as_bool()) {
+            self.is_main = v;
+        }
         Ok(())
     }
 }
@@ -95,8 +107,23 @@ pub fn get_view_matrix(transform: &Transform) -> Matrix4<f32> {
 #[derive(Tag, Clone)]
 pub struct GameCamera;
 
+inventory::submit!(crate::objects::tag::TagRegistration {
+    type_name: "GameCamera",
+    create: || Box::new(GameCamera),
+});
+
 #[derive(Tag, Clone)]
 pub struct EditorCamera;
 
+inventory::submit!(crate::objects::tag::TagRegistration {
+    type_name: "EditorCamera",
+    create: || Box::new(EditorCamera),
+});
+
 #[derive(Tag, Clone)]
 pub struct ActiveCamera;
+
+inventory::submit!(crate::objects::tag::TagRegistration {
+    type_name: "ActiveCamera",
+    create: || Box::new(ActiveCamera),
+});

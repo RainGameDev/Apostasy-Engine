@@ -12,6 +12,7 @@ pub use self::shared::*;
 pub mod style;
 pub use self::style::{EditorStyle, Theme};
 
+pub mod asset_editor;
 pub mod assets_panel;
 pub mod cell_panel;
 pub mod gizmo;
@@ -21,6 +22,7 @@ pub mod top_bar;
 pub mod ui_manager;
 pub mod viewport_panel;
 
+use asset_editor::AssetEditorState;
 use assets_panel::ObjectWindowState;
 use cell_panel::CellSearchState;
 use inspector_panel::InspectorPanelState;
@@ -48,7 +50,10 @@ pub fn init(world: &mut World) -> Result<()> {
         visible: layout.inspector_visible,
         ..Default::default()
     });
-
+    world.insert_resource(AssetEditorState {
+        open: layout.asset_editor_open,
+        ..Default::default()
+    });
     world.insert_resource(layout);
 
     let prefs = EditorPreferences::load();

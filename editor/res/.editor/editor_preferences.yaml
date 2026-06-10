@@ -1,4 +1,5 @@
 theme: CatppuccinMocha
-font_size: 16
+font_size: 14
 active_font: firacode
-camera_speed: 125.0
+camera_speed: 140.0
+last_scene: default2

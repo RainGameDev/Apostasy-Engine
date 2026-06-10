@@ -129,7 +129,28 @@ impl Velocity {
             angular_damping: 1.0,
         }
     }
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        if let Some(v) = value.get("mass").and_then(|v| v.as_f64()) {
+            self.mass = v as f32;
+        }
+        if let Some(v) = value.get("process").and_then(|v| v.as_bool()) {
+            self.process = v;
+        }
+        if let Some(v) = value.get("mu_static").and_then(|v| v.as_f64()) {
+            self.mu_static = v as f32;
+        }
+        if let Some(v) = value.get("mu_kinetic").and_then(|v| v.as_f64()) {
+            self.mu_kinetic = v as f32;
+        }
+        if let Some(v) = value.get("restitution").and_then(|v| v.as_f64()) {
+            self.restitution = v as f32;
+        }
+        if let Some(v) = value.get("linear_damping").and_then(|v| v.as_f64()) {
+            self.linear_damping = v as f32;
+        }
+        if let Some(v) = value.get("angular_damping").and_then(|v| v.as_f64()) {
+            self.angular_damping = v as f32;
+        }
         Ok(())
     }
 

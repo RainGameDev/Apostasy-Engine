@@ -27,6 +27,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_scenes_panel() -> NormalizedWindow {
+    NormalizedWindow { pos: [96.0, 420.0], size: [300.0, 200.0] }
+}
+
+fn default_asset_editor() -> NormalizedWindow {
+    NormalizedWindow { pos: [700.0, 54.0], size: [380.0, 560.0] }
+}
+
 #[derive(Clone, Resource, Serialize, Debug, Deserialize)]
 pub struct WindowLayout {
     pub cell_search: NormalizedWindow,
@@ -40,6 +48,14 @@ pub struct WindowLayout {
     pub cell_open: bool,
     #[serde(default)]
     pub inspector_visible: bool,
+    #[serde(default = "default_scenes_panel")]
+    pub scenes_panel: NormalizedWindow,
+    #[serde(default)]
+    pub scenes_open: bool,
+    #[serde(default = "default_asset_editor")]
+    pub asset_editor: NormalizedWindow,
+    #[serde(default)]
+    pub asset_editor_open: bool,
 }
 
 impl Default for WindowLayout {
@@ -61,6 +77,10 @@ impl Default for WindowLayout {
             object_window_open: true,
             cell_open: true,
             inspector_visible: false,
+            scenes_panel: NormalizedWindow { pos: [96.0, 420.0], size: [300.0, 200.0] },
+            scenes_open: false,
+            asset_editor: NormalizedWindow { pos: [700.0, 54.0], size: [380.0, 560.0] },
+            asset_editor_open: false,
         }
     }
 }

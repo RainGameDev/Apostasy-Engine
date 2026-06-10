@@ -20,7 +20,13 @@ impl Default for ModelRenderer {
 }
 
 impl ModelRenderer {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        if let Some(v) = value.get("model_path").and_then(|v| v.as_str()) {
+            self.model_path = v.to_string();
+        }
+        if let Some(v) = value.get("is_wireframe").and_then(|v| v.as_bool()) {
+            self.is_wireframe = v;
+        }
         Ok(())
     }
     pub fn from_path(path: &str) -> Self {

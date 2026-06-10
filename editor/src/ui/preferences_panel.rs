@@ -24,6 +24,8 @@ pub struct EditorPreferences {
     pub active_font: String,
     #[serde(default = "EditorPreferences::default_camera_speed")]
     pub camera_speed: f32,
+    #[serde(default)]
+    pub last_scene: String,
 }
 
 impl Default for EditorPreferences {
@@ -33,6 +35,7 @@ impl Default for EditorPreferences {
             font_size: 13,
             active_font: String::new(),
             camera_speed: 5.0,
+            last_scene: String::new(),
         }
     }
 }
@@ -64,6 +67,12 @@ impl EditorPreferences {
     pub fn save_camera_speed(speed: f32) {
         let mut prefs = Self::load();
         prefs.camera_speed = speed;
+        prefs.save();
+    }
+
+    pub fn save_last_scene(name: &str) {
+        let mut prefs = Self::load();
+        prefs.last_scene = name.to_string();
         prefs.save();
     }
 }
