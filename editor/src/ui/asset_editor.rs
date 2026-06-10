@@ -275,9 +275,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
             })
             .unwrap_or(false);
 
-    // Pre-compute an example asset for the currently-selected new-asset class.
-    // This must happen before the mutable state borrow so we can also read AssetManager.
-    // The result is used during template reinit inside the modal to populate all fields.
+    // create an example asset for the currently-selected new-asset class
     let current_new_class_idx = world
         .get_resource::<AssetEditorState>()
         .map(|s| s.new_class_idx)
@@ -312,7 +310,6 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     let mut open_new = false;
     let mut confirm_new: Option<(String, String, String, serde_yaml::Value)> = None; // (name, ns, class, template)
     let mut close_new = false;
-    // Local copies so the window closure doesn't fight the yaml/dirty borrows.
     let mut add_comp_open = state.add_comp_open;
     let mut add_comp_search = state.add_comp_search.clone();
     let mut pending_add_comp: Option<String> = None;
@@ -386,7 +383,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                 ui.separator();
             }
 
-            // Detect asset class once (shared borrow, dropped before mutable borrow below)
+            // Detect asset class once 
             let asset_class = match &state.yaml {
                 Some(serde_yaml::Value::Mapping(m)) => m
                     .get(&serde_yaml::Value::String("class".to_string()))
@@ -420,7 +417,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                             }
 
                             if supports_components {
-                                // Collect existing names via shared borrow before mutable borrow
+                                // Collect existing names via shared borrow 
                                 let existing_comp_names: Vec<String> = map
                                     .get(&serde_yaml::Value::String("components".to_string()))
                                     .and_then(|v| v.as_mapping())
@@ -479,7 +476,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                     );
                                 });
 
-                                // Render each component; right-click to copy/remove
+                                // Render each component
                                 let comp_key =
                                     serde_yaml::Value::String("components".to_string());
                                 if let Some(serde_yaml::Value::Mapping(comp_map)) =
@@ -616,7 +613,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     state.add_comp_open = add_comp_open;
     state.add_comp_search = add_comp_search;
 
-    // Apply pending component mutations (state is still live here, before the New-asset modal)
+    // Apply pending component updated
     if let Some((name, val)) = pending_copy_comp {
         state.comp_clipboard = Some((name, val));
     }
@@ -688,7 +685,6 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                 .unwrap_or("")
                 .to_lowercase();
             if current_new_class_idx == state.new_class_idx {
-                // Example was pre-computed for the correct class.
                 state.new_template = match precomputed_example {
                     Some(ref ex) => template_from_example(ex),
                     None => default_template_for_class(&class),
