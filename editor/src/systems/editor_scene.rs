@@ -282,14 +282,21 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             let snapshots = build_collider_snapshot(world);
             let hit = raycast_colliders_raw(&ray, 1000.0, &snapshots, None);
 
-            if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
-                if let Some(hit) = hit {
-                    cell_search_state.selected_obj = Some(hit.object_id);
-                    if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>() {
-                        inspector_state.visible = true;
+            let gizmo_consuming = world
+                .get_resource::<crate::ui::gizmo::GizmoState>()
+                .map(|g| g.consuming)
+                .unwrap_or(false);
+
+            if !gizmo_consuming {
+                if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
+                    if let Some(hit) = hit {
+                        cell_search_state.selected_obj = Some(hit.object_id);
+                        if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>() {
+                            inspector_state.visible = true;
+                        }
+                    } else {
+                        cell_search_state.selected_obj = None;
                     }
-                } else {
-                    cell_search_state.selected_obj = None;
                 }
             }
         }

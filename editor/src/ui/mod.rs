@@ -14,6 +14,7 @@ pub use self::style::{EditorStyle, Theme};
 
 pub mod assets_panel;
 pub mod cell_panel;
+pub mod gizmo;
 pub mod inspector_panel;
 pub mod preferences_panel;
 pub mod top_bar;

@@ -84,10 +84,12 @@
   - [x] Raycasting (viewport object selection)
   - [x] Layout saving and loading
 
-- [ ] Viewport Gizmos
-  - [ ] Translate handle
-  - [ ] Rotate handle
-  - [ ] Scale handle
+- [x] Viewport Gizmos
+  - [x] Translate handle
+  - [x] Rotate handle
+  - [x] Scale handle
+  - [x] Hover highlighting
+  - [x] Global / Local space mode
 
 - [ ] Play mode
   - [ ] Play / Pause / Stop

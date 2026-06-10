@@ -4,7 +4,7 @@ use apostasy_core::{
     egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
     objects::{components::transform::Transform, scene::ObjectId, world::World},
     rendering::{
-        components::camera::EditorCamera,
+        components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
         shared::{UpdateRenderer, anti_alisaing::{AntiAliasing, AntiAliasingAmount}},
     },
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
@@ -148,6 +148,49 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let mut pending_duplicate = false;
     let mut pending_delete = false;
 
+    // Gizmo state and per-frame data (all extracted before show so world is free during show)
+    if !world.has_resource::<crate::ui::gizmo::GizmoState>() {
+        world.insert_resource(crate::ui::gizmo::GizmoState::default());
+    }
+    let mut gizmo_state = world
+        .get_resource::<crate::ui::gizmo::GizmoState>()
+        .ok()
+        .cloned()
+        .unwrap_or_default();
+    let gizmo_data: Option<(ObjectId, Transform, apostasy_core::cgmath::Matrix4<f32>)> = {
+        let sel_id = world
+            .get_resource::<CellSearchState>()
+            .ok()
+            .and_then(|s| s.selected_obj);
+        sel_id.and_then(|id| {
+            let obj_t = world
+                .get_object(id)?
+                .get_component::<Transform>()
+                .ok()?
+                .clone();
+            let cam_t = world
+                .get_objects_with_component::<Camera>()
+                .first()?
+                .get_component::<Transform>()
+                .ok()?
+                .clone();
+            let cam_c = world
+                .get_objects_with_component::<Camera>()
+                .first()?
+                .get_component::<Camera>()
+                .ok()?
+                .clone();
+            let aspect = world
+                .get_resource::<ViewportSize>()
+                .map(|v| v.logical_width / v.logical_height)
+                .unwrap_or(1.0);
+            let view_proj = get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t);
+            Some((id, obj_t, view_proj))
+        })
+    };
+    let mut new_gizmo_state_from_fn: Option<crate::ui::gizmo::GizmoState> = None;
+    let mut gizmo_transform_out: Option<Transform> = None;
+
     let vp = window
         .open(&mut is_open)
         .resizable(true)
@@ -185,6 +228,35 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         ui.add_space(8.0);
                         ui.label("Camera Speed");
                         ui.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
+
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        use crate::ui::gizmo::GizmoMode;
+                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Translate, "Move").clicked() {
+                            gizmo_state.mode = GizmoMode::Translate;
+                            gizmo_state.drag = None;
+                        }
+                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Rotate, "Rotate").clicked() {
+                            gizmo_state.mode = GizmoMode::Rotate;
+                            gizmo_state.drag = None;
+                        }
+                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Scale, "Scale").clicked() {
+                            gizmo_state.mode = GizmoMode::Scale;
+                            gizmo_state.drag = None;
+                        }
+
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        if ui.selectable_label(!gizmo_state.local, "Global").clicked() {
+                            gizmo_state.local = false;
+                            gizmo_state.drag = None;
+                        }
+                        if ui.selectable_label(gizmo_state.local, "Local").clicked() {
+                            gizmo_state.local = true;
+                            gizmo_state.drag = None;
+                        }
                     });
                 });
 
@@ -208,6 +280,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 let label =
                     Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
                 ui.put(frame_rect, label);
+            }
+
+            if let Some((_, ref obj_t, view_proj)) = gizmo_data {
+                let (new_t, gs) = crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
+                gizmo_transform_out = new_t;
+                new_gizmo_state_from_fn = Some(gs);
             }
 
             if ctx_obj_id.is_some() {
@@ -319,6 +397,21 @@ pub fn viewport(world: &mut World) -> Result<()> {
         if let Some(id) = ctx_obj_id {
             if let Some(obj) = world.get_object(id).cloned() {
                 world.add_object(obj);
+            }
+        }
+    }
+
+    // Write back gizmo state (drag + mode) and apply any transform produced by dragging
+    {
+        let final_state = new_gizmo_state_from_fn.unwrap_or(gizmo_state);
+        if let Ok(s) = world.get_resource_mut::<crate::ui::gizmo::GizmoState>() {
+            *s = final_state;
+        }
+    }
+    if let (Some(new_t), Some((id, _, _))) = (gizmo_transform_out, gizmo_data) {
+        if let Some(obj) = world.get_object_mut(id) {
+            if let Ok(t) = obj.get_component_mut::<Transform>() {
+                *t = new_t;
             }
         }
     }
