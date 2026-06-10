@@ -1,15 +1,21 @@
 use anyhow::Result;
 use apostasy_core::{
+    cgmath::Vector3,
     egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
-    objects::world::World,
-    rendering::shared::{
-        UpdateRenderer,
-        anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+    objects::{components::transform::Transform, scene::ObjectId, world::World},
+    rendering::{
+        components::camera::EditorCamera,
+        shared::{UpdateRenderer, anti_alisaing::{AntiAliasing, AntiAliasingAmount}},
     },
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
     update,
 };
 use apostasy_macros::Resource;
+
+#[derive(Resource, Default, Clone)]
+pub struct ViewportContextMenu {
+    pub hit_obj: Option<ObjectId>,
+}
 
 #[derive(Resource, Clone)]
 pub struct ViewportInfo {
@@ -31,7 +37,12 @@ impl Default for ViewportInfo {
 use super::EditorStyle;
 use crate::{
     objects::editor_camera::EditorCameraSettings,
-    ui::shared::{WindowLayout, save_layout},
+    systems::object_focus::IsObjectFocused,
+    ui::{
+        cell_panel::CellSearchState,
+        inspector_panel::InspectorPanelState,
+        shared::{WindowLayout, save_layout},
+    },
 };
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -77,14 +88,14 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.insert_resource(ViewportInfo::default());
     }
 
-    let is_open = world
+    let mut is_open = world
         .get_resource::<ViewportInfo>()
         .map(|v| v.open)
         .unwrap_or(true);
-    if !is_open
-        || !world.has_resource::<WindowLayout>()
-        || !world.has_resource::<EditorCameraSettings>()
-    {
+    if !world.has_resource::<WindowLayout>() || !world.has_resource::<EditorCameraSettings>() {
+        return Ok(());
+    }
+    if !is_open {
         return Ok(());
     }
 
@@ -108,10 +119,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
         viewport_info.needs_layout_restore = false;
     }
 
-    let (available_options, aa_before, mut aa_selected, ss_before) = {
+    let (available_options, aa_before, mut aa_selected) = {
         let aa = world.get_resource::<AntiAliasing>().unwrap();
-        let ss = world.get_resource::<ViewportSize>().unwrap().supersample;
-        (aa.available_options.clone(), aa.amount, aa.amount, ss)
+        (aa.available_options.clone(), aa.amount, aa.amount)
     };
 
     let mut camera_speed = world
@@ -120,9 +130,26 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .move_speed;
     let mut frame_rect_out = None;
     let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
-    let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
+    let supersample = world.get_resource::<ViewportSize>().map(|v| v.supersample).unwrap_or(1.0);
+
+    if !world.has_resource::<ViewportContextMenu>() {
+        world.insert_resource(ViewportContextMenu::default());
+    }
+    let ctx_obj_id: Option<ObjectId> = world
+        .get_resource::<ViewportContextMenu>()
+        .ok()
+        .and_then(|r| r.hit_obj);
+    let ctx_obj_name: Option<String> =
+        ctx_obj_id.and_then(|id| world.get_object(id).map(|o| o.name.clone()));
+
+    let mut pending_focus = false;
+    let mut pending_inspect = false;
+    let mut pending_copy = false;
+    let mut pending_duplicate = false;
+    let mut pending_delete = false;
 
     let vp = window
+        .open(&mut is_open)
         .resizable(true)
         .movable(true)
         .title_bar(true)
@@ -130,54 +157,46 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .frame(style.window_frame(&ctx))
         .show(&ctx, |ui| {
             let bar_h = style.header_height();
-            let (bar_rect, _) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), bar_h),
-                egui::Sense::hover(),
-            );
-            let mut bar = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(bar_rect)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-            );
-            bar.add_space(6.0);
+            egui::ScrollArea::horizontal()
+                .id_salt("viewport_bar_scroll")
+                .max_height(bar_h)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_height(bar_h);
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(6.0);
 
-            // "Super Sampling"
+                        ComboBox::from_label("MSAA")
+                            .selected_text(format!("{:?}", aa_selected))
+                            .show_ui(ui, |ui| {
+                                let options = [
+                                    (AntiAliasingAmount::X0, "None"),
+                                    (AntiAliasingAmount::X2, "X2"),
+                                    (AntiAliasingAmount::X4, "X4"),
+                                    (AntiAliasingAmount::X8, "X8"),
+                                ];
+                                for (amount, label) in options {
+                                    if available_options.contains(&amount) {
+                                        ui.selectable_value(&mut aa_selected, amount, label);
+                                    }
+                                }
+                            });
 
-            bar.label("Resolution scale");
-            bar.add(Slider::new(&mut viewport_size.supersample, 1.0..=4.0).text("SSAA"));
-
-            // Anti Aliasing
-
-            ComboBox::from_label("MSAA")
-                .selected_text(format!("{:?}", aa_selected))
-                .show_ui(&mut bar, |ui| {
-                    let options = [
-                        (AntiAliasingAmount::X0, "None"),
-                        (AntiAliasingAmount::X2, "X2"),
-                        (AntiAliasingAmount::X4, "X4"),
-                        (AntiAliasingAmount::X8, "X8"),
-                    ];
-                    for (amount, label) in options {
-                        if available_options.contains(&amount) {
-                            ui.selectable_value(&mut aa_selected, amount, label);
-                        }
-                    }
+                        ui.add_space(8.0);
+                        ui.label("Camera Speed");
+                        ui.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
+                    });
                 });
-
-            // camera speed
-
-            bar.label("Camera Speed");
-            bar.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
 
             // Some othershit idc
 
-            let available_size = ui.available_size();
             ui.separator();
+            let available_size = ui.available_size();
             if available_size.x <= 0.0 || available_size.y <= 0.0 {
                 return;
             }
 
-            let (frame_rect, _) = ui.allocate_exact_size(available_size, Sense::hover());
+            let (frame_rect, frame_resp) = ui.allocate_exact_size(available_size, Sense::click());
             frame_rect_out = Some(frame_rect);
             ui.painter()
                 .rect_filled(frame_rect, 4.0, Color32::from_gray(40));
@@ -190,40 +209,132 @@ pub fn viewport(world: &mut World) -> Result<()> {
                     Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
                 ui.put(frame_rect, label);
             }
+
+            if ctx_obj_id.is_some() {
+                frame_resp.context_menu(|ui| {
+                    ui.set_min_width(190.0);
+                    ui.weak(ctx_obj_name.as_deref().unwrap_or("Object"));
+                    ui.separator();
+                    if ui.button("Teleport to Object").clicked() {
+                        pending_focus = true;
+                        ui.close();
+                    }
+                    if ui.button("Inspect Object").clicked() {
+                        pending_inspect = true;
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Copy Object").clicked() {
+                        pending_copy = true;
+                        ui.close();
+                    }
+                    if ui.button("Duplicate Object").clicked() {
+                        pending_duplicate = true;
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Delete Object").clicked() {
+                        pending_delete = true;
+                        ui.close();
+                    }
+                });
+            }
         });
 
     if let Some(response) = vp {
         let rect = response.response.rect;
         let current_size = rect.size();
-
-        viewport_size.logical_width = current_size.x;
-        viewport_size.logical_height = current_size.y;
-
         let pixels_per_point = ctx.pixels_per_point();
-        let ss = viewport_size.supersample;
-        let mut pixel_w = (current_size.x * pixels_per_point * ss).ceil();
-        let mut pixel_h = (current_size.y * pixels_per_point * ss).ceil();
-
+        let mut pixel_w = (current_size.x * pixels_per_point * supersample).ceil();
+        let mut pixel_h = (current_size.y * pixels_per_point * supersample).ceil();
         const MAX_DIM: f32 = 8192.0;
         pixel_w = pixel_w.clamp(1.0, MAX_DIM);
         pixel_h = pixel_h.clamp(1.0, MAX_DIM);
 
-        viewport_size.pixel_width = pixel_w;
-        viewport_size.pixel_height = pixel_h;
-
-        if let Some(frame_rect) = frame_rect_out {
-            viewport_size.logical_x = frame_rect.min.x;
-            viewport_size.logical_y = frame_rect.min.y;
-            viewport_size.logical_width = frame_rect.width();
-            viewport_size.logical_height = frame_rect.height();
+        {
+            let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
+            viewport_size.logical_width = current_size.x;
+            viewport_size.logical_height = current_size.y;
+            viewport_size.pixel_width = pixel_w;
+            viewport_size.pixel_height = pixel_h;
+            if let Some(frame_rect) = frame_rect_out {
+                viewport_size.logical_x = frame_rect.min.x;
+                viewport_size.logical_y = frame_rect.min.y;
+                viewport_size.logical_width = frame_rect.width();
+                viewport_size.logical_height = frame_rect.height();
+            }
         }
 
         let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
         viewport_info.is_hovered = response.response.hovered();
+        viewport_info.open = is_open;
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
         layout.viewport.update_from_rect(rect);
         save_layout(layout);
+    }
+
+    if pending_focus {
+        if let Some(id) = ctx_obj_id {
+            let selected_transform = world
+                .get_object(id)
+                .and_then(|o| o.get_component::<Transform>().ok())
+                .map(|t| t.clone());
+            if let Some(selected_transform) = selected_transform {
+                world.insert_resource(IsObjectFocused);
+                if let Ok(editor_camera) = world.get_object_with_tag_mut::<EditorCamera>() {
+                    if let Ok(transform) = editor_camera.get_component_mut::<Transform>() {
+                        transform.local_position = selected_transform.global_position
+                            - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
+                        transform.global_position = transform.local_position;
+                        transform.look_at(selected_transform.global_position);
+                    }
+                }
+            }
+        }
+    }
+
+    if pending_inspect {
+        if let Some(id) = ctx_obj_id {
+            if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+                s.selected_obj = Some(id);
+            }
+            if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
+                s.visible = true;
+            }
+        }
+    }
+
+    if pending_copy {
+        if let Some(id) = ctx_obj_id {
+            if let Some(obj) = world.get_object(id).cloned() {
+                if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+                    s.copied_obj = Some(obj);
+                }
+            }
+        }
+    }
+
+    if pending_duplicate {
+        if let Some(id) = ctx_obj_id {
+            if let Some(obj) = world.get_object(id).cloned() {
+                world.add_object(obj);
+            }
+        }
+    }
+
+    if pending_delete {
+        if let Some(id) = ctx_obj_id {
+            world.remove_object(id);
+            if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+                if s.selected_obj == Some(id) { s.selected_obj = None; }
+                if s.clicked_obj == Some(id) { s.clicked_obj = None; }
+                if s.renaming_obj == Some(id) { s.renaming_obj = None; }
+            }
+            if let Ok(s) = world.get_resource_mut::<ViewportContextMenu>() {
+                s.hit_obj = None;
+            }
+        }
     }
 
     if aa_before != aa_selected {
@@ -231,9 +342,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
         world.insert_resource(UpdateRenderer);
     }
 
-    let ss_after = world.get_resource::<ViewportSize>().unwrap().supersample;
-    if aa_before != aa_selected || ss_before != ss_after {
-        EditorGraphics { supersample: ss_after, anti_aliasing: aa_selected }.save();
+    if aa_before != aa_selected {
+        let ss = world.get_resource::<ViewportSize>().unwrap().supersample;
+        EditorGraphics { supersample: ss, anti_aliasing: aa_selected }.save();
     }
 
     let prev_speed = world.get_resource::<EditorCameraSettings>().unwrap().move_speed;

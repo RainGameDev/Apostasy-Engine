@@ -213,6 +213,7 @@ impl EditorStyle {
             style.spacing.icon_width_inner = 8.0 * k;
             style.spacing.icon_spacing = 4.0 * k;
             style.spacing.indent = 18.0 * k;
+            style.interaction.selectable_labels = false;
         });
     }
 

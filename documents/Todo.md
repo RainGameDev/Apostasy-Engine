@@ -3,16 +3,23 @@
 - [x] World
   - [x] Ability to access renderer in systems
   - [x] Manual system registration
+  - [x] Scene hierarchy (parent/child objects)
+  - [x] Tags system
+  - [x] States system
 
-- [ ] Rendering
-  - [ ] Render settings
+- [-] Rendering
+  - [x] Render settings
+  - [x] Anti-aliasing
+  - [x] Frustum culling
+  - [x] Shader registry and loader
+  - [x] GLTF / model loading
   - [ ] Lighting
     - [ ] Shadow maps
     - [ ] Point lights
     - [ ] Directional lights
     - [ ] Spot lights
   - [ ] Ambient effects
-    - [ ] Lights
+    - [ ] Ambient lighting
     - [ ] Fog
   - [ ] Particle system
 
@@ -20,34 +27,72 @@
   - [x] Prerender systems
   - [ ] Render systems
 
-- [-] Physics
+- [x] Physics
   - [x] Basic collisions
     - [x] Object resolution
     - [x] Object shapes
     - [x] Offsets
   - [x] Friction
   - [x] Inertia
+  - [x] Raycasting
+
+- [ ] Scene serialization
+  - [ ] Save scene to file
+  - [ ] Load scene from file
+
+- [ ] Audio system
 
 # Editor
 
 - [-] Editor UI
+  - [x] Top bar menu
   - [x] Inspector
     - [x] Objects displaying
     - [x] Object selection
     - [x] Object deletion
     - [x] Object creation
-  - [ ] Object Editor
-    - [ ] Name bar
-    - [ ] Component adding
+  - [-] Object Editor
+    - [ ] Name bar (inline rename)
+    - [x] Component adding
     - [x] Component editing
-    - [ ] Component removal
-    - [ ] Component copy/paste
+    - [x] Component removal
+    - [x] Component copy/paste/cut
     - [ ] Tag adding
     - [ ] Tag removal
-  - [ ] Scenes
+  - [x] Assets panel (loaded assets display)
+  - [x] Viewport panel
+  - [x] Cell / Objects panel
+  - [x] Preferences panel
+    - [x] Font loading and themes
+    - [x] Camera speed setting
+    - [x] Graphics settings (AA, supersampling)
+    - [x] Saving and loading preferences
+  - [ ] Scenes panel
     - [ ] Scene creation
     - [ ] Scene deletion
-    - [ ] Scene registering
+    - [ ] Scene switching
   - [ ] UI Editor
+
+- [-] Editor Camera
+  - [x] Camera rotation
+  - [x] Object focusing
+  - [x] Camera speed
+  - [ ] Save the cameras position and rotate
+
+- [x] Editor systems
+  - [x] Copy/paste objects (keybinds)
+  - [x] Raycasting (viewport object selection)
+  - [x] Layout saving and loading
+
+- [ ] Viewport Gizmos
+  - [ ] Translate handle
+  - [ ] Rotate handle
+  - [ ] Scale handle
+
+- [ ] Play mode
+  - [ ] Play / Pause / Stop
+  - [ ] Switch between editor and game camera
+
+- [ ] Undo / Redo
 
 # Apostasy

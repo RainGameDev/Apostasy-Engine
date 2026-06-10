@@ -39,7 +39,9 @@ use apostasy_core::{
 use std::sync::{Arc, RwLock};
 
 use crate::ui::{
-    cell_panel::CellSearchState, inspector_panel::InspectorPanelState, viewport_panel::ViewportInfo,
+    cell_panel::CellSearchState,
+    inspector_panel::InspectorPanelState,
+    viewport_panel::{ViewportContextMenu, ViewportInfo},
 };
 
 /// Registers all asset loaders and loads yaml definitions from the game res directory.
@@ -182,6 +184,10 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         "RightMouseClick",
         MouseBind::new(MouseButton::Right, KeyAction::Hold),
     );
+    inputs.register_default_mousebind(
+        "RightMousePress",
+        MouseBind::new(MouseButton::Right, KeyAction::Press),
+    );
     inputs.register_default_keybind(
         "Left",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyA), KeyAction::Hold),
@@ -227,8 +233,10 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
     }
 
     let inputs = world.get_resource::<InputManager>().unwrap();
+    let left_click = inputs.is_mousebind_active("MouseClick");
+    let right_click = inputs.is_mousebind_active("RightMousePress");
 
-    if inputs.is_mousebind_active("MouseClick") {
+    if left_click {
         let camera_transform = world
             .get_objects_with_component::<Camera>()
             .first()
@@ -286,5 +294,66 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             }
         }
     }
+
+    if right_click {
+        if !world.has_resource::<ViewportContextMenu>() {
+            world.insert_resource(ViewportContextMenu::default());
+        }
+
+        let camera_transform = world
+            .get_objects_with_component::<Camera>()
+            .first()
+            .unwrap()
+            .get_component::<Transform>()
+            .unwrap()
+            .clone();
+        let camera_view = world
+            .get_objects_with_component::<Camera>()
+            .first()
+            .unwrap()
+            .get_component::<Camera>()
+            .unwrap()
+            .clone();
+
+        let (vp_x, vp_y, vp_w, vp_h) = {
+            let vp = world.get_resource::<ViewportSize>().unwrap();
+            (vp.logical_x, vp.logical_y, vp.logical_width, vp.logical_height)
+        };
+        let mouse_position = world.get_resource::<InputManager>().unwrap().mouse_position;
+
+        let relative_x = mouse_position.x - vp_x as f64;
+        let relative_y = mouse_position.y - vp_y as f64;
+
+        let hit_id = if relative_x >= 0.0
+            && relative_x <= vp_w as f64
+            && relative_y >= 0.0
+            && relative_y <= vp_h as f64
+        {
+            let aspect = vp_w / vp_h;
+            let perspective = get_perspective_projection(&camera_view, aspect);
+            let view = get_view_matrix(&camera_transform);
+
+            let ndc_x = (relative_x / vp_w as f64) * 2.0 - 1.0;
+            let ndc_y = (relative_y / vp_h as f64) * 2.0 - 1.0;
+
+            let direction = unproject(
+                ndc_x as f32,
+                ndc_y as f32,
+                &(perspective * view).invert().unwrap(),
+                camera_transform.global_position,
+            );
+            let ray = Ray::new(camera_transform.global_position, direction);
+
+            let snapshots = build_collider_snapshot(world);
+            raycast_colliders_raw(&ray, 1000.0, &snapshots, None).map(|h| h.object_id)
+        } else {
+            None
+        };
+
+        if let Ok(ctx_menu) = world.get_resource_mut::<ViewportContextMenu>() {
+            ctx_menu.hit_obj = hit_id;
+        }
+    }
+
     Ok(())
 }

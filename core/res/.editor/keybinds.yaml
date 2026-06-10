@@ -1,44 +1,47 @@
 keybinds:
+  Downwards:
+    key: KeyQ
+    action: Hold
   ControlModifier:
     key: ControlLeft
     action: Hold
   Forwards:
     key: KeyW
     action: Hold
-  Copy:
-    key: KeyC
+  FocusObject:
+    key: KeyF
     action: Press
-  Right:
-    key: KeyD
+  Backwards:
+    key: KeyS
+    action: Hold
+  Left:
+    key: KeyA
     action: Hold
   Reload Shaders:
     key: F5
     action: Press
-  Downwards:
-    key: KeyQ
-    action: Hold
-  Backwards:
-    key: KeyS
-    action: Hold
+  Copy:
+    key: KeyC
+    action: Press
   Paste:
     key: KeyV
     action: Press
   Jump:
     key: Space
     action: Press
-  FocusObject:
-    key: KeyF
-    action: Press
-  Left:
-    key: KeyA
+  Right:
+    key: KeyD
     action: Hold
 mousebinds:
-  MiddleMouseClick:
-    key: Middle
-    action: Hold
   MouseClick:
     key: Left
     action: Press
+  RightMousePress:
+    key: Right
+    action: Press
   RightMouseClick:
     key: Right
+    action: Hold
+  MiddleMouseClick:
+    key: Middle
     action: Hold

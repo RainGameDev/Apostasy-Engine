@@ -1,4 +1,4 @@
-theme: GruvboxDarkMedium
-font_size: 15
+theme: CatppuccinMocha
+font_size: 16
 active_font: firacode
-camera_speed: 10.0
+camera_speed: 50.0

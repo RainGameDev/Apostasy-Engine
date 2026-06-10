@@ -208,6 +208,14 @@ pub fn object_window(world: &mut World) -> Result<()> {
         None
     };
 
+    let mut window_open = world
+        .get_resource::<ObjectWindowState>()
+        .map(|s| s.open)
+        .unwrap_or(true);
+    if !window_open {
+        return Ok(());
+    }
+
     let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
     if object_window_resource.is_first_frame {
         if let Some((registry_data, models, shaders)) = populate_data {
@@ -215,11 +223,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
         }
         object_window_resource.is_first_frame = false;
     }
-    if !object_window_resource.open {
-        return Ok(());
-    }
 
     let window = window
+        .open(&mut window_open)
         .resizable(true)
         .movable(true)
         .frame(style.window_frame(&ctx))
@@ -618,6 +624,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
         layout.object_window.update_from_rect(rect);
         save_layout(layout);
     }
+
+    world.get_resource_mut::<ObjectWindowState>()?.open = window_open;
 
     Ok(())
 }

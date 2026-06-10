@@ -142,7 +142,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .frame(style.window_frame(&ctx).inner_margin(Margin {
             left: 8,
             right: 8,
-            bottom: 8,
+            bottom: 0,
             top: 0,
         }));
 
@@ -165,11 +165,19 @@ pub fn inspector(world: &mut World) -> Result<()> {
                 .auto_shrink([false; 2])
                 .max_height(scroll_height)
                 .show(ui, |ui| {
-                    ui.heading(label_text.clone());
                     ui.add_space(8.0);
 
                     if let Some(id) = selected_id {
                         if let Some(obj) = world.get_object_mut(id) {
+                            ui.horizontal(|ui| {
+                                ui.label("Name");
+                                ui.add_sized(
+                                    egui::vec2(ui.available_width(), DRAG_SIZE.y),
+                                    egui::TextEdit::singleline(&mut obj.name)
+                                        .hint_text("Object name..."),
+                                );
+                            });
+                            ui.add_space(6.0);
                             for (component, (type_id, f)) in
                                 obj.get_components_mut().into_iter().zip(fns)
                             {
@@ -256,6 +264,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
                     new_search.clear();
                 }
             }
+
+            ui.add_space(8.0);
 
             if new_picker_open {
                 egui::Frame::popup(&ctx.global_style())

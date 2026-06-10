@@ -38,6 +38,9 @@ pub struct CellSearchState {
     pub clicked_cell: Option<String>,
     pub clicked_obj: Option<ObjectId>,
     pub copied_obj: Option<Object>,
+    pub renaming_obj: Option<ObjectId>,
+    pub rename_buf: String,
+    pub rename_request_focus: bool,
 }
 
 impl Default for CellSearchState {
@@ -74,6 +77,9 @@ impl Default for CellSearchState {
             clicked_cell: None,
             clicked_obj: None,
             copied_obj: None,
+            renaming_obj: None,
+            rename_buf: String::new(),
+            rename_request_focus: false,
         }
     }
 }
@@ -100,7 +106,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     world.get_resource_mut::<CellSearchState>()?.obj_entries = obj_entries;
 
     // read-only data for rendering
-    let open = world.get_resource::<CellSearchState>()?.open;
+    let mut open = world.get_resource::<CellSearchState>()?.open;
     let cell_entries = world
         .get_resource::<CellSearchState>()?
         .cell_entries
@@ -127,6 +133,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let mut pending_delete: Option<ObjectId> = None;
     let mut pending_add = false;
     let mut object_to_copy: Option<Object> = None;
+    let mut renaming_id: Option<ObjectId> = world.get_resource::<CellSearchState>()?.renaming_obj;
+    let mut rename_buf: String = world.get_resource::<CellSearchState>()?.rename_buf.clone();
+    let mut rename_request_focus: bool = world.get_resource::<CellSearchState>()?.rename_request_focus;
+    let mut pending_rename: Option<(ObjectId, String)> = None;
 
     let row_h = style.row_height();
     let header_h = style.header_height();
@@ -145,6 +155,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let size = state.to_size();
 
     let window = Window::new("Cell Panel")
+        .open(&mut open)
         .default_pos(pos)
         .default_size(size)
         .resizable(true)
@@ -530,6 +541,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 })
                                 .collect();
 
+                            if ui.input(|i| i.key_pressed(egui::Key::F2)) {
+                                if let Some(id) = pending_selected_obj {
+                                    if let Some(entry) = obj_entries.iter().find(|e| e.object_id == id) {
+                                        renaming_id = Some(id);
+                                        rename_buf = entry.obj_name.clone();
+                                        rename_request_focus = true;
+                                    }
+                                }
+                            }
+
                             let table_h = ui.available_height();
                             ScrollArea::vertical()
                                 .id_salt("obj_scroll")
@@ -546,14 +567,23 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             Sense::click(),
                                         );
                                         if row_resp.double_clicked() {
-                                            pending_selected_obj = Some(entry.object_id);
+                                            renaming_id = Some(entry.object_id);
+                                            rename_buf = entry.obj_name.clone();
+                                            rename_request_focus = true;
                                         }
                                         if row_resp.clicked() {
+                                            pending_selected_obj = Some(entry.object_id);
                                             pending_clicked_obj = Some(entry.object_id);
                                         }
 
                                         // adds a popup menu
                                         row_resp.context_menu(|ui| {
+                                            if ui.button("Rename").clicked() {
+                                                renaming_id = Some(entry.object_id);
+                                                rename_buf = entry.obj_name.clone();
+                                                rename_request_focus = true;
+                                                ui.close();
+                                            }
                                             if ui.button("Teleport to Object").clicked() {
                                                 // do stuff
                                                 ui.close();
@@ -625,14 +655,36 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         let rl = row_rect.left();
                                         let cy = row_rect.center().y;
-                                        paint_clipped(
-                                            ui,
-                                            Pos2::new(rl + 6.0, cy),
-                                            name_w - 10.0,
-                                            &entry.obj_name,
-                                            font_row.clone(),
-                                            style.dim_col,
-                                        );
+                                        if renaming_id == Some(entry.object_id) {
+                                            let name_rect = Rect::from_min_size(
+                                                Pos2::new(rl + 2.0, row_rect.top() + 1.0),
+                                                Vec2::new(name_w - 4.0, row_h - 2.0),
+                                            );
+                                            let te = egui::TextEdit::singleline(&mut rename_buf)
+                                                .font(font_row.clone());
+                                            let te_resp = ui.put(name_rect, te);
+                                            if rename_request_focus {
+                                                te_resp.request_focus();
+                                                rename_request_focus = false;
+                                            }
+                                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                            if (te_resp.lost_focus() && !escape) || enter {
+                                                pending_rename = Some((entry.object_id, rename_buf.clone()));
+                                                renaming_id = None;
+                                            } else if escape {
+                                                renaming_id = None;
+                                            }
+                                        } else {
+                                            paint_clipped(
+                                                ui,
+                                                Pos2::new(rl + 6.0, cy),
+                                                name_w - 10.0,
+                                                &entry.obj_name,
+                                                font_row.clone(),
+                                                style.dim_col,
+                                            );
+                                        }
                                         paint_clipped(
                                             ui,
                                             Pos2::new(rl + name_w + 6.0, cy),
@@ -715,6 +767,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.selected_cell = pending_selected_cell;
         s.cell_filter = pending_cell_filter;
         s.obj_filter = pending_obj_filter;
+        s.renaming_obj = renaming_id;
+        s.rename_buf = rename_buf;
+        s.rename_request_focus = rename_request_focus;
+        s.open = open;
     }
 
     if let Some(response) = window {
@@ -725,6 +781,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     // act on pending world mutations now that the UI borrow is released
+    if let Some((id, new_name)) = pending_rename {
+        if let Some(obj) = world.get_object_mut(id) {
+            obj.name = new_name;
+        }
+    }
+
     if let Some(id) = pending_delete {
         world.remove_object(id);
     }
