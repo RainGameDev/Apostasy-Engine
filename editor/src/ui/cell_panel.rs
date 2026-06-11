@@ -1,19 +1,18 @@
 use anyhow::Result;
-use apostasy_core::assets::asset_manager::AssetManager;
-use apostasy_core::assets::loaders::scene_loader::SceneLoader;
+use apostasy_core::cgmath::Vector3;
 use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
-use apostasy_core::objects::scene::ObjectId;
-use apostasy_core::objects::scene_serializer::load_scene;
+use apostasy_core::objects::cell::{CELL_SIZE, ObjectId};
+use apostasy_core::objects::cell_streaming::CellMigrations;
+use apostasy_core::objects::components::transform::Transform;
+use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
-use std::sync::Arc;
 
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
-use crate::ui::preferences_panel::EditorPreferences;
 use super::shared::{WindowLayout, save_layout};
 use super::EditorStyle;
 
@@ -35,10 +34,12 @@ pub struct CellSearchState {
     pub renaming_obj: Option<ObjectId>,
     pub rename_buf: String,
     pub rename_request_focus: bool,
-    // scene rename state
-    pub renaming_scene: Option<String>,
-    pub scene_rename_buf: String,
-    pub scene_rename_focus: bool,
+    // currently selected cell; when set, filters the object list to that cell
+    pub selected_cell: Option<Vector3<i32>>,
+    // cell rename state
+    pub renaming_cell: Option<Vector3<i32>>,
+    pub cell_rename_buf: String,
+    pub cell_rename_focus: bool,
 }
 
 impl Default for CellSearchState {
@@ -53,11 +54,38 @@ impl Default for CellSearchState {
             renaming_obj: None,
             rename_buf: String::new(),
             rename_request_focus: false,
-            renaming_scene: None,
-            scene_rename_buf: String::new(),
-            scene_rename_focus: false,
+            selected_cell: None,
+            renaming_cell: None,
+            cell_rename_buf: String::new(),
+            cell_rename_focus: false,
         }
     }
+}
+
+/// When an object crosses a cell boundary its `ObjectId` changes. Runs before the
+/// rest of the editor UI (high priority) and rewrites the cached selection ids so
+/// the inspector and object list keep tracking the migrated object.
+#[update(mode = "editor", priority = 10000)]
+pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
+    let remap = match world.get_resource::<CellMigrations>() {
+        Ok(m) if !m.remap.is_empty() => m.remap.clone(),
+        _ => return Ok(()),
+    };
+
+    if let Ok(state) = world.get_resource_mut::<CellSearchState>() {
+        let fix = |slot: &mut Option<ObjectId>| {
+            if let Some(id) = *slot
+                && let Some(&new_id) = remap.get(&id)
+            {
+                *slot = Some(new_id);
+            }
+        };
+        fix(&mut state.selected_obj);
+        fix(&mut state.clicked_obj);
+        fix(&mut state.renaming_obj);
+    }
+
+    Ok(())
 }
 
 #[allow(deprecated)]
@@ -81,23 +109,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         .collect();
     world.get_resource_mut::<CellSearchState>()?.obj_entries = obj_entries;
 
-    let current_scene = EditorPreferences::load().last_scene;
-    let scene_names: Vec<String> = world
-        .get_resource::<AssetManager>()
-        .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
-        .map(|l| {
-            l.registry
-                .read()
-                .ok()
-                .map(|r| {
-                    let mut names: Vec<String> = r.scenes.keys().cloned().collect();
-                    names.sort();
-                    names
-                })
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
+    // Loaded cells of the active worldspace: (coord, name, object count), sorted by X then Z.
+    let mut cell_entries: Vec<(Vector3<i32>, String, usize)> = world
+        .worldspace()
+        .loaded_cells()
+        .map(|c| (c.coord, c.name.clone(), c.len()))
+        .collect();
+    cell_entries.sort_by_key(|(coord, _, _)| (coord.x, coord.z));
 
     let mut open = world.get_resource::<CellSearchState>()?.open;
     let obj_entries = world.get_resource::<CellSearchState>()?.obj_entries.clone();
@@ -121,15 +139,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         world.get_resource::<CellSearchState>()?.rename_request_focus;
     let mut pending_rename: Option<(ObjectId, String)> = None;
 
-    let mut renaming_scene: Option<String> =
-        world.get_resource::<CellSearchState>()?.renaming_scene.clone();
-    let mut scene_rename_buf: String =
-        world.get_resource::<CellSearchState>()?.scene_rename_buf.clone();
-    let mut scene_rename_focus: bool =
-        world.get_resource::<CellSearchState>()?.scene_rename_focus;
-    let mut pending_scene_load: Option<String> = None;
-    let mut pending_scene_delete: Option<String> = None;
-    let mut pending_scene_rename: Option<(String, String)> = None;
+    let mut selected_cell: Option<Vector3<i32>> =
+        world.get_resource::<CellSearchState>()?.selected_cell;
+    let mut renaming_cell: Option<Vector3<i32>> =
+        world.get_resource::<CellSearchState>()?.renaming_cell;
+    let mut cell_rename_buf: String =
+        world.get_resource::<CellSearchState>()?.cell_rename_buf.clone();
+    let mut cell_rename_focus: bool =
+        world.get_resource::<CellSearchState>()?.cell_rename_focus;
+    let mut pending_goto_cell: Option<Vector3<i32>> = None;
+    let mut pending_cell_rename: Option<(Vector3<i32>, String)> = None;
 
     let row_h = style.row_height();
     let header_h = style.header_height();
@@ -198,7 +217,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.painter().text(
                                 title_rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "Scenes",
+                                "Cells",
                                 font_hdr.clone(),
                                 style.text_col,
                             );
@@ -209,13 +228,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                             let table_h = ui.available_height();
                             ScrollArea::vertical()
-                                .id_salt("scenes_scroll")
+                                .id_salt("cells_scroll")
                                 .auto_shrink([false; 2])
                                 .max_height(table_h)
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                                    if scene_names.is_empty() {
+                                    if cell_entries.is_empty() {
                                         let (row_rect, _) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
                                             Sense::hover(),
@@ -224,23 +243,35 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         ui.painter().text(
                                             Pos2::new(row_rect.left() + 6.0, row_rect.center().y),
                                             egui::Align2::LEFT_CENTER,
-                                            "No saved scenes",
+                                            "No loaded cells",
                                             font_row.clone(),
                                             style.dim_col,
                                         );
                                     }
 
-                                    for (idx, name) in scene_names.iter().enumerate() {
-                                        let is_current = *name == current_scene;
-                                        let is_renaming =
-                                            renaming_scene.as_deref() == Some(name.as_str());
+                                    for (idx, (coord, name, count)) in
+                                        cell_entries.iter().enumerate()
+                                    {
+                                        let is_selected = selected_cell == Some(*coord);
+                                        let is_renaming = renaming_cell == Some(*coord);
 
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
                                             Sense::click(),
                                         );
 
-                                        let bg = if is_current && !is_renaming {
+                                        if row_resp.clicked() && !is_renaming {
+                                            // toggle: clicking the selected cell clears the filter
+                                            selected_cell =
+                                                if is_selected { None } else { Some(*coord) };
+                                        }
+                                        if row_resp.double_clicked() {
+                                            renaming_cell = Some(*coord);
+                                            cell_rename_buf = name.clone();
+                                            cell_rename_focus = true;
+                                        }
+
+                                        let bg = if is_selected && !is_renaming {
                                             style.sel_bg
                                         } else if row_resp.hovered() || is_renaming {
                                             style.hover_bg
@@ -253,65 +284,76 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         if is_renaming {
                                             let edit_rect = Rect::from_min_size(
-                                                Pos2::new(
-                                                    row_rect.left() + 2.0,
-                                                    row_rect.top() + 1.0,
-                                                ),
+                                                Pos2::new(row_rect.left() + 2.0, row_rect.top() + 1.0),
                                                 Vec2::new(avail_w - 4.0, row_h - 2.0),
                                             );
                                             let te =
-                                                egui::TextEdit::singleline(&mut scene_rename_buf)
+                                                egui::TextEdit::singleline(&mut cell_rename_buf)
                                                     .font(font_row.clone());
                                             let te_resp = ui.put(edit_rect, te);
-                                            if scene_rename_focus {
+                                            if cell_rename_focus {
                                                 te_resp.request_focus();
-                                                scene_rename_focus = false;
+                                                cell_rename_focus = false;
                                             }
                                             let escape =
                                                 ui.input(|i| i.key_pressed(egui::Key::Escape));
                                             let enter =
                                                 ui.input(|i| i.key_pressed(egui::Key::Enter));
                                             if (te_resp.lost_focus() && !escape) || enter {
-                                                let new_name = scene_rename_buf.trim().to_string();
-                                                if !new_name.is_empty() && new_name != *name {
-                                                    pending_scene_rename =
-                                                        Some((name.clone(), new_name));
-                                                }
-                                                renaming_scene = None;
+                                                pending_cell_rename = Some((
+                                                    *coord,
+                                                    cell_rename_buf.trim().to_string(),
+                                                ));
+                                                renaming_cell = None;
                                             } else if escape {
-                                                renaming_scene = None;
+                                                renaming_cell = None;
                                             }
                                         } else {
-                                            let text_col = if is_current {
+                                            let text_col = if is_selected {
                                                 style.text_col
                                             } else {
                                                 style.dim_col
                                             };
+                                            // "name (X, Z)" when named, else "(X, Z)"
+                                            let label = if name.is_empty() {
+                                                format!("({}, {})", coord.x, coord.z)
+                                            } else {
+                                                format!("{} ({}, {})", name, coord.x, coord.z)
+                                            };
                                             paint_clipped(
                                                 ui,
-                                                Pos2::new(row_rect.left() + 6.0, row_rect.center().y),
-                                                avail_w - 10.0,
-                                                name,
+                                                Pos2::new(
+                                                    row_rect.left() + 6.0,
+                                                    row_rect.center().y,
+                                                ),
+                                                avail_w - 48.0,
+                                                &label,
                                                 font_row.clone(),
                                                 text_col,
+                                            );
+                                            // object count, right-aligned
+                                            ui.painter().text(
+                                                Pos2::new(
+                                                    row_rect.right() - 6.0,
+                                                    row_rect.center().y,
+                                                ),
+                                                egui::Align2::RIGHT_CENTER,
+                                                count.to_string(),
+                                                font_row.clone(),
+                                                style.dim_col,
                                             );
                                         }
 
                                         row_resp.context_menu(|ui| {
                                             ui.set_min_width(120.0);
-                                            if ui.button("Load").clicked() {
-                                                pending_scene_load = Some(name.clone());
+                                            if ui.button("Go to cell").clicked() {
+                                                pending_goto_cell = Some(*coord);
                                                 ui.close();
                                             }
                                             if ui.button("Rename").clicked() {
-                                                renaming_scene = Some(name.clone());
-                                                scene_rename_buf = name.clone();
-                                                scene_rename_focus = true;
-                                                ui.close();
-                                            }
-                                            ui.separator();
-                                            if ui.button("Delete").clicked() {
-                                                pending_scene_delete = Some(name.clone());
+                                                renaming_cell = Some(*coord);
+                                                cell_rename_buf = name.clone();
+                                                cell_rename_focus = true;
                                                 ui.close();
                                             }
                                         });
@@ -323,7 +365,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     }
 
                                     // filler rows
-                                    let rows_drawn = scene_names.len();
+                                    let rows_drawn = cell_entries.len();
                                     let remaining =
                                         (ui.available_height() / row_h).ceil() as usize;
                                     for i in 0..remaining {
@@ -333,13 +375,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         } else {
                                             style.row_alt
                                         };
-                                        let (row_rect, row_resp) = ui.allocate_exact_size(
+                                        let (row_rect, _) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
-                                            Sense::click(),
+                                            Sense::hover(),
                                         );
-                                        row_resp.context_menu(|ui| {
-                                            ui.set_min_width(120.0);
-                                        });
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
                                         ui.painter().line_segment(
                                             [row_rect.left_bottom(), row_rect.right_bottom()],
@@ -460,6 +499,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let filtered: Vec<&ObjectRefEntry> = obj_entries
                                 .iter()
                                 .filter(|e| {
+                                    // when a cell is selected, only show that cell's objects
+                                    if let Some(cell) = selected_cell {
+                                        if e.object_id.cell != cell {
+                                            return false;
+                                        }
+                                    }
                                     if filter_value.trim().is_empty() {
                                         return true;
                                     }
@@ -703,9 +748,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.rename_buf = rename_buf;
         s.rename_request_focus = rename_request_focus;
         s.open = open;
-        s.renaming_scene = renaming_scene;
-        s.scene_rename_buf = scene_rename_buf;
-        s.scene_rename_focus = scene_rename_focus;
+        s.selected_cell = selected_cell;
+        s.renaming_cell = renaming_cell;
+        s.cell_rename_buf = cell_rename_buf;
+        s.cell_rename_focus = cell_rename_focus;
     }
 
     if let Some(response) = window {
@@ -731,93 +777,35 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if pending_add {
-        world.add_new_object();
+        match selected_cell {
+            Some(cell) => {
+                world.add_object_to_cell(cell, Object::default());
+            }
+            None => {
+                world.add_new_object();
+            }
+        }
     }
 
-    if let Some(name) = pending_scene_load {
-        scene_load(world, &name);
+    if let Some((coord, new_name)) = pending_cell_rename {
+        world.worldspace_mut().set_cell_name(coord, new_name);
     }
-    if let Some(name) = pending_scene_delete {
-        scene_delete(world, &name);
-    }
-    if let Some((old, new)) = pending_scene_rename {
-        scene_rename(world, &old, &new);
+
+    if let Some(coord) = pending_goto_cell {
+        goto_cell(world, coord);
     }
 
     Ok(())
 }
 
-fn scene_load(world: &mut World, name: &str) {
-    let scene_value: Option<serde_yaml::Value> = world
-        .get_resource::<AssetManager>()
-        .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
-        .and_then(|l| l.registry.read().ok()?.scenes.get(name).cloned());
-
-    if let Some(value) = scene_value {
-        EditorPreferences::save_last_scene(name);
-        let _ = load_scene(world, &value, &["EditorCamera"]);
-        if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-            s.selected_obj = None;
-        }
-    }
-}
-
-fn scene_delete(world: &mut World, name: &str) {
-    let registry_arc = world
-        .get_resource::<AssetManager>()
-        .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
-        .map(|l| Arc::clone(&l.registry));
-
-    if let Some(arc) = registry_arc {
-        if let Ok(mut reg) = arc.write() {
-            reg.scenes.remove(name);
-        }
-    }
-
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("res/scenes")
-        .join(format!("{}.yaml", name));
-    let _ = std::fs::remove_file(&path);
-
-    let prefs = EditorPreferences::load();
-    if prefs.last_scene == name {
-        EditorPreferences::save_last_scene("");
-    }
-}
-
-fn scene_rename(world: &mut World, old_name: &str, new_name: &str) {
-    let registry_arc = world
-        .get_resource::<AssetManager>()
-        .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
-        .map(|l| Arc::clone(&l.registry));
-
-    if let Some(arc) = registry_arc {
-        if let Ok(mut reg) = arc.write() {
-            if let Some(mut value) = reg.scenes.remove(old_name) {
-                if let serde_yaml::Value::Mapping(ref mut map) = value {
-                    map.insert(
-                        serde_yaml::Value::String("name".into()),
-                        serde_yaml::Value::String(new_name.into()),
-                    );
-                }
-                let scenes_dir =
-                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
-                let new_path = scenes_dir.join(format!("{}.yaml", new_name));
-                if let Ok(yaml) = serde_yaml::to_string(&value) {
-                    let _ = std::fs::write(&new_path, yaml);
-                }
-                let old_path = scenes_dir.join(format!("{}.yaml", old_name));
-                let _ = std::fs::remove_file(&old_path);
-                reg.scenes.insert(new_name.to_string(), value);
-            }
-        }
-    }
-
-    let prefs = EditorPreferences::load();
-    if prefs.last_scene == old_name {
-        EditorPreferences::save_last_scene(new_name);
+/// Moves the editor camera to the center of `coord` on the XZ plane, keeping its
+/// current height. The center is at coord * CELL_SIZE + CELL_SIZE/2.
+fn goto_cell(world: &mut World, coord: Vector3<i32>) {
+    if let Ok(camera) = world.get_object_with_tag_mut::<EditorCamera>()
+        && let Ok(transform) = camera.get_component_mut::<Transform>()
+    {
+        let size = CELL_SIZE as f32;
+        transform.local_position.x = coord.x as f32 * size + size / 2.0;
+        transform.local_position.z = coord.z as f32 * size + size / 2.0;
     }
 }

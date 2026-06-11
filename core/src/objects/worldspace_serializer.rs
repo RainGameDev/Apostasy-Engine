@@ -6,21 +6,18 @@ use cgmath::Vector3;
 use crate::{
     objects::{
         Object,
+        cell::{CellCoord, ObjectId},
         component::{BoxedComponent, get_component_registration},
-        scene::ObjectId,
+        components::transform::Transform,
         tag::get_tag_registration,
         world::World,
     },
-    objects::components::transform::Transform,
     physics::{
         Gravity,
         collider::{Collider, ColliderShape},
         velocity::Velocity,
     },
-    rendering::components::{
-        camera::Camera,
-        model_renderer::ModelRenderer,
-    },
+    rendering::components::{camera::Camera, model_renderer::ModelRenderer},
 };
 
 fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
@@ -153,29 +150,49 @@ fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
     Some(serde_yaml::Value::Mapping(map))
 }
 
-pub fn save_scene(world: &World, name: &str, namespace: &str, path: &Path) -> Result<()> {
+fn coord_key(coord: CellCoord) -> String {
+    format!("{},{},{}", coord.x, coord.y, coord.z)
+}
+
+fn parse_coord_key(key: &str) -> Option<CellCoord> {
+    let mut parts = key.split(',').map(|p| p.trim().parse::<i32>());
+    let x = parts.next()?.ok()?;
+    let y = parts.next()?.ok()?;
+    let z = parts.next()?.ok()?;
+    Some(Vector3::new(x, y, z))
+}
+
+/// Saves the active worldspace to a single YAML file. Each loaded, non-empty
+/// cell becomes one entry under `cells`, keyed by its `"x,y,z"` coordinate, with
+/// the cell's root object tree serialized in the existing per-object format.
+pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let root_ids: Vec<ObjectId> = world
-        .get_root_objects()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
-
-    let mut objects = serde_yaml::Sequence::new();
-    for id in root_ids {
-        if let Some(obj_value) = serialize_object(world, id) {
-            objects.push(obj_value);
+    let mut cells = serde_yaml::Mapping::new();
+    for cell in world.worldspace().loaded_cells() {
+        let mut objects = serde_yaml::Sequence::new();
+        for (id, _) in cell.get_root_objects() {
+            if let Some(obj_value) = serialize_object(world, id) {
+                objects.push(obj_value);
+            }
         }
+        // Persist a cell if it has serialized objects or a user-assigned name.
+        if objects.is_empty() && cell.name.is_empty() {
+            continue;
+        }
+        let mut cell_map = serde_yaml::Mapping::new();
+        cell_map.insert("name".into(), cell.name.clone().into());
+        cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
+        cells.insert(coord_key(cell.coord).into(), serde_yaml::Value::Mapping(cell_map));
     }
 
     let mut doc = serde_yaml::Mapping::new();
     doc.insert("name".into(), name.into());
     doc.insert("namespace".into(), namespace.into());
-    doc.insert("class".into(), "scene".into());
-    doc.insert("objects".into(), serde_yaml::Value::Sequence(objects));
+    doc.insert("class".into(), "worldspace".into());
+    doc.insert("cells".into(), serde_yaml::Value::Mapping(cells));
 
     let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(doc))?;
     std::fs::write(path, yaml)?;
@@ -183,7 +200,7 @@ pub fn save_scene(world: &World, name: &str, namespace: &str, path: &Path) -> Re
     Ok(())
 }
 
-fn load_object(world: &mut World, value: &serde_yaml::Value, parent_id: Option<ObjectId>) -> Result<()> {
+fn build_object(value: &serde_yaml::Value) -> Object {
     let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("Object");
 
     let mut obj = Object::new();
@@ -210,22 +227,38 @@ fn load_object(world: &mut World, value: &serde_yaml::Value, parent_id: Option<O
         }
     }
 
+    obj
+}
+
+/// Loads an object (and its children) into `cell_coord`. Root objects are placed
+/// directly in the given cell so the on-disk layout is preserved exactly;
+/// children follow their parent's cell.
+fn load_object(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    parent_id: Option<ObjectId>,
+    cell_coord: CellCoord,
+) -> Result<()> {
+    let obj = build_object(value);
+
     let obj_id = match parent_id {
-        Some(pid) => world.scene.add_child_object(pid, obj)?,
-        None => world.add_object(obj),
+        Some(pid) => world.add_child_object(pid, obj)?,
+        None => world.add_object_to_cell(cell_coord, obj),
     };
 
     if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
         for child_value in children {
-            load_object(world, child_value, Some(obj_id))?;
+            load_object(world, child_value, Some(obj_id), cell_coord)?;
         }
     }
 
     Ok(())
 }
 
-/// Removes all root objects not tagged with any of `keep_tags`, then loads objects from `value`.
-pub fn load_scene(world: &mut World, value: &serde_yaml::Value, keep_tags: &[&str]) -> Result<()> {
+/// Removes all root objects not tagged with any of `keep_tags`, then loads the
+/// worldspace described by `value`. Supports both the new `cells` map format and
+/// the legacy flat `objects` list (objects are auto-placed by position).
+pub fn load_worldspace(world: &mut World, value: &serde_yaml::Value, keep_tags: &[&str]) -> Result<()> {
     let root_ids: Vec<ObjectId> = world
         .get_root_objects()
         .into_iter()
@@ -248,9 +281,57 @@ pub fn load_scene(world: &mut World, value: &serde_yaml::Value, keep_tags: &[&st
         }
     }
 
-    if let Some(objects) = value.get("objects").and_then(|v| v.as_sequence()) {
+    if let Some(cells) = value.get("cells").and_then(|v| v.as_mapping()) {
+        for (coord_value, cell_value) in cells {
+            let Some(coord) = coord_value.as_str().and_then(parse_coord_key) else {
+                continue;
+            };
+
+            // New format: { name, objects }. Legacy: a bare objects sequence.
+            let (name, objects) = match cell_value {
+                serde_yaml::Value::Mapping(_) => (
+                    cell_value.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    cell_value.get("objects").and_then(|v| v.as_sequence()),
+                ),
+                _ => ("", cell_value.as_sequence()),
+            };
+
+            if !name.is_empty() {
+                world.worldspace_mut().set_cell_name(coord, name);
+            }
+            if let Some(objects) = objects {
+                for obj_value in objects {
+                    load_object(world, obj_value, None, coord)?;
+                }
+            }
+        }
+    } else if let Some(objects) = value.get("objects").and_then(|v| v.as_sequence()) {
+        // Legacy flat scene format: place each object by its transform position.
         for obj_value in objects {
-            load_object(world, obj_value, None)?;
+            load_legacy_object(world, obj_value, None)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Legacy loader for the old flat `objects` scene format. Root objects are added
+/// via `add_object` (auto-placed into the cell containing their transform).
+fn load_legacy_object(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    parent_id: Option<ObjectId>,
+) -> Result<()> {
+    let obj = build_object(value);
+
+    let obj_id = match parent_id {
+        Some(pid) => world.add_child_object(pid, obj)?,
+        None => world.add_object(obj),
+    };
+
+    if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
+        for child_value in children {
+            load_legacy_object(world, child_value, Some(obj_id))?;
         }
     }
 

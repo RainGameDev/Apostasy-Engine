@@ -3,7 +3,7 @@ use apostasy_macros::{Component, update};
 use cgmath::{Deg, Euler, InnerSpace, Matrix3, Quaternion, Rotation, Rotation3, Vector3};
 
 use crate::{
-    objects::{component::Inspect, scene::ObjectId, world::World},
+    objects::{cell::ObjectId, component::Inspect, world::World},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -198,9 +198,12 @@ impl Inspect for Transform {
 
 #[update(mode = "all", priority = 1)]
 pub fn transform_update(world: &mut World) -> Result<()> {
-    let scene = &mut world.scene;
+    // Object hierarchies never span cells, so each cell can be solved
+    // independently using only its own objects.
+    for cell in world.worldspace.cells.values_mut() {
+    let coord = cell.coord;
 
-    for (_, object) in scene.objects.iter_mut() {
+    for (_, object) in cell.objects.iter_mut() {
         let Some(transform) = object
             .components
             .iter_mut()
@@ -228,13 +231,17 @@ pub fn transform_update(world: &mut World) -> Result<()> {
         transform.global_euler_angles = transform.local_euler_angles;
     }
 
-    let ids: Vec<ObjectId> = scene.objects.keys().collect();
+    let ids: Vec<ObjectId> = cell
+        .objects
+        .keys()
+        .map(|key| ObjectId { cell: coord, key })
+        .collect();
 
     for id in ids {
-        let ancestors = scene.get_ancestors(id);
+        let ancestors = cell.get_ancestors(id);
 
         let parent_global = ancestors.iter().rev().find_map(|&ancestor_id| {
-            let obj = scene.objects.get(ancestor_id)?;
+            let obj = cell.objects.get(ancestor_id.key)?;
             let t = obj
                 .components
                 .iter()
@@ -251,7 +258,7 @@ pub fn transform_update(world: &mut World) -> Result<()> {
             continue;
         };
 
-        let Some(obj) = scene.objects.get_mut(id) else {
+        let Some(obj) = cell.objects.get_mut(id.key) else {
             continue;
         };
 
@@ -285,6 +292,7 @@ pub fn transform_update(world: &mut World) -> Result<()> {
             parent_scale.y * transform.local_scale.y,
             parent_scale.z * transform.local_scale.z,
         );
+    }
     }
 
     Ok(())

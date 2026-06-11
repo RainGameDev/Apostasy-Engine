@@ -101,17 +101,15 @@ pub fn inspector(world: &mut World) -> Result<()> {
             .collect();
 
     // Collect names already on this object
-    let existing_component_names: Vec<&str> = if let Some(id) = selected_id {
-        world
-            .get_object(id)
-            .unwrap()
-            .get_components()
-            .into_iter()
-            .map(|c| c.type_name().split("::").last().unwrap_or(c.type_name()))
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let existing_component_names: Vec<&str> = selected_id
+        .and_then(|id| world.get_object(id))
+        .map(|obj| {
+            obj.get_components()
+                .into_iter()
+                .map(|c| c.type_name().split("::").last().unwrap_or(c.type_name()))
+                .collect()
+        })
+        .unwrap_or_default();
 
     let picker_state = world.get_resource::<ComponentPickerState>().unwrap();
     let picker_open = picker_state.open;

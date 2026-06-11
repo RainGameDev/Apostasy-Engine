@@ -1,5 +1,5 @@
 use crate::objects::components::transform::Transform;
-use crate::objects::scene::ObjectId;
+use crate::objects::cell::ObjectId;
 use crate::objects::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;

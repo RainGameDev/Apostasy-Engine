@@ -1,8 +1,8 @@
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
-use apostasy_core::assets::loaders::scene_loader::SceneLoader;
+use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::egui::{self};
-use apostasy_core::objects::scene_serializer::{load_scene, save_scene};
+use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
 use apostasy_core::objects::world::World;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::ui::FontRegistry;
@@ -25,9 +25,9 @@ pub struct SaveAsDialog {
 }
 
 fn do_save(world: &mut World, name: &str) {
-    let scenes_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
+    let scenes_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
     let path = scenes_dir.join(format!("{}.yaml", name));
-    if let Err(e) = save_scene(world, name, "game", &path) {
+    if let Err(e) = save_worldspace(world, name, "game", &path) {
         apostasy_core::log_warn!("Failed to save scene '{}': {}", name, e);
     } else {
         if let Ok(am) = world.get_resource_mut::<AssetManager>() {
@@ -85,12 +85,12 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let scene_names: Vec<String> = world
         .get_resource::<AssetManager>()
         .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
         .map(|l| {
             l.registry
                 .read()
                 .ok()
-                .map(|r| r.scenes.keys().cloned().collect::<Vec<_>>())
+                .map(|r| r.worldspaces.keys().cloned().collect::<Vec<_>>())
                 .unwrap_or_default()
         })
         .unwrap_or_default();
@@ -333,19 +333,19 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         let scene_value: Option<serde_yaml::Value> = world
             .get_resource::<AssetManager>()
             .ok()
-            .and_then(|am| am.get_loader::<SceneLoader>())
+            .and_then(|am| am.get_loader::<WorldspaceLoader>())
             .and_then(|l| {
                 l.registry
                     .read()
                     .ok()?
-                    .scenes
+                    .worldspaces
                     .get(scene_name.as_str())
                     .cloned()
             });
 
         if let Some(value) = scene_value {
             EditorPreferences::save_last_scene(scene_name);
-            let _ = load_scene(world, &value, &["EditorCamera"]);
+            let _ = load_worldspace(world, &value, &["EditorCamera"]);
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                 s.selected_obj = None;
             }

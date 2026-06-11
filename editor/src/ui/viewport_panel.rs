@@ -2,7 +2,7 @@ use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
     egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
-    objects::{components::transform::Transform, scene::ObjectId, world::World},
+    objects::{components::transform::Transform, cell::ObjectId, world::World},
     physics::collider::Collider,
     rendering::{
         components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},

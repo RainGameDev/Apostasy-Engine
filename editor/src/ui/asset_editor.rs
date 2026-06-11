@@ -392,7 +392,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     .unwrap_or_default(),
                 _ => String::new(),
             };
-            let supports_components = !asset_class.is_empty() && asset_class != "scene";
+            let supports_components = !asset_class.is_empty() && asset_class != "worldspace";
 
             // Property editor
             ScrollArea::vertical()
@@ -767,7 +767,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     .copied()
                     .unwrap_or("")
                     .to_lowercase();
-                let supports_comps = !template_class.is_empty() && template_class != "scene";
+                let supports_comps = !template_class.is_empty() && template_class != "worldspace";
 
                 // Template fields scroll area
                 let avail_h = ui.available_height() - 36.0;
@@ -1313,7 +1313,7 @@ fn find_asset_file(editor_id: &str) -> Option<(PathBuf, serde_yaml::Value)> {
     let dirs = [
         base.join("../game/res"),
         base.join("../core/res"),
-        base.join("res/scenes"),
+        base.join("res/worldspaces"),
     ];
 
     for dir in &dirs {

@@ -1,4 +1,5 @@
 use anyhow::{Error, Result, anyhow};
+use cgmath::Vector3;
 use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
@@ -6,54 +7,111 @@ use crate::{
     objects::{Object, component::Component, tag::Tag},
 };
 
-pub type ObjectId = DefaultKey;
+/// Side length of a cell along the X and Z axes, in world units.
+/// Cells are infinite along Y, so the Y component of a [`CellCoord`] is always 0.
+pub const CELL_SIZE: i32 = 128;
 
-pub struct Scene {
-    pub(crate) objects: SlotMap<ObjectId, Object>,
+/// Grid coordinate of a cell. Only X and Z are meaningful; Y is always 0.
+pub type CellCoord = Vector3<i32>;
+
+/// A stable handle to an object. Objects are owned by the [`Cell`] named in
+/// `cell`; `key` indexes into that cell's slot map.
+///
+/// Moving an object across a cell boundary changes its `cell` (and therefore its
+/// `ObjectId`); use [`crate::objects::worldspace::Worldspace`] migration helpers
+/// for that. Within a single cell the key is stable.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ObjectId {
+    pub cell: CellCoord,
+    pub key: DefaultKey,
 }
 
-impl Default for Scene {
+impl Default for ObjectId {
     fn default() -> Self {
-        let mut scene = Scene {
-            objects: SlotMap::new(),
-        };
-        scene.add_default_objects();
-        scene
+        Self {
+            cell: Vector3::new(0, 0, 0),
+            key: DefaultKey::default(),
+        }
     }
 }
 
-impl Scene {
-    pub(crate) fn add_default_objects(&mut self) {}
+/// Returns the cell coordinate that contains the given world-space position.
+/// Cells tile the XZ plane in [`CELL_SIZE`]-unit squares and are infinite in Y.
+#[inline]
+pub fn world_to_cell(position: Vector3<f32>) -> CellCoord {
+    Vector3::new(
+        (position.x.floor() as i32).div_euclid(CELL_SIZE),
+        0,
+        (position.z.floor() as i32).div_euclid(CELL_SIZE),
+    )
+}
+
+/// A single cell of a worldspace. Owns its objects exactly the way the old
+/// `Scene` did; object hierarchies are always contained within a single cell.
+pub struct Cell {
+    pub coord: CellCoord,
+    /// Optional user-facing name. Empty means unnamed (display falls back to coord).
+    pub name: String,
+    pub(crate) objects: SlotMap<DefaultKey, Object>,
+}
+
+impl Cell {
+    pub fn new(coord: CellCoord) -> Self {
+        Self {
+            coord,
+            name: String::new(),
+            objects: SlotMap::new(),
+        }
+    }
+
+    #[inline]
+    fn oid(&self, key: DefaultKey) -> ObjectId {
+        ObjectId {
+            cell: self.coord,
+            key,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
 
     // ========== ========== Object Management ========== ==========
 
     /// Adds a new default Object and returns its ID
     pub fn add_new_object(&mut self) -> ObjectId {
-        self.objects.insert(Object::default())
+        self.add_object(Object::default())
     }
 
     /// Adds an Object as a root (no parent) and returns its ID
     pub fn add_object(&mut self, mut object: Object) -> ObjectId {
         object.parent = None;
-        self.objects.insert(object)
+        let key = self.objects.insert(object);
+        let id = self.oid(key);
+        self.objects[key].id = id;
+        id
     }
 
-    /// Inserts `child` into the scene parented under `parent_id`.
-    /// Returns the new child's ID, or an error if the parent doesn't exist.
+    /// Inserts `child` into the cell parented under `parent_id`.
     pub fn add_child_object(&mut self, parent_id: ObjectId, mut child: Object) -> Result<ObjectId> {
-        if !self.objects.contains_key(parent_id) {
+        if !self.objects.contains_key(parent_id.key) {
             return Err(anyhow!("Parent object does not exist"));
         }
         child.parent = Some(parent_id);
-        let child_id = self.objects.insert(child);
-        self.objects[parent_id].children.push(child_id);
+        let key = self.objects.insert(child);
+        let child_id = self.oid(key);
+        self.objects[key].id = child_id;
+        self.objects[parent_id.key].children.push(child_id);
         Ok(child_id)
     }
 
-    /// Removes an Object and all of its descendants from the scene.
-    /// Also detaches the object from its parent's children list.
+    /// Removes an Object and all of its descendants from the cell.
     pub fn remove_object(&mut self, id: ObjectId) {
-        if !self.objects.contains_key(id) {
+        if !self.objects.contains_key(id.key) {
             log_error!("Object does not exist!");
             return;
         }
@@ -63,47 +121,43 @@ impl Scene {
         let mut i = 0;
         while i < to_remove.len() {
             let current = to_remove[i];
-            if let Some(obj) = self.objects.get(current) {
+            if let Some(obj) = self.objects.get(current.key) {
                 to_remove.extend_from_slice(&obj.children.clone());
             }
             i += 1;
         }
 
         // Detach root of subtree from its parent
-        if let Some(parent_id) = self.objects[id].parent {
-            if let Some(parent) = self.objects.get_mut(parent_id) {
+        if let Some(parent_id) = self.objects[id.key].parent {
+            if let Some(parent) = self.objects.get_mut(parent_id.key) {
                 parent.children.retain(|&cid| cid != id);
             }
         }
 
         for rid in to_remove {
-            self.objects.remove(rid);
+            self.objects.remove(rid.key);
         }
     }
 
     // ========== ========== Hierarchy ========== ==========
 
     /// Reparents an already-inserted object to a new parent, or to root if `None`.
-    /// Returns an error if the operation would create a cycle.
-    pub fn set_parent(
-        &mut self,
-        child_id: ObjectId,
-        new_parent_id: Option<ObjectId>,
-    ) -> Result<()> {
-        if !self.objects.contains_key(child_id) {
+    /// Both objects must live in this cell.
+    pub fn set_parent(&mut self, child_id: ObjectId, new_parent_id: Option<ObjectId>) -> Result<()> {
+        if !self.objects.contains_key(child_id.key) {
             return Err(anyhow!("Child object does not exist"));
         }
 
         // Detach from old parent
-        if let Some(old_parent_id) = self.objects[child_id].parent {
-            if let Some(old_parent) = self.objects.get_mut(old_parent_id) {
+        if let Some(old_parent_id) = self.objects[child_id.key].parent {
+            if let Some(old_parent) = self.objects.get_mut(old_parent_id.key) {
                 old_parent.children.retain(|&id| id != child_id);
             }
         }
 
         match new_parent_id {
             Some(parent_id) => {
-                if !self.objects.contains_key(parent_id) {
+                if !self.objects.contains_key(parent_id.key) {
                     return Err(anyhow!("New parent object does not exist"));
                 }
                 if self.is_ancestor_of(child_id, parent_id) {
@@ -111,11 +165,11 @@ impl Scene {
                         "Cannot parent an object to one of its own descendants"
                     ));
                 }
-                self.objects[child_id].parent = Some(parent_id);
-                self.objects[parent_id].children.push(child_id);
+                self.objects[child_id.key].parent = Some(parent_id);
+                self.objects[parent_id.key].children.push(child_id);
             }
             None => {
-                self.objects[child_id].parent = None;
+                self.objects[child_id.key].parent = None;
             }
         }
 
@@ -130,7 +184,7 @@ impl Scene {
     /// Returns true if `ancestor_id` is a strict ancestor of `descendant_id`.
     pub fn is_ancestor_of(&self, ancestor_id: ObjectId, descendant_id: ObjectId) -> bool {
         let mut current = descendant_id;
-        while let Some(parent_id) = self.objects.get(current).and_then(|o| o.parent) {
+        while let Some(parent_id) = self.objects.get(current.key).and_then(|o| o.parent) {
             if parent_id == ancestor_id {
                 return true;
             }
@@ -142,11 +196,11 @@ impl Scene {
     /// Returns immediate children of an object.
     pub fn get_children(&self, id: ObjectId) -> Vec<&Object> {
         self.objects
-            .get(id)
+            .get(id.key)
             .map(|obj| {
                 obj.children
                     .iter()
-                    .filter_map(|&cid| self.objects.get(cid))
+                    .filter_map(|&cid| self.objects.get(cid.key))
                     .collect()
             })
             .unwrap_or_default()
@@ -155,29 +209,26 @@ impl Scene {
     /// Returns the IDs of immediate children.
     pub fn get_children_ids(&self, id: ObjectId) -> &[ObjectId] {
         self.objects
-            .get(id)
+            .get(id.key)
             .map(|obj| obj.children.as_slice())
             .unwrap_or(&[])
     }
 
     /// Returns the parent object, if any.
     pub fn get_parent(&self, id: ObjectId) -> Option<&Object> {
-        self.objects
-            .get(id)?
-            .parent
-            .and_then(|pid| self.objects.get(pid))
+        self.objects.get(id.key)?.parent.and_then(|pid| self.objects.get(pid.key))
     }
 
     /// Returns the parent ID, if any.
     pub fn get_parent_id(&self, id: ObjectId) -> Option<ObjectId> {
-        self.objects.get(id)?.parent
+        self.objects.get(id.key)?.parent
     }
 
     /// Returns all ancestors from root down to the immediate parent (not including `id`).
     pub fn get_ancestors(&self, id: ObjectId) -> Vec<ObjectId> {
         let mut chain = Vec::new();
         let mut current = id;
-        while let Some(parent_id) = self.objects.get(current).and_then(|o| o.parent) {
+        while let Some(parent_id) = self.objects.get(current.key).and_then(|o| o.parent) {
             chain.push(parent_id);
             current = parent_id;
         }
@@ -191,7 +242,7 @@ impl Scene {
         let mut queue = vec![id];
         while !queue.is_empty() {
             let current = queue.remove(0);
-            if let Some(obj) = self.objects.get(current) {
+            if let Some(obj) = self.objects.get(current.key) {
                 for &child_id in &obj.children {
                     result.push(child_id);
                     queue.push(child_id);
@@ -206,51 +257,27 @@ impl Scene {
         self.objects
             .iter()
             .filter(|(_, obj)| obj.parent.is_none())
+            .map(|(key, obj)| (self.oid(key), obj))
             .collect()
     }
 
-    /// Returns all all objects
+    /// Returns all objects in this cell.
     pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.objects.iter().collect()
-    }
-
-    // ========== ========== Debug ========== ==========
-
-    pub fn debug_objects(&self) {
-        for (id, object) in self.objects.iter() {
-            println!(
-                "{}: {:?} | parent: {:?} | children: {:?}",
-                object.name, id, object.parent, object.children
-            );
-        }
-    }
-
-    /// Pretty-prints the full scene hierarchy as a tree.
-    pub fn debug_hierarchy(&self) {
-        for (id, _) in self.get_root_objects() {
-            self.debug_hierarchy_node(id, 0);
-        }
-    }
-
-    fn debug_hierarchy_node(&self, id: ObjectId, depth: usize) {
-        if let Some(obj) = self.objects.get(id) {
-            println!("{}{} ({:?})", "  ".repeat(depth), obj.name, id);
-            for &child_id in &obj.children {
-                self.debug_hierarchy_node(child_id, depth + 1);
-            }
-        }
+        self.objects.iter().map(|(key, obj)| (self.oid(key), obj)).collect()
     }
 
     pub fn get_object(&self, id: ObjectId) -> Option<&Object> {
-        if let Some(object) = self.objects.get(id) {
-            return Some(object);
-        }
-        log_error!("Object does not exist!");
-        None
+        self.objects.get(id.key)
     }
 
     pub fn get_object_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
-        self.objects.get_mut(id)
+        self.objects.get_mut(id.key)
+    }
+
+    /// Removes an object from this cell without touching its descendants and
+    /// returns it. Used when migrating an object to another cell.
+    pub(crate) fn take_object(&mut self, id: ObjectId) -> Option<Object> {
+        self.objects.remove(id.key)
     }
 
     // ========== ========== Components ========== ==========
@@ -274,26 +301,12 @@ impl Scene {
     ) -> Vec<(ObjectId, &Object)> {
         self.objects
             .iter()
-            .filter(|(_id, object)| object.has_component::<T>())
-            .map(|(id, object)| (id, object))
+            .filter(|(_key, object)| object.has_component::<T>())
+            .map(|(key, object)| (self.oid(key), object))
             .collect()
     }
 
     // ========== ========== Tags ========== ==========
-
-    pub fn get_object_with_tag<T: Tag + 'static>(&self) -> Result<&Object> {
-        self.objects
-            .values()
-            .find(|object| object.has_tag::<T>())
-            .ok_or_else(|| Error::msg(format!("No objects of type: {}", T::name())))
-    }
-
-    pub fn get_object_with_tag_mut<T: Tag + 'static>(&mut self) -> Result<&mut Object> {
-        self.objects
-            .values_mut()
-            .find(|object| object.has_tag::<T>())
-            .ok_or_else(|| Error::msg(format!("No objects of type: {}", T::name())))
-    }
 
     pub fn get_objects_with_tag<T: Tag + 'static>(&self) -> Vec<&Object> {
         self.objects
@@ -312,7 +325,34 @@ impl Scene {
     pub fn get_objects_with_tag_with_ids<T: Tag + 'static>(&self) -> Vec<(ObjectId, &Object)> {
         self.objects
             .iter()
-            .filter(|(_id, object)| object.has_tag::<T>())
+            .filter(|(_key, object)| object.has_tag::<T>())
+            .map(|(key, object)| (self.oid(key), object))
             .collect()
     }
+
+    pub fn debug_objects(&self) {
+        for (key, object) in self.objects.iter() {
+            println!(
+                "{}: {:?} | parent: {:?} | children: {:?}",
+                object.name,
+                self.oid(key),
+                object.parent,
+                object.children
+            );
+        }
+    }
+
+    // Generic helper: find the first object across this cell matching a tag type.
+    pub fn find_object_with_tag<T: Tag + 'static>(&self) -> Option<&Object> {
+        self.objects.values().find(|object| object.has_tag::<T>())
+    }
+
+    pub fn find_object_with_tag_mut<T: Tag + 'static>(&mut self) -> Option<&mut Object> {
+        self.objects.values_mut().find(|object| object.has_tag::<T>())
+    }
+}
+
+/// Error helper mirroring the old Scene tag lookups.
+pub fn no_tag_error<T: Tag + 'static>() -> Error {
+    Error::msg(format!("No objects of type: {}", T::name()))
 }

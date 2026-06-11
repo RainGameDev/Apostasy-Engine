@@ -2,11 +2,11 @@ use super::EditorStyle;
 use super::shared::{WindowLayout, save_layout};
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
-use apostasy_core::assets::loaders::scene_loader::SceneLoader;
+use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::egui::{
     Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
 };
-use apostasy_core::objects::scene_serializer::load_scene;
+use apostasy_core::objects::worldspace_serializer::load_worldspace;
 use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
 use apostasy_macros::Resource;
 use std::sync::Arc;
@@ -508,7 +508,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
 
                         let is_scene =
-                            entry.category_path.len() >= 2 && entry.category_path[1] == "scene";
+                            entry.category_path.len() >= 2 && entry.category_path[1] == "worldspace";
                         let is_renaming = object_window_resource.renaming_entry.as_deref()
                             == Some(entry.editor_id.as_str());
 
@@ -764,12 +764,12 @@ fn ow_scene_load(world: &mut World, name: &str) {
     let scene_value: Option<serde_yaml::Value> = world
         .get_resource::<AssetManager>()
         .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
-        .and_then(|l| l.registry.read().ok()?.scenes.get(name).cloned());
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
+        .and_then(|l| l.registry.read().ok()?.worldspaces.get(name).cloned());
 
     if let Some(value) = scene_value {
         EditorPreferences::save_last_scene(name);
-        let _ = load_scene(world, &value, &["EditorCamera"]);
+        let _ = load_worldspace(world, &value, &["EditorCamera"]);
         if let Ok(s) = world.get_resource_mut::<crate::ui::cell_panel::CellSearchState>() {
             s.selected_obj = None;
         }
@@ -780,17 +780,17 @@ fn ow_scene_delete(world: &mut World, name: &str) {
     let registry_arc = world
         .get_resource::<AssetManager>()
         .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
         .map(|l| Arc::clone(&l.registry));
 
     if let Some(arc) = registry_arc {
         if let Ok(mut reg) = arc.write() {
-            reg.scenes.remove(name);
+            reg.worldspaces.remove(name);
         }
     }
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("res/scenes")
+        .join("res/worldspaces")
         .join(format!("{}.yaml", name));
     let _ = std::fs::remove_file(&path);
 
@@ -804,12 +804,12 @@ fn ow_scene_rename(world: &mut World, old_name: &str, new_name: &str) {
     let registry_arc = world
         .get_resource::<AssetManager>()
         .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
         .map(|l| Arc::clone(&l.registry));
 
     if let Some(arc) = registry_arc {
         if let Ok(mut reg) = arc.write() {
-            if let Some(mut value) = reg.scenes.remove(old_name) {
+            if let Some(mut value) = reg.worldspaces.remove(old_name) {
                 if let serde_yaml::Value::Mapping(ref mut map) = value {
                     map.insert(
                         serde_yaml::Value::String("name".into()),
@@ -817,14 +817,14 @@ fn ow_scene_rename(world: &mut World, old_name: &str, new_name: &str) {
                     );
                 }
                 let scenes_dir =
-                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
                 let new_path = scenes_dir.join(format!("{}.yaml", new_name));
                 if let Ok(yaml) = serde_yaml::to_string(&value) {
                     let _ = std::fs::write(&new_path, yaml);
                 }
                 let old_path = scenes_dir.join(format!("{}.yaml", old_name));
                 let _ = std::fs::remove_file(&old_path);
-                reg.scenes.insert(new_name.to_string(), value);
+                reg.worldspaces.insert(new_name.to_string(), value);
             }
         }
     }

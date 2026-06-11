@@ -8,36 +8,36 @@ use anyhow::Result;
 
 use crate::assets::loader::YamlAssetLoader;
 
-pub struct SceneRegistry {
-    pub scenes: HashMap<String, serde_yaml::Value>,
+pub struct WorldspaceRegistry {
+    pub worldspaces: HashMap<String, serde_yaml::Value>,
 }
 
-impl Default for SceneRegistry {
+impl Default for WorldspaceRegistry {
     fn default() -> Self {
         Self {
-            scenes: HashMap::new(),
+            worldspaces: HashMap::new(),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct SceneLoader {
-    pub registry: Arc<RwLock<SceneRegistry>>,
+pub struct WorldspaceLoader {
+    pub registry: Arc<RwLock<WorldspaceRegistry>>,
 }
 
-impl YamlAssetLoader for SceneLoader {
+impl YamlAssetLoader for WorldspaceLoader {
     fn class_name(&self) -> &'static str {
-        "scene"
+        "worldspace"
     }
 
     fn load(&mut self, raw: &serde_yaml::Value) -> Result<()> {
         let name = raw["name"]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing 'name' in scene"))?
+            .ok_or_else(|| anyhow::anyhow!("Missing 'name' in worldspace"))?
             .to_string();
 
         let mut registry = self.registry.write().unwrap();
-        registry.scenes.insert(name, raw.clone());
+        registry.worldspaces.insert(name, raw.clone());
         Ok(())
     }
 
@@ -56,9 +56,9 @@ impl YamlAssetLoader for SceneLoader {
     fn list_entries(&self) -> Vec<(String, String)> {
         let registry = self.registry.read().unwrap();
         registry
-            .scenes
+            .worldspaces
             .keys()
-            .map(|name| ("scene".to_string(), name.clone()))
+            .map(|name| ("worldspace".to_string(), name.clone()))
             .collect()
     }
 }
