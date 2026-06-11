@@ -15,6 +15,7 @@ use apostasy_core::{
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
         worldspace_serializer::load_worldspace,
+        worldspace_streaming::WorldspaceStreaming,
         tags::Player,
         world::World,
     },
@@ -112,8 +113,15 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
     world.add_object(camera);
 
+    // Seed cell streaming with the saved render distance so far cells unload/reload
+    // around the camera. load_worldspace preserves this setting when it runs.
+    let prefs = EditorPreferences::load();
+    let mut streaming = WorldspaceStreaming::default();
+    streaming.set_render_distance(prefs.render_distance);
+    world.insert_resource(streaming);
+
     // Try loading: last opened scene → "default" scene → hard-coded test objects.
-    let last_scene_name = EditorPreferences::load().last_scene;
+    let last_scene_name = prefs.last_scene;
     let startup_scene: Option<(String, serde_yaml::Value)> = world
         .get_resource::<AssetManager>()
         .ok()

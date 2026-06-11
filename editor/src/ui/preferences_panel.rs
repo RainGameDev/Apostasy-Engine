@@ -1,7 +1,10 @@
 use anyhow::Result;
 use apostasy_core::{
     egui,
-    objects::world::World,
+    objects::{
+        world::World,
+        worldspace_streaming::{MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, WorldspaceStreaming},
+    },
     rendering::shared::{
         UpdateRenderer,
         anti_alisaing::{AntiAliasing, AntiAliasingAmount},
@@ -24,6 +27,8 @@ pub struct EditorPreferences {
     pub active_font: String,
     #[serde(default = "EditorPreferences::default_camera_speed")]
     pub camera_speed: f32,
+    #[serde(default = "EditorPreferences::default_render_distance")]
+    pub render_distance: i32,
     #[serde(default)]
     pub last_scene: String,
 }
@@ -35,6 +40,7 @@ impl Default for EditorPreferences {
             font_size: 13,
             active_font: String::new(),
             camera_speed: 5.0,
+            render_distance: Self::default_render_distance(),
             last_scene: String::new(),
         }
     }
@@ -45,6 +51,10 @@ impl EditorPreferences {
 
     fn default_camera_speed() -> f32 {
         5.0
+    }
+
+    fn default_render_distance() -> i32 {
+        8
     }
 
     pub fn load() -> Self {
@@ -75,6 +85,12 @@ impl EditorPreferences {
         prefs.last_scene = name.to_string();
         prefs.save();
     }
+
+    pub fn save_render_distance(distance: i32) {
+        let mut prefs = Self::load();
+        prefs.render_distance = distance;
+        prefs.save();
+    }
 }
 
 struct PageMeta {
@@ -93,7 +109,7 @@ const PAGES: &[PageMeta] = &[
     },
     PageMeta {
         label: "Graphics",
-        terms: &["SSAA", "MSAA"],
+        terms: &["SSAA", "MSAA", "Render Distance"],
     },
 ];
 
@@ -294,6 +310,7 @@ struct GraphicsPage {
     supersample: f32,
     anti_aliasing: AntiAliasingAmount,
     available_aa: Vec<AntiAliasingAmount>,
+    render_distance: i32,
 }
 
 impl GraphicsPage {
@@ -309,11 +326,27 @@ impl GraphicsPage {
                 .unwrap_or(1.0),
             anti_aliasing,
             available_aa,
+            render_distance: world
+                .get_resource::<WorldspaceStreaming>()
+                .map(|s| s.render_distance)
+                .unwrap_or_else(|_| EditorPreferences::load().render_distance),
         }
     }
 
     fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
         let (text_col, dim_col) = (style.text_col, style.dim_col);
+
+        draw_setting(ui, dim_col, "Render Distance", query, |ui| {
+            ui.add(
+                egui::Slider::new(
+                    &mut self.render_distance,
+                    MIN_RENDER_DISTANCE..=MAX_RENDER_DISTANCE,
+                )
+                .logarithmic(true)
+                .integer()
+                .suffix(" cells"),
+            );
+        });
 
         draw_setting(ui, dim_col, "Supersampling (SSAA)", query, |ui| {
             ui.add(egui::Slider::new(&mut self.supersample, 1.0_f32..=4.0));
@@ -357,6 +390,17 @@ impl GraphicsPage {
                 )
             })
             .unwrap_or_default();
+
+        let rd_cur = world
+            .get_resource::<WorldspaceStreaming>()
+            .map(|s| s.render_distance)
+            .unwrap_or(self.render_distance);
+        if self.render_distance != rd_cur {
+            if let Ok(s) = world.get_resource_mut::<WorldspaceStreaming>() {
+                s.set_render_distance(self.render_distance);
+            }
+            EditorPreferences::save_render_distance(self.render_distance);
+        }
 
         let aa_changed = self.anti_aliasing != aa_cur;
         let ss_changed = (self.supersample - ss_cur).abs() > f32::EPSILON;

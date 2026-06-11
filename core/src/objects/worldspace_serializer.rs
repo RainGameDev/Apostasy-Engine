@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use cgmath::Vector3;
+use hashbrown::HashMap;
 
 use crate::{
     objects::{
@@ -11,6 +12,7 @@ use crate::{
         components::transform::Transform,
         tag::get_tag_registration,
         world::World,
+        worldspace_streaming::WorldspaceStreaming,
     },
     physics::{
         Gravity,
@@ -168,6 +170,44 @@ fn parse_coord_key(key: &str) -> Option<CellCoord> {
     Some(Vector3::new(x, y, z))
 }
 
+/// Serializes a single loaded cell into its on-disk `{ name, objects }` mapping.
+/// Returns `None` when the cell is not currently loaded.
+pub fn serialize_cell(world: &World, coord: CellCoord) -> Option<serde_yaml::Value> {
+    let cell = world.worldspace().get_cell(coord)?;
+    let mut objects = serde_yaml::Sequence::new();
+    for (id, _) in cell.get_root_objects() {
+        if let Some(obj_value) = serialize_object(world, id) {
+            objects.push(obj_value);
+        }
+    }
+    let mut cell_map = serde_yaml::Mapping::new();
+    cell_map.insert("name".into(), cell.name.clone().into());
+    cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
+    Some(serde_yaml::Value::Mapping(cell_map))
+}
+
+/// Loads a single cell's `{ name, objects }` mapping (as produced by
+/// [`serialize_cell`]) into `coord`. Used by the streaming system to bring cells
+/// back into memory once they re-enter render distance.
+pub fn load_cell(world: &mut World, coord: CellCoord, value: &serde_yaml::Value) -> Result<()> {
+    let (name, objects) = match value {
+        serde_yaml::Value::Mapping(_) => (
+            value.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            value.get("objects").and_then(|v| v.as_sequence()),
+        ),
+        _ => ("", value.as_sequence()),
+    };
+    if !name.is_empty() {
+        world.worldspace_mut().set_cell_name(coord, name);
+    }
+    if let Some(objects) = objects {
+        for obj_value in objects {
+            load_object(world, obj_value, None, coord)?;
+        }
+    }
+    Ok(())
+}
+
 /// Saves the active worldspace to a single YAML file
 pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -193,6 +233,30 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
             coord_key(cell.coord).into(),
             serde_yaml::Value::Mapping(cell_map),
         );
+    }
+
+    // Include cells that have been streamed out of memory but still belong to this
+    // worldspace, so unloaded regions are not lost on save.
+    if let Ok(streaming) = world.get_resource::<WorldspaceStreaming>() {
+        for (coord, value) in &streaming.source {
+            let key: serde_yaml::Value = coord_key(*coord).into();
+            if cells.contains_key(&key) {
+                continue; // a currently-loaded cell already covers this coord
+            }
+            let has_objects = value
+                .get("objects")
+                .and_then(|v| v.as_sequence())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            let has_name = value
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|n| !n.is_empty())
+                .unwrap_or(false);
+            if has_objects || has_name {
+                cells.insert(key, value.clone());
+            }
+        }
     }
 
     let mut doc = serde_yaml::Mapping::new();
@@ -328,6 +392,25 @@ pub fn load_worldspace(
             load_legacy_object(world, obj_value, None)?;
         }
     }
+
+    // Snapshot every loaded cell so the streaming system can unload far-away cells
+    // and rebuild them when they re-enter render distance. Preserve any existing
+    // render-distance configuration across worldspace switches.
+    let mut source: HashMap<CellCoord, serde_yaml::Value> = HashMap::new();
+    for coord in world.worldspace().loaded_cell_coords() {
+        if let Some(snapshot) = serialize_cell(world, coord) {
+            source.insert(coord, snapshot);
+        }
+    }
+    let mut streaming = world
+        .get_resource::<WorldspaceStreaming>()
+        .cloned()
+        .unwrap_or_default();
+    // Every snapshotted cell is materialized in the world right now, so mark them
+    // all as streamed-in; the streaming system unloads the far ones from here.
+    streaming.loaded = source.keys().copied().collect();
+    streaming.source = source;
+    world.insert_resource(streaming);
 
     Ok(())
 }

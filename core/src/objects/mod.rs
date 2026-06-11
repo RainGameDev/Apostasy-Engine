@@ -24,6 +24,7 @@ pub mod tags;
 pub mod world;
 pub mod worldspace;
 pub mod worldspace_serializer;
+pub mod worldspace_streaming;
 
 use crate::objects::component::BoxedComponent;
 

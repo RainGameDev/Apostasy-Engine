@@ -70,6 +70,15 @@ impl Transform {
                 );
             }
         }
+
+        self.global_position = self.local_position;
+        self.global_euler_angles = self.local_euler_angles;
+        self.global_scale = self.local_scale;
+        self.global_rotation = Quaternion::from(Euler {
+            x: Deg(self.local_euler_angles.x),
+            y: Deg(self.local_euler_angles.y),
+            z: Deg(self.local_euler_angles.z),
+        });
         Ok(())
     }
     pub fn calculate_up(&self) -> Vector3<f32> {

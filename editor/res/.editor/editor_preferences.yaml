@@ -1,5 +1,6 @@
 theme: GruvboxDarkHard
 font_size: 13
 active_font: firacode
-camera_speed: 140.0
-last_scene: chest
+camera_speed: 155.0
+render_distance: 2
+last_scene: default_4x4
