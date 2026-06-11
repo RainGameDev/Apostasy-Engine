@@ -1,24 +1,24 @@
 cell_search:
   pos:
-  - 631.0
-  - 994.0
+  - 0.0
+  - 475.0
   size:
-  - 1929.0
-  - 445.0
+  - 669.0
+  - 240.65625
 object_window:
   pos:
   - 0.0
-  - 51.0
+  - 36.0
   size:
-  - 630.0
-  - 1388.0
+  - 479.875
+  - 679.625
 viewport:
   pos:
-  - 632.0
-  - 51.0
+  - 0.0
+  - 35.0
   size:
-  - 1928.0
-  - 940.0
+  - 669.0
+  - 442.28125
 viewport_open: true
 object_window_open: true
 cell_open: true

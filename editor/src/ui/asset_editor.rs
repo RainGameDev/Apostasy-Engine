@@ -597,6 +597,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                                             .italics(),
                                                     );
                                                 }
+                                                ui.allocate_space(ui.available_size());
                                             });
                                     });
                                 }
@@ -970,6 +971,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                                             .italics(),
                                                     );
                                                 }
+                                                ui.allocate_space(ui.available_size());
                                             });
                                     });
                                 }

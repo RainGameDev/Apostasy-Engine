@@ -2,10 +2,8 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, num_traits::clamp},
     objects::{
-        components::transform::{self, Transform},
-        resources::input_manager::InputManager,
-        systems::DeltaTime,
-        world::World,
+        components::transform::Transform, resources::input_manager::InputManager,
+        systems::DeltaTime, world::World,
     },
     rendering::components::camera::EditorCamera,
     update,
@@ -14,7 +12,7 @@ use apostasy_macros::Resource;
 
 use crate::{
     systems::object_focus::IsObjectFocused,
-    ui::{cell_panel::CellSearchState, preferences_panel::EditorPreferences, viewport_panel::ViewportInfo},
+    ui::{preferences_panel::EditorPreferences, viewport_panel::ViewportInfo},
 };
 
 #[derive(Resource, Clone)]

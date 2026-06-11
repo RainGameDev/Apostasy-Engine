@@ -17,7 +17,7 @@ pub struct IsObjectFocused;
 use crate::ui::cell_panel::CellSearchState;
 
 #[update(mode = "editor")]
-pub fn ObjectFocus(world: &mut World) -> Result<()> {
+pub fn object_focus(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>().unwrap();
     let delta = inputs.mouse_delta;
     let middle_click = inputs.is_mousebind_active("MiddleMouseClick");
