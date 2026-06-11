@@ -22,14 +22,9 @@ pub const MAX_RENDER_DISTANCE: i32 = 999;
 /// dropped from memory; cells that come back within range are rebuilt from `source`.
 ///
 /// `source` holds the last-known `{ name, objects }` snapshot of every cell that
-/// belongs to the active worldspace, including ones not currently loaded. It is
-/// (re)populated whenever a worldspace is loaded.
+/// belongs to the active worldspace, including ones not currently loaded
 ///
-/// `loaded` tracks which `source` cells are currently materialized in the world,
-/// so we can tell "this cell's content is streamed in" apart from "a cell object
-/// exists here for some other reason" (e.g. the camera stands in it, or an object
-/// migrated into it). Relying on cell existence alone would leave a cell's saved
-/// content unloaded whenever the camera enters an otherwise-empty coordinate.
+/// `loaded` tracks which `source` cells are currently shown in the world
 #[derive(Resource, Clone)]
 pub struct WorldspaceStreaming {
     pub enabled: bool,
@@ -56,10 +51,6 @@ impl WorldspaceStreaming {
     }
 }
 
-/// Streams cells in and out around the active camera so that only cells within
-/// `render_distance` (Chebyshev distance, in cells) stay loaded. Cells leaving
-/// range are snapshotted back into [`WorldspaceStreaming::source`] before being
-/// dropped, and cells re-entering range are rebuilt from that snapshot.
 #[late_update(mode = "all")]
 pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
     let render_distance = match world.get_resource::<WorldspaceStreaming>() {
@@ -99,10 +90,6 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
             .loaded
             .remove(&coord);
     }
-
-    // Stream in source cells that are back in range but whose content isn't loaded
-    // yet. This is tracked by `loaded` rather than cell existence, so a cell still
-    // streams its content in even if the camera is already standing in it.
     let to_load: Vec<CellCoord> = {
         let streaming = world.get_resource::<WorldspaceStreaming>()?;
         streaming
@@ -185,7 +172,10 @@ mod tests {
             local_position: Vector3::new(5.0 * 128.0 + 1.0, 0.0, 5.0 * 128.0 + 1.0),
             ..Default::default()
         });
-        world.worldspace_mut().get_or_create_cell(far).add_object(obj);
+        world
+            .worldspace_mut()
+            .get_or_create_cell(far)
+            .add_object(obj);
         assert_eq!(far_cell_object_count(&world), 1);
 
         // Snapshot it into the streaming source, as load_worldspace would.
@@ -243,9 +233,6 @@ objects:
         let origin = Vector3::zero();
         let near_far = Vector3::new(640.0, 0.0, 640.0);
 
-        // Oscillate the camera in and out of the far cell, running both the cell
-        // streaming (object migration) and worldspace streaming systems each frame,
-        // exactly as the engine does in late_update.
         for _ in 0..6 {
             camera_at(&mut world, origin);
             cell_streaming_system(&mut world).unwrap();
