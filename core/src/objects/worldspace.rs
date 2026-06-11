@@ -11,9 +11,8 @@ use crate::objects::{
     tag::Tag,
 };
 
-/// An effectively infinite grid of [`Cell`]s. Cells are created lazily the first
-/// time an object is placed in them, and may be unloaded (and serialized out)
-/// when nothing occupies them.
+/// An effectively infinite grid of [`Cell`]s, cells are created lazily the first
+/// time an object is placed in them, and may be unloaded when nothing occupies them
 #[derive(Default)]
 pub struct Worldspace {
     pub name: String,
@@ -88,7 +87,8 @@ impl Worldspace {
 
     /// Adds a new default object to cell (0, 0, 0).
     pub fn add_new_object(&mut self) -> ObjectId {
-        self.get_or_create_cell(Vector3::new(0, 0, 0)).add_new_object()
+        self.get_or_create_cell(Vector3::new(0, 0, 0))
+            .add_new_object()
     }
 
     /// Adds a root object, placing it in the cell that contains its transform's
@@ -128,10 +128,13 @@ impl Worldspace {
 
     // ========== ========== Hierarchy ========== ==========
 
-    /// Reparents an object. Pass `None` to make it a root. If the new parent
-    /// lives in another cell, the child subtree is migrated into that cell first
-    /// (which changes its `ObjectId`).
-    pub fn set_parent(&mut self, child_id: ObjectId, new_parent_id: Option<ObjectId>) -> Result<()> {
+    /// Reparents an object, Pass `None` to make it a root. If the new parent
+    /// lives in another cell, the child subtree is migrated into that cell first changeing its `ObjectId`
+    pub fn set_parent(
+        &mut self,
+        child_id: ObjectId,
+        new_parent_id: Option<ObjectId>,
+    ) -> Result<()> {
         match new_parent_id {
             None => {
                 let cell = self
@@ -172,11 +175,17 @@ impl Worldspace {
     }
 
     pub fn get_children(&self, id: ObjectId) -> Vec<&Object> {
-        self.cells.get(&id.cell).map(|c| c.get_children(id)).unwrap_or_default()
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_children(id))
+            .unwrap_or_default()
     }
 
     pub fn get_children_ids(&self, id: ObjectId) -> &[ObjectId] {
-        self.cells.get(&id.cell).map(|c| c.get_children_ids(id)).unwrap_or(&[])
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_children_ids(id))
+            .unwrap_or(&[])
     }
 
     pub fn get_parent(&self, id: ObjectId) -> Option<&Object> {
@@ -188,27 +197,38 @@ impl Worldspace {
     }
 
     pub fn get_ancestors(&self, id: ObjectId) -> Vec<ObjectId> {
-        self.cells.get(&id.cell).map(|c| c.get_ancestors(id)).unwrap_or_default()
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_ancestors(id))
+            .unwrap_or_default()
     }
 
     pub fn get_descendants(&self, id: ObjectId) -> Vec<ObjectId> {
-        self.cells.get(&id.cell).map(|c| c.get_descendants(id)).unwrap_or_default()
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_descendants(id))
+            .unwrap_or_default()
     }
 
     pub fn get_root_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.cells.values().flat_map(|c| c.get_root_objects()).collect()
+        self.cells
+            .values()
+            .flat_map(|c| c.get_root_objects())
+            .collect()
     }
 
     pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.cells.values().flat_map(|c| c.get_all_objects()).collect()
+        self.cells
+            .values()
+            .flat_map(|c| c.get_all_objects())
+            .collect()
     }
 
     // ========== ========== Migration ========== ==========
 
-    /// Moves an object's transform into a cell coordinate computed from its
-    /// (world) position, migrating it if it crossed a cell boundary. Returns the
-    /// (possibly new) id. Only meaningful for root objects; children follow their
-    /// parent's cell.
+    /// Moves an object's transform into a cell coordinate from its
+    /// world position, migrating it if it crossed a cell boundary. Returns the, possibly new, id.
+    /// Only meaningful for root objects, children follow their parent's cell.
     pub fn rehome_by_position(&mut self, id: ObjectId, position: Vector3<f32>) -> Option<ObjectId> {
         let target = world_to_cell(position);
         if target == id.cell {
@@ -217,16 +237,18 @@ impl Worldspace {
         self.move_subtree_to_cell(id, target)
     }
 
-    /// Removes the subtree rooted at `root_id` from its current cell and reinserts
-    /// it into `target`, remapping all internal parent/child references. The root
-    /// is detached from any old parent. Returns the root's new id.
-    pub fn move_subtree_to_cell(&mut self, root_id: ObjectId, target: CellCoord) -> Option<ObjectId> {
+    /// Removes the subtree rooted at `root_id` from its current cell and reinserts it into `target`
+    /// remapping all internal parent/child references.
+    /// The roots detached from any old parent. Returns the root's new id.
+    pub fn move_subtree_to_cell(
+        &mut self,
+        root_id: ObjectId,
+        target: CellCoord,
+    ) -> Option<ObjectId> {
         if root_id.cell == target {
             return Some(root_id);
         }
 
-        // Detach the root from any parent in its old cell so the old parent's
-        // children list stays consistent (cross-cell parenting is not allowed).
         let _ = self.detach_from_parent(root_id);
 
         let source = root_id.cell;

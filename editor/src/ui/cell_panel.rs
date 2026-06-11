@@ -4,17 +4,17 @@ use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, 
 use apostasy_core::objects::cell::{CELL_SIZE, ObjectId};
 use apostasy_core::objects::cell_streaming::CellMigrations;
 use apostasy_core::objects::components::transform::Transform;
-use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::{Object, fmt_key};
+use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
+use super::EditorStyle;
+use super::shared::{WindowLayout, save_layout};
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
-use super::shared::{WindowLayout, save_layout};
-use super::EditorStyle;
 
 #[derive(Clone)]
 pub struct ObjectRefEntry {
@@ -62,9 +62,6 @@ impl Default for CellSearchState {
     }
 }
 
-/// When an object crosses a cell boundary its `ObjectId` changes. Runs before the
-/// rest of the editor UI (high priority) and rewrites the cached selection ids so
-/// the inspector and object list keep tracking the migrated object.
 #[update(mode = "editor", priority = 10000)]
 pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
     let remap = match world.get_resource::<CellMigrations>() {
@@ -92,7 +89,10 @@ pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
 #[update(mode = "editor")]
 pub fn cell_search(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
-    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
 
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
@@ -135,18 +135,20 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let mut object_to_copy: Option<Object> = None;
     let mut renaming_id: Option<ObjectId> = world.get_resource::<CellSearchState>()?.renaming_obj;
     let mut rename_buf: String = world.get_resource::<CellSearchState>()?.rename_buf.clone();
-    let mut rename_request_focus: bool =
-        world.get_resource::<CellSearchState>()?.rename_request_focus;
+    let mut rename_request_focus: bool = world
+        .get_resource::<CellSearchState>()?
+        .rename_request_focus;
     let mut pending_rename: Option<(ObjectId, String)> = None;
 
     let mut selected_cell: Option<Vector3<i32>> =
         world.get_resource::<CellSearchState>()?.selected_cell;
     let mut renaming_cell: Option<Vector3<i32>> =
         world.get_resource::<CellSearchState>()?.renaming_cell;
-    let mut cell_rename_buf: String =
-        world.get_resource::<CellSearchState>()?.cell_rename_buf.clone();
-    let mut cell_rename_focus: bool =
-        world.get_resource::<CellSearchState>()?.cell_rename_focus;
+    let mut cell_rename_buf: String = world
+        .get_resource::<CellSearchState>()?
+        .cell_rename_buf
+        .clone();
+    let mut cell_rename_focus: bool = world.get_resource::<CellSearchState>()?.cell_rename_focus;
     let mut pending_goto_cell: Option<Vector3<i32>> = None;
     let mut pending_cell_rename: Option<(Vector3<i32>, String)> = None;
 
@@ -211,7 +213,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
                             ui.painter().rect_filled(
                                 title_rect,
-                                egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 },
+                                egui::CornerRadius {
+                                    nw: 4,
+                                    ne: 4,
+                                    sw: 0,
+                                    se: 0,
+                                },
                                 style.header_bg,
                             );
                             ui.painter().text(
@@ -284,7 +291,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         if is_renaming {
                                             let edit_rect = Rect::from_min_size(
-                                                Pos2::new(row_rect.left() + 2.0, row_rect.top() + 1.0),
+                                                Pos2::new(
+                                                    row_rect.left() + 2.0,
+                                                    row_rect.top() + 1.0,
+                                                ),
                                                 Vec2::new(avail_w - 4.0, row_h - 2.0),
                                             );
                                             let te =
@@ -366,8 +376,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                     // filler rows
                                     let rows_drawn = cell_entries.len();
-                                    let remaining =
-                                        (ui.available_height() / row_h).ceil() as usize;
+                                    let remaining = (ui.available_height() / row_h).ceil() as usize;
                                     for i in 0..remaining {
                                         let idx = rows_drawn + i;
                                         let bg = if idx.is_multiple_of(2) {
@@ -415,7 +424,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
                             ui.painter().rect_filled(
                                 title_rect,
-                                egui::CornerRadius { nw: 4, ne: 4, sw: 4, se: 4 },
+                                egui::CornerRadius {
+                                    nw: 4,
+                                    ne: 4,
+                                    sw: 4,
+                                    se: 4,
+                                },
                                 style.header_bg,
                             );
                             ui.painter().text(
@@ -465,10 +479,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
                             for (label, offset) in [("Obj Name", 0.0_f32), ("Id", name_w)] {
                                 ui.painter().text(
-                                    Pos2::new(
-                                        hdr_rect.left() + offset + 6.0,
-                                        hdr_rect.center().y,
-                                    ),
+                                    Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
                                     egui::Align2::LEFT_CENTER,
                                     label,
                                     font_hdr.clone(),

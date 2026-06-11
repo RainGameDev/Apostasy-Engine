@@ -8,18 +8,16 @@ use crate::{
 };
 
 /// Side length of a cell along the X and Z axes, in world units.
-/// Cells are infinite along Y, so the Y component of a [`CellCoord`] is always 0.
+/// Cells are infinite along Y
 pub const CELL_SIZE: i32 = 128;
 
-/// Grid coordinate of a cell. Only X and Z are meaningful; Y is always 0.
+/// Grid coordinate of a cell. Only X and Z are meaningful, Y is always 0.
 pub type CellCoord = Vector3<i32>;
 
-/// A stable handle to an object. Objects are owned by the [`Cell`] named in
-/// `cell`; `key` indexes into that cell's slot map.
-///
-/// Moving an object across a cell boundary changes its `cell` (and therefore its
-/// `ObjectId`); use [`crate::objects::worldspace::Worldspace`] migration helpers
-/// for that. Within a single cell the key is stable.
+/// A stable handle to an object
+/// Objects are owned by the [`Cell`] named in `cell`
+/// `key` indexes into that cell's slot map
+/// Note: moving an object across a cell changes it's ID as it enters a new cell map
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ObjectId {
     pub cell: CellCoord,
@@ -35,8 +33,8 @@ impl Default for ObjectId {
     }
 }
 
-/// Returns the cell coordinate that contains the given world-space position.
-/// Cells tile the XZ plane in [`CELL_SIZE`]-unit squares and are infinite in Y.
+/// Returns the cell coordinate that contains the given world-space position
+/// Cells tile the XZ plane in [`CELL_SIZE`]-unit squares and are infinite in the Y axis
 #[inline]
 pub fn world_to_cell(position: Vector3<f32>) -> CellCoord {
     Vector3::new(
@@ -46,11 +44,10 @@ pub fn world_to_cell(position: Vector3<f32>) -> CellCoord {
     )
 }
 
-/// A single cell of a worldspace. Owns its objects exactly the way the old
-/// `Scene` did; object hierarchies are always contained within a single cell.
+/// A single cell of a worldspace, stores objects
 pub struct Cell {
     pub coord: CellCoord,
-    /// Optional user-facing name. Empty means unnamed (display falls back to coord).
+    /// Optional name, empty means unnamed (display falls back to coord)
     pub name: String,
     pub(crate) objects: SlotMap<DefaultKey, Object>,
 }
@@ -96,7 +93,7 @@ impl Cell {
         id
     }
 
-    /// Inserts `child` into the cell parented under `parent_id`.
+    /// Inserts `child` into the cell parented under `parent_id`
     pub fn add_child_object(&mut self, parent_id: ObjectId, mut child: Object) -> Result<ObjectId> {
         if !self.objects.contains_key(parent_id.key) {
             return Err(anyhow!("Parent object does not exist"));
@@ -109,14 +106,14 @@ impl Cell {
         Ok(child_id)
     }
 
-    /// Removes an Object and all of its descendants from the cell.
+    /// Removes an Object and all of its descendants from the cell
     pub fn remove_object(&mut self, id: ObjectId) {
         if !self.objects.contains_key(id.key) {
             log_error!("Object does not exist!");
             return;
         }
 
-        // Collect the full subtree (breadth-first)
+        // Collect the subtree
         let mut to_remove = vec![id];
         let mut i = 0;
         while i < to_remove.len() {
@@ -141,9 +138,13 @@ impl Cell {
 
     // ========== ========== Hierarchy ========== ==========
 
-    /// Reparents an already-inserted object to a new parent, or to root if `None`.
-    /// Both objects must live in this cell.
-    pub fn set_parent(&mut self, child_id: ObjectId, new_parent_id: Option<ObjectId>) -> Result<()> {
+    /// Reparents an already inserted object to a new parent, or to root if `None`
+    /// Both objects must live in this cell
+    pub fn set_parent(
+        &mut self,
+        child_id: ObjectId,
+        new_parent_id: Option<ObjectId>,
+    ) -> Result<()> {
         if !self.objects.contains_key(child_id.key) {
             return Err(anyhow!("Child object does not exist"));
         }
@@ -176,12 +177,12 @@ impl Cell {
         Ok(())
     }
 
-    /// Detaches an object from its parent, making it a root object.
+    /// Detaches an object from its parent making it a root object
     pub fn detach_from_parent(&mut self, child_id: ObjectId) -> Result<()> {
         self.set_parent(child_id, None)
     }
 
-    /// Returns true if `ancestor_id` is a strict ancestor of `descendant_id`.
+    /// Returns true if `ancestor_id` is a strict ancestor of `descendant_id`
     pub fn is_ancestor_of(&self, ancestor_id: ObjectId, descendant_id: ObjectId) -> bool {
         let mut current = descendant_id;
         while let Some(parent_id) = self.objects.get(current.key).and_then(|o| o.parent) {
@@ -193,7 +194,7 @@ impl Cell {
         false
     }
 
-    /// Returns immediate children of an object.
+    /// Returns immediate children of an object
     pub fn get_children(&self, id: ObjectId) -> Vec<&Object> {
         self.objects
             .get(id.key)
@@ -206,7 +207,7 @@ impl Cell {
             .unwrap_or_default()
     }
 
-    /// Returns the IDs of immediate children.
+    /// Returns the IDs of immediate children
     pub fn get_children_ids(&self, id: ObjectId) -> &[ObjectId] {
         self.objects
             .get(id.key)
@@ -214,17 +215,20 @@ impl Cell {
             .unwrap_or(&[])
     }
 
-    /// Returns the parent object, if any.
+    /// Returns the parent object, if any
     pub fn get_parent(&self, id: ObjectId) -> Option<&Object> {
-        self.objects.get(id.key)?.parent.and_then(|pid| self.objects.get(pid.key))
+        self.objects
+            .get(id.key)?
+            .parent
+            .and_then(|pid| self.objects.get(pid.key))
     }
 
-    /// Returns the parent ID, if any.
+    /// Returns the parent ID, if any
     pub fn get_parent_id(&self, id: ObjectId) -> Option<ObjectId> {
         self.objects.get(id.key)?.parent
     }
 
-    /// Returns all ancestors from root down to the immediate parent (not including `id`).
+    /// Returns all ancestors from root down to the immediate parent (not including `id`)
     pub fn get_ancestors(&self, id: ObjectId) -> Vec<ObjectId> {
         let mut chain = Vec::new();
         let mut current = id;
@@ -236,7 +240,7 @@ impl Cell {
         chain
     }
 
-    /// Returns all descendants breadth-first (not including `id` itself).
+    /// Returns all descendants breadth-first (not including `id` itself)
     pub fn get_descendants(&self, id: ObjectId) -> Vec<ObjectId> {
         let mut result = Vec::new();
         let mut queue = vec![id];
@@ -252,7 +256,7 @@ impl Cell {
         result
     }
 
-    /// Returns all root objects (objects with no parent).
+    /// Returns all root objects (objects with no parent)
     pub fn get_root_objects(&self) -> Vec<(ObjectId, &Object)> {
         self.objects
             .iter()
@@ -261,9 +265,12 @@ impl Cell {
             .collect()
     }
 
-    /// Returns all objects in this cell.
+    /// Returns all objects in this cell
     pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.objects.iter().map(|(key, obj)| (self.oid(key), obj)).collect()
+        self.objects
+            .iter()
+            .map(|(key, obj)| (self.oid(key), obj))
+            .collect()
     }
 
     pub fn get_object(&self, id: ObjectId) -> Option<&Object> {
@@ -274,8 +281,8 @@ impl Cell {
         self.objects.get_mut(id.key)
     }
 
-    /// Removes an object from this cell without touching its descendants and
-    /// returns it. Used when migrating an object to another cell.
+    /// Removes an object from this cell without touching its descendants and returns it
+    /// Used when migrating an object to another cell
     pub(crate) fn take_object(&mut self, id: ObjectId) -> Option<Object> {
         self.objects.remove(id.key)
     }
@@ -342,17 +349,19 @@ impl Cell {
         }
     }
 
-    // Generic helper: find the first object across this cell matching a tag type.
+    // Generic helper: find the first object across this cell matching a tag type
     pub fn find_object_with_tag<T: Tag + 'static>(&self) -> Option<&Object> {
         self.objects.values().find(|object| object.has_tag::<T>())
     }
 
     pub fn find_object_with_tag_mut<T: Tag + 'static>(&mut self) -> Option<&mut Object> {
-        self.objects.values_mut().find(|object| object.has_tag::<T>())
+        self.objects
+            .values_mut()
+            .find(|object| object.has_tag::<T>())
     }
 }
 
-/// Error helper mirroring the old Scene tag lookups.
+/// Error helper mirroring the old Scene tag lookups
 pub fn no_tag_error<T: Tag + 'static>() -> Error {
     Error::msg(format!("No objects of type: {}", T::name()))
 }

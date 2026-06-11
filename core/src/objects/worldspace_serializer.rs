@@ -39,7 +39,10 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
         "Transform" => {
             let t = component.as_any().downcast_ref::<Transform>()?;
             map.insert("local_position".into(), vec3_to_yaml(t.local_position));
-            map.insert("local_euler_angles".into(), vec3_to_yaml(t.local_euler_angles));
+            map.insert(
+                "local_euler_angles".into(),
+                vec3_to_yaml(t.local_euler_angles),
+            );
             map.insert("local_scale".into(), vec3_to_yaml(t.local_scale));
         }
         "ModelRenderer" => {
@@ -143,7 +146,10 @@ fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
 
     let mut map = serde_yaml::Mapping::new();
     map.insert("name".into(), name.into());
-    map.insert("components".into(), serde_yaml::Value::Sequence(components_data));
+    map.insert(
+        "components".into(),
+        serde_yaml::Value::Sequence(components_data),
+    );
     map.insert("tags".into(), serde_yaml::Value::Sequence(tags_data));
     map.insert("children".into(), serde_yaml::Value::Sequence(children));
 
@@ -162,9 +168,7 @@ fn parse_coord_key(key: &str) -> Option<CellCoord> {
     Some(Vector3::new(x, y, z))
 }
 
-/// Saves the active worldspace to a single YAML file. Each loaded, non-empty
-/// cell becomes one entry under `cells`, keyed by its `"x,y,z"` coordinate, with
-/// the cell's root object tree serialized in the existing per-object format.
+/// Saves the active worldspace to a single YAML file
 pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -185,7 +189,10 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
         let mut cell_map = serde_yaml::Mapping::new();
         cell_map.insert("name".into(), cell.name.clone().into());
         cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
-        cells.insert(coord_key(cell.coord).into(), serde_yaml::Value::Mapping(cell_map));
+        cells.insert(
+            coord_key(cell.coord).into(),
+            serde_yaml::Value::Mapping(cell_map),
+        );
     }
 
     let mut doc = serde_yaml::Mapping::new();
@@ -201,14 +208,20 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
 }
 
 fn build_object(value: &serde_yaml::Value) -> Object {
-    let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("Object");
+    let name = value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Object");
 
     let mut obj = Object::new();
     obj.name = name.to_string();
 
     if let Some(components) = value.get("components").and_then(|v| v.as_sequence()) {
         for comp_value in components {
-            let type_name = comp_value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let type_name = comp_value
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if let Some(reg) = get_component_registration(type_name) {
                 let mut component = (reg.create)();
                 let _ = (reg.deserialize)(&mut component, comp_value);
@@ -230,9 +243,9 @@ fn build_object(value: &serde_yaml::Value) -> Object {
     obj
 }
 
-/// Loads an object (and its children) into `cell_coord`. Root objects are placed
-/// directly in the given cell so the on-disk layout is preserved exactly;
-/// children follow their parent's cell.
+/// Loads an object, and its children, into `cell_coord`,
+/// Root objects are placed directly in the given cell so the on-disk layout is preserved exactly
+/// Children follow their parent's cell
 fn load_object(
     world: &mut World,
     value: &serde_yaml::Value,
@@ -255,10 +268,11 @@ fn load_object(
     Ok(())
 }
 
-/// Removes all root objects not tagged with any of `keep_tags`, then loads the
-/// worldspace described by `value`. Supports both the new `cells` map format and
-/// the legacy flat `objects` list (objects are auto-placed by position).
-pub fn load_worldspace(world: &mut World, value: &serde_yaml::Value, keep_tags: &[&str]) -> Result<()> {
+pub fn load_worldspace(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    keep_tags: &[&str],
+) -> Result<()> {
     let root_ids: Vec<ObjectId> = world
         .get_root_objects()
         .into_iter()
@@ -290,7 +304,10 @@ pub fn load_worldspace(world: &mut World, value: &serde_yaml::Value, keep_tags: 
             // New format: { name, objects }. Legacy: a bare objects sequence.
             let (name, objects) = match cell_value {
                 serde_yaml::Value::Mapping(_) => (
-                    cell_value.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    cell_value
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
                     cell_value.get("objects").and_then(|v| v.as_sequence()),
                 ),
                 _ => ("", cell_value.as_sequence()),

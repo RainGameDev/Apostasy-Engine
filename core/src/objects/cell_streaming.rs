@@ -20,14 +20,9 @@ pub struct CellMigrations {
 
 /// Migrates objects that have crossed a cell boundary into the cell that now
 /// contains them, creating that cell if it does not yet exist.
-///
-/// Only root objects are checked: children are pinned to their parent's cell, so
-/// they ride along when the parent's subtree is migrated. Runs in late update,
-/// after movement and `transform_update`, so `global_position` is current.
 #[late_update(mode = "all")]
 pub fn cell_streaming_system(world: &mut World) -> Result<()> {
-    // Collect first; migrating mutates the cell map and changes object ids, so
-    // we can't migrate while iterating the borrowed root list.
+    // Collect first
     let mut migrations: Vec<(ObjectId, CellCoord)> = Vec::new();
     for (id, object) in world.get_root_objects() {
         if let Ok(transform) = object.get_component::<Transform>() {
@@ -45,7 +40,7 @@ pub fn cell_streaming_system(world: &mut World) -> Result<()> {
         }
     }
 
-    // Publish the remap (replacing last frame's) so id-caching consumers can follow.
+    // Publish the remap, replacing last frames
     if world.has_resource::<CellMigrations>() {
         world.get_resource_mut::<CellMigrations>()?.remap = remap;
     } else {
