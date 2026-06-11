@@ -5,7 +5,7 @@ use egui::ComboBox;
 
 use crate::{
     objects::{
-        component::Inspect, components::transform::Transform, scene::ObjectId, world::World,
+        component::Inspect, components::transform::Transform, cell::ObjectId, world::World,
     },
     physics::velocity::Velocity,
     ui::{DRAG_SIZE, LABEL_WIDTH},

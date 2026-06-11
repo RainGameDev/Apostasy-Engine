@@ -10,7 +10,7 @@ use hashbrown::HashMap;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::biome_loader::BiomeLoader;
 use crate::objects::Object;
-use crate::objects::scene::ObjectId;
+use crate::objects::cell::ObjectId;
 use crate::objects::world::World;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::vertex::VertexDefinition;

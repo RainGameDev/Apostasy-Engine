@@ -3,7 +3,7 @@ use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
     objects::{
-        components::transform::Transform, scene::ObjectId, systems::DeltaTime, world::World,
+        components::transform::Transform, cell::ObjectId, systems::DeltaTime, world::World,
     },
     physics::{collider::Collider, velocity::Velocity},
     voxels::{voxel::VoxelRegistry, voxel_components::is_solid::IsSolid},

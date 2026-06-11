@@ -4,7 +4,7 @@ use apostasy_core::{
         asset_manager::AssetManager,
         loaders::{
             biome_loader::BiomeLoader,
-            scene_loader::{SceneLoader, SceneRegistry},
+            worldspace_loader::{WorldspaceLoader, WorldspaceRegistry},
             structure_loader::StructureLoader,
             voxel_loader::VoxelLoader,
         },
@@ -14,7 +14,8 @@ use apostasy_core::{
         Object,
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
-        scene_serializer::load_scene,
+        worldspace_serializer::load_worldspace,
+        worldspace_streaming::WorldspaceStreaming,
         tags::Player,
         world::World,
     },
@@ -60,7 +61,7 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
     let voxel_registry = Arc::new(RwLock::new(VoxelRegistry::default()));
     let structure_registry = Arc::new(RwLock::new(StructureRegistry::default()));
     let atlas_builder = Arc::new(RwLock::new(AtlasBuilder::new(16)));
-    let scene_registry = Arc::new(RwLock::new(SceneRegistry::default()));
+    let scene_registry = Arc::new(RwLock::new(WorldspaceRegistry::default()));
 
     {
         let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
@@ -74,7 +75,7 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
         asset_manager.register_loader(StructureLoader {
             registry: Arc::clone(&structure_registry),
         });
-        asset_manager.register_loader(SceneLoader {
+        asset_manager.register_loader(WorldspaceLoader {
             registry: Arc::clone(&scene_registry),
         });
 
@@ -88,7 +89,7 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
             let _ = asset_manager.load_directory(&core_res);
         }
 
-        let editor_scenes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/scenes");
+        let editor_scenes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
         if editor_scenes.exists() {
             let _ = asset_manager.load_directory(&editor_scenes);
         }
@@ -112,24 +113,31 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
     world.add_object(camera);
 
+    // Seed cell streaming with the saved render distance so far cells unload/reload
+    // around the camera. load_worldspace preserves this setting when it runs.
+    let prefs = EditorPreferences::load();
+    let mut streaming = WorldspaceStreaming::default();
+    streaming.set_render_distance(prefs.render_distance);
+    world.insert_resource(streaming);
+
     // Try loading: last opened scene → "default" scene → hard-coded test objects.
-    let last_scene_name = EditorPreferences::load().last_scene;
+    let last_scene_name = prefs.last_scene;
     let startup_scene: Option<(String, serde_yaml::Value)> = world
         .get_resource::<AssetManager>()
         .ok()
-        .and_then(|am| am.get_loader::<SceneLoader>())
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
         .and_then(|l| {
             let reg = l.registry.read().ok()?;
             if !last_scene_name.is_empty() {
-                if let Some(v) = reg.scenes.get(last_scene_name.as_str()).cloned() {
+                if let Some(v) = reg.worldspaces.get(last_scene_name.as_str()).cloned() {
                     return Some((last_scene_name.clone(), v));
                 }
             }
-            reg.scenes.get("default").map(|v| ("default".to_string(), v.clone()))
+            reg.worldspaces.get("default").map(|v| ("default".to_string(), v.clone()))
         });
 
     if let Some((scene_name, scene_value)) = startup_scene {
-        load_scene(world, &scene_value, &["EditorCamera"])?;
+        load_worldspace(world, &scene_value, &["EditorCamera"])?;
         EditorPreferences::save_last_scene(&scene_name);
     } else {
         let floor = Object::new()

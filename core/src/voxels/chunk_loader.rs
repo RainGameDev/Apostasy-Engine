@@ -2,7 +2,7 @@ use apostasy_macros::Resource;
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::objects::scene::ObjectId;
+use crate::objects::cell::ObjectId;
 
 #[derive(Resource, Clone)]
 pub struct ChunkLoadBounds {

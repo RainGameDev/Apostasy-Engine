@@ -7,14 +7,15 @@ use crate::{
     EngineMode,
     objects::{
         Object,
+        cell::ObjectId,
         component::Component,
         resource::{Resource, ResourceMap},
-        scene::{ObjectId, Scene},
         systems::{
             DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
             LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
         },
         tag::Tag,
+        worldspace::Worldspace,
     },
     utils::flatten::flatten,
     voxels::{VoxelTransform, chunk::Chunk, meshes::NeedsRemeshing, voxel::VoxelId},
@@ -22,7 +23,7 @@ use crate::{
 
 #[derive(Default)]
 pub struct World {
-    pub(crate) scene: Scene,
+    pub(crate) worldspace: Worldspace,
     pub(crate) resources: ResourceMap,
     pub(crate) chunk_position_index: HashMap<(i32, i32, i32), ObjectId>,
 
@@ -242,113 +243,137 @@ impl World {
 
     /// Adds a new Object to the world
     pub fn add_new_object(&mut self) -> ObjectId {
-        self.scene.add_new_object()
+        self.worldspace.add_new_object()
     }
 
     /// Adds an Object to the world
     pub fn add_object(&mut self, object: Object) -> ObjectId {
-        self.scene.add_object(object)
+        self.worldspace.add_object(object)
+    }
+
+    /// Adds a child Object under `parent_id`, in the parent's cell
+    pub fn add_child_object(&mut self, parent_id: ObjectId, child: Object) -> Result<ObjectId> {
+        self.worldspace.add_child_object(parent_id, child)
+    }
+
+    /// Adds a root Object directly into a specific cell, creating the cell if needed
+    pub fn add_object_to_cell(
+        &mut self,
+        coord: cgmath::Vector3<i32>,
+        object: Object,
+    ) -> ObjectId {
+        self.worldspace.get_or_create_cell(coord).add_object(object)
+    }
+
+    /// Read-only access to the active worldspace
+    pub fn worldspace(&self) -> &Worldspace {
+        &self.worldspace
+    }
+
+    /// Mutable access to the active worldspace
+    pub fn worldspace_mut(&mut self) -> &mut Worldspace {
+        &mut self.worldspace
     }
 
     /// Removes an Object from the world
     pub fn remove_object(&mut self, id: ObjectId) {
-        self.scene.remove_object(id);
+        self.worldspace.remove_object(id);
     }
 
     pub fn debug_objects(&self) {
-        self.scene.debug_objects();
+        self.worldspace.debug_objects();
     }
 
     pub fn object_count(&self) -> usize {
-        self.scene.objects.len()
+        self.worldspace.object_count()
     }
 
     pub fn get_object(&self, id: ObjectId) -> Option<&Object> {
-        self.scene.get_object(id)
+        self.worldspace.get_object(id)
     }
 
     pub fn get_object_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
-        self.scene.get_object_mut(id)
+        self.worldspace.get_object_mut(id)
     }
 
     pub fn get_objects_with_component_with_ids<T: Component + 'static>(
         &self,
     ) -> Vec<(ObjectId, &Object)> {
-        self.scene.get_objects_with_component_with_ids::<T>()
+        self.worldspace.get_objects_with_component_with_ids::<T>()
     }
 
     pub fn get_objects_with_component<T: Component + 'static>(&self) -> Vec<&Object> {
-        self.scene.get_objects_with_component::<T>()
+        self.worldspace.get_objects_with_component::<T>()
     }
 
     pub fn get_objects_with_component_mut<T: Component + 'static>(&mut self) -> Vec<&mut Object> {
-        self.scene.get_objects_with_component_mut::<T>()
+        self.worldspace.get_objects_with_component_mut::<T>()
     }
 
     pub fn get_object_with_tag<T: Tag + 'static>(&self) -> Result<&Object> {
-        self.scene.get_object_with_tag::<T>()
+        self.worldspace.get_object_with_tag::<T>()
     }
 
     pub fn get_object_with_tag_mut<T: Tag + 'static>(&mut self) -> Result<&mut Object> {
-        self.scene.get_object_with_tag_mut::<T>()
+        self.worldspace.get_object_with_tag_mut::<T>()
     }
 
     pub fn get_objects_with_tag<T: Tag + 'static>(&self) -> Vec<&Object> {
-        self.scene.get_objects_with_tag::<T>()
+        self.worldspace.get_objects_with_tag::<T>()
     }
 
     pub fn get_objects_with_tag_mut<T: Tag + 'static>(&mut self) -> Vec<&mut Object> {
-        self.scene.get_objects_with_tag_mut::<T>()
+        self.worldspace.get_objects_with_tag_mut::<T>()
     }
     pub fn get_objects_with_tag_with_ids<T: Tag + 'static>(&self) -> Vec<(ObjectId, &Object)> {
-        self.scene.get_objects_with_tag_with_ids::<T>()
+        self.worldspace.get_objects_with_tag_with_ids::<T>()
     }
 
     // ========== ========== Hierarchy ========== ==========
 
     /// Reparents an object. Pass `None` to make it a root object.
     pub fn set_parent(&mut self, child_id: ObjectId, parent_id: Option<ObjectId>) -> Result<()> {
-        self.scene.set_parent(child_id, parent_id)
+        self.worldspace.set_parent(child_id, parent_id)
     }
 
     /// Detaches an object from its parent, making it a root object
     pub fn detach(&mut self, id: ObjectId) -> Result<()> {
-        self.scene.detach_from_parent(id)
+        self.worldspace.detach_from_parent(id)
     }
 
     pub fn get_parent(&self, id: ObjectId) -> Option<&Object> {
-        self.scene.get_parent(id)
+        self.worldspace.get_parent(id)
     }
 
     pub fn get_parent_id(&self, id: ObjectId) -> Option<ObjectId> {
-        self.scene.get_parent_id(id)
+        self.worldspace.get_parent_id(id)
     }
 
     pub fn get_children(&self, id: ObjectId) -> Vec<&Object> {
-        self.scene.get_children(id)
+        self.worldspace.get_children(id)
     }
 
     pub fn get_children_ids(&self, id: ObjectId) -> &[ObjectId] {
-        self.scene.get_children_ids(id)
+        self.worldspace.get_children_ids(id)
     }
 
     pub fn get_ancestors(&self, id: ObjectId) -> Vec<ObjectId> {
-        self.scene.get_ancestors(id)
+        self.worldspace.get_ancestors(id)
     }
 
     pub fn get_descendants(&self, id: ObjectId) -> Vec<ObjectId> {
-        self.scene.get_descendants(id)
+        self.worldspace.get_descendants(id)
     }
 
     pub fn is_ancestor_of(&self, ancestor_id: ObjectId, descendant_id: ObjectId) -> bool {
-        self.scene.is_ancestor_of(ancestor_id, descendant_id)
+        self.worldspace.is_ancestor_of(ancestor_id, descendant_id)
     }
 
     pub fn get_root_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.scene.get_root_objects()
+        self.worldspace.get_root_objects()
     }
     pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.scene.get_all_objects()
+        self.worldspace.get_all_objects()
     }
 
     // ========== ========== Resources ========== ==========
@@ -383,7 +408,7 @@ impl World {
     // ========== ========== Voxel Specific ========== ==========
 
     pub fn register_chunk(&mut self, id: ObjectId) {
-        if let Some(obj) = self.scene.objects.get(id)
+        if let Some(obj) = self.worldspace.get_object(id)
             && let Ok(t) = obj.get_component::<VoxelTransform>()
         {
             self.chunk_position_index
@@ -398,7 +423,7 @@ impl World {
     pub fn get_voxel(&self, wx: i32, wy: i32, wz: i32) -> Option<VoxelId> {
         let key = (wx.div_euclid(32), wy.div_euclid(32), wz.div_euclid(32));
         let id = self.chunk_position_index.get(&key)?;
-        let obj = self.scene.objects.get(*id)?;
+        let obj = self.worldspace.get_object(*id)?;
         let chunk = obj.get_component::<Chunk>().ok()?;
         let lx = wx.rem_euclid(32) as u32;
         let ly = wy.rem_euclid(32) as u32;
@@ -414,7 +439,7 @@ impl World {
         let lx = wx.rem_euclid(32) as u32;
         let ly = wy.rem_euclid(32) as u32;
         let lz = wz.rem_euclid(32) as u32;
-        let obj = self.scene.objects.get_mut(oid).unwrap();
+        let obj = self.worldspace.get_object_mut(oid).unwrap();
         if let Ok(chunk) = obj.get_component_mut::<Chunk>() {
             chunk.voxels[flatten(lx, ly, lz, 32)] = id;
         }
@@ -428,7 +453,7 @@ impl World {
         self.chunk_position_index
             .iter()
             .filter_map(|(&pos, &id)| {
-                let obj = self.scene.objects.get(id)?;
+                let obj = self.worldspace.get_object(id)?;
                 let chunk = obj.get_component::<Chunk>().ok()?;
                 Some((pos, chunk.voxels.as_ref() as *const _))
             })

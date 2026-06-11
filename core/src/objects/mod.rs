@@ -5,23 +5,26 @@ use anyhow::{Error, Result};
 use crate::{
     log_warn,
     objects::{
+        cell::ObjectId,
         component::{Component, get_component_registration},
-        scene::ObjectId,
         tag::Tag,
     },
 };
 
+pub mod cell;
+pub mod cell_streaming;
 pub mod component;
 pub mod components;
 pub mod query;
 pub mod resource;
 pub mod resources;
-pub mod scene;
-pub mod scene_serializer;
 pub mod systems;
 pub mod tag;
 pub mod tags;
 pub mod world;
+pub mod worldspace;
+pub mod worldspace_serializer;
+pub mod worldspace_streaming;
 
 use crate::objects::component::BoxedComponent;
 
@@ -192,12 +195,15 @@ impl Object {
     }
 }
 
-/// Formats an object ID to a index value
+/// Formats an object ID to a short display value: `cell_x,cell_z:index`.
 pub fn fmt_key(id: ObjectId) -> String {
-    let s = format!("{:?}", id);
-    s.trim_start_matches("DefaultKey(")
+    let key = format!("{:?}", id.key);
+    let index = key
+        .trim_start_matches("DefaultKey(")
+        .trim_start_matches("KeyData(")
         .split('v')
         .next()
-        .unwrap_or(&s)
-        .to_string()
+        .unwrap_or(&key)
+        .trim_end_matches(')');
+    format!("{},{}:{}", id.cell.x, id.cell.z, index)
 }
