@@ -8,16 +8,16 @@ cell_search:
 object_window:
   pos:
   - 7.0
-  - 0.0
+  - 87.0
   size:
   - 585.875
-  - 1388.0
+  - 1301.0
 viewport:
   pos:
-  - 626.0
-  - 69.0
+  - 260.0
+  - 88.0
   size:
-  - 1266.0
+  - 1943.0
   - 959.46875
 viewport_open: true
 object_window_open: true

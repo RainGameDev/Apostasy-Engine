@@ -13,6 +13,7 @@ use apostasy_macros::Resource;
 
 use super::EditorStyle;
 use super::shared::{WindowLayout, save_layout};
+use crate::systems::history::EditorCommand;
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
 
@@ -511,10 +512,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 .iter()
                                 .filter(|e| {
                                     // when a cell is selected, only show that cell's objects
-                                    if let Some(cell) = selected_cell {
-                                        if e.object_id.cell != cell {
-                                            return false;
-                                        }
+                                    if let Some(cell) = selected_cell
+                                        && e.object_id.cell != cell
+                                    {
+                                        return false;
                                     }
                                     if filter_value.trim().is_empty() {
                                         return true;
@@ -528,16 +529,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 })
                                 .collect();
 
-                            if ui.input(|i| i.key_pressed(egui::Key::F2)) {
-                                if let Some(id) = pending_selected_obj {
-                                    if let Some(entry) =
-                                        obj_entries.iter().find(|e| e.object_id == id)
-                                    {
-                                        renaming_id = Some(id);
-                                        rename_buf = entry.obj_name.clone();
-                                        rename_request_focus = true;
-                                    }
-                                }
+                            if ui.input(|i| i.key_pressed(egui::Key::F2))
+                                && let Some(id) = pending_selected_obj
+                                && let Some(entry) = obj_entries.iter().find(|e| e.object_id == id)
+                            {
+                                renaming_id = Some(id);
+                                rename_buf = entry.obj_name.clone();
+                                rename_request_focus = true;
                             }
 
                             let table_h = ui.available_height();
@@ -773,13 +771,29 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if let Some((id, new_name)) = pending_rename {
-        if let Some(obj) = world.get_object_mut(id) {
-            obj.name = new_name;
-        }
+        let old_name = world
+            .get_object(id)
+            .map(|o| o.name.clone())
+            .unwrap_or_default();
+        let mut cmd = Box::new(crate::systems::history::RenameObjectCmd {
+            id,
+            old_name,
+            new_name,
+        });
+        cmd.execute(world)?;
+        world
+            .get_resource_mut::<crate::systems::history::History>()?
+            .push(cmd);
     }
 
-    if let Some(id) = pending_delete {
-        world.remove_object(id);
+    if let Some(id) = pending_delete
+        && let Some(mut cmd) =
+            crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new)
+    {
+        cmd.execute(world)?;
+        world
+            .get_resource_mut::<crate::systems::history::History>()?
+            .push(cmd);
     }
 
     if object_to_copy.is_some() {
@@ -788,14 +802,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if pending_add {
-        match selected_cell {
-            Some(cell) => {
-                world.add_object_to_cell(cell, Object::default());
-            }
-            None => {
-                world.add_new_object();
-            }
-        }
+        let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(
+            Object::default(),
+            selected_cell,
+        ));
+        cmd.execute(world)?;
+        world
+            .get_resource_mut::<crate::systems::history::History>()?
+            .push(cmd);
     }
 
     if let Some((coord, new_name)) = pending_cell_rename {
@@ -809,8 +823,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     Ok(())
 }
 
-/// Moves the editor camera to the center of `coord` on the XZ plane, keeping its
-/// current height. The center is at coord * CELL_SIZE + CELL_SIZE/2.
+/// Moves the editor camera to the center of cell on the X & Z planes
 fn goto_cell(world: &mut World, coord: Vector3<i32>) {
     if let Ok(camera) = world.get_object_with_tag_mut::<EditorCamera>()
         && let Ok(transform) = camera.get_component_mut::<Transform>()

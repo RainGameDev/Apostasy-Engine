@@ -448,7 +448,9 @@ impl InputManager {
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
-                    self.keys_pressed.insert(event.physical_key);
+                    if !event.repeat {
+                        self.keys_pressed.insert(event.physical_key);
+                    }
                     self.keys_held.insert(event.physical_key);
                 } else {
                     self.keys_released.insert(event.physical_key);

@@ -44,7 +44,7 @@ pub fn get_resource_registration(type_name: &str) -> Option<&'static ResourceReg
         .find(|r| r.type_name.to_lowercase() == type_name.to_lowercase())
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ResourceMap {
     pub(crate) map: HashMap<TypeId, Box<dyn Resource>>,
 }

@@ -194,6 +194,8 @@ pub fn viewport(world: &mut World) -> Result<()> {
     };
     let mut new_gizmo_state_from_fn: Option<crate::ui::gizmo::GizmoState> = None;
     let mut gizmo_transform_out: Option<Transform> = None;
+    let drag_start_transform = gizmo_state.drag.as_ref().map(|d| d.start_transform.clone());
+    let had_drag = gizmo_state.drag.is_some();
 
     let vp = window
         .open(&mut is_open)
@@ -403,10 +405,19 @@ pub fn viewport(world: &mut World) -> Result<()> {
     if pending_duplicate {
         if let Some(id) = ctx_obj_id {
             if let Some(obj) = world.get_object(id).cloned() {
-                world.add_object(obj);
+                use crate::systems::history::EditorCommand;
+                let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
+                cmd.execute(world).ok();
+                if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
+                    h.push(cmd);
+                }
             }
         }
     }
+
+    // Drag just completed: check before consuming new_gizmo_state_from_fn and gizmo_data
+    let drag_just_ended = had_drag && new_gizmo_state_from_fn.as_ref().map(|s| s.drag.is_none()).unwrap_or(false);
+    let gizmo_obj_id = gizmo_data.as_ref().map(|(id, _, _, _)| *id);
 
     // Write back gizmo state (drag + mode) and apply any transform produced by dragging
     {
@@ -423,9 +434,29 @@ pub fn viewport(world: &mut World) -> Result<()> {
         }
     }
 
+    // Record one history entry per completed gizmo drag
+    if drag_just_ended {
+        if let (Some(old_t), Some(id)) = (drag_start_transform, gizmo_obj_id) {
+            let new_t = world.get_object(id)
+                .and_then(|obj| obj.get_component::<Transform>().ok().cloned());
+            if let Some(new_t) = new_t {
+                let cmd = Box::new(crate::systems::history::MoveObjectCmd { id, old_transform: old_t, new_transform: new_t });
+                if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
+                    h.push(cmd);
+                }
+            }
+        }
+    }
+
     if pending_delete {
         if let Some(id) = ctx_obj_id {
-            world.remove_object(id);
+            use crate::systems::history::EditorCommand;
+            if let Some(mut cmd) = crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new) {
+                cmd.execute(world).ok();
+                if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
+                    h.push(cmd);
+                }
+            }
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                 if s.selected_obj == Some(id) { s.selected_obj = None; }
                 if s.clicked_obj == Some(id) { s.clicked_obj = None; }

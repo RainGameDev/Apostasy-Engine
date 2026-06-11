@@ -31,7 +31,7 @@ pub struct GizmoDrag {
     /// World-space direction of this axis captured at drag start (local or global)
     axis_world_dir: Vector3<f32>,
     start_mouse: Pos2,
-    start_transform: Transform,
+    pub start_transform: Transform,
     screen_dir: Vec2,
     /// world-units/pixel for translation, degrees/pixel for rotate, scale/pixel for scale
     sensitivity: f32,
@@ -281,60 +281,50 @@ pub fn gizmo(
             }
             new_transform = Some(t);
         }
-    } else if pressed && was_consuming {
-        if let Some(cur) = cursor {
-            if frame_rect.contains(cur) {
-                'hit: for (i, (ax, _)) in AXES.iter().enumerate() {
-                    let hit = match state.mode {
-                        GizmoMode::Translate | GizmoMode::Scale => tips[i]
-                            .map(|t| seg_dist(cur, center, t) < HIT_PX)
-                            .unwrap_or(false),
-                        GizmoMode::Rotate => rings[i]
-                            .windows(2)
-                            .any(|w| seg_dist(cur, w[0], w[1]) < HIT_PX),
-                    };
-                    if !hit {
-                        continue 'hit;
-                    }
-
-                    let (screen_dir, sensitivity) = match state.mode {
-                        GizmoMode::Translate => {
-                            if let Some(tip) = tips[i] {
-                                let v = tip - center;
-                                let l = v.length().max(0.001);
-                                (v / l, gizmo_len / l)
-                            } else {
-                                continue 'hit;
-                            }
-                        }
-                        GizmoMode::Rotate => {
-                            let radius = (cur - center).normalized();
-                            let tangent = Vec2::new(-radius.y, radius.x);
-                            (tangent, 1.0 / 1.5)
-                        }
-                        GizmoMode::Scale => {
-                            if let Some(tip) = tips[i] {
-                                let v = tip - center;
-                                let l = v.length().max(0.001);
-                                (v / l, 0.01_f32)
-                            } else {
-                                continue 'hit;
-                            }
-                        }
-                    };
-
-                    state.drag = Some(GizmoDrag {
-                        axis: ax.clone(),
-                        axis_world_dir: axis_dirs[i],
-                        start_mouse: cur,
-                        start_transform: transform.clone(),
-                        screen_dir,
-                        sensitivity,
-                    });
-                    break 'hit;
-                }
+    } else if pressed
+        && was_consuming
+        && let Some(cur) = cursor
+        && frame_rect.contains(cur)
+    {
+        state.drag = AXES.iter().enumerate().find_map(|(i, (ax, _))| {
+            let hit = match state.mode {
+                GizmoMode::Translate | GizmoMode::Scale => tips[i]
+                    .map(|t| seg_dist(cur, center, t) < HIT_PX)
+                    .unwrap_or(false),
+                GizmoMode::Rotate => rings[i]
+                    .windows(2)
+                    .any(|w| seg_dist(cur, w[0], w[1]) < HIT_PX),
+            };
+            if !hit {
+                return None;
             }
-        }
+
+            let (screen_dir, sensitivity) = match state.mode {
+                GizmoMode::Translate | GizmoMode::Scale => {
+                    let v = tips[i]? - center;
+                    let l = v.length().max(0.001);
+                    let sens = if state.mode == GizmoMode::Translate {
+                        gizmo_len / l
+                    } else {
+                        0.01
+                    };
+                    (v / l, sens)
+                }
+                GizmoMode::Rotate => {
+                    let radius = (cur - center).normalized();
+                    (Vec2::new(-radius.y, radius.x), 1.0 / 1.5)
+                }
+            };
+
+            Some(GizmoDrag {
+                axis: ax.clone(),
+                axis_world_dir: axis_dirs[i],
+                start_mouse: cur,
+                start_transform: transform.clone(),
+                screen_dir,
+                sensitivity,
+            })
+        });
     }
 
     // Draw
