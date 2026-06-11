@@ -2,6 +2,7 @@ use apostasy_core::{
     cgmath::{InnerSpace, Matrix3, Matrix4, Rotation3, Vector3, Vector4},
     egui::{self, Color32, Pos2, Stroke, Vec2},
     objects::components::transform::Transform,
+    physics::collider::{Collider, ColliderShape},
 };
 use apostasy_macros::Resource;
 
@@ -406,4 +407,110 @@ pub fn gizmo(
     }
 
     (new_transform, state)
+}
+
+/// Draw a wireframe outline of the collider shape for the selected object.
+pub fn collider_gizmo(
+    ui: &mut egui::Ui,
+    transform: &Transform,
+    collider: &Collider,
+    view_proj: Matrix4<f32>,
+    frame_rect: egui::Rect,
+) {
+    let painter = ui.painter_at(frame_rect);
+    let col = Color32::from_rgb(80, 220, 100);
+    let stroke = Stroke::new(1.5, col);
+
+    let rot = transform.global_rotation;
+    let scale = transform.global_scale;
+    let center = transform.global_position + rot * Vector3::new(
+        collider.offset.x * scale.x,
+        collider.offset.y * scale.y,
+        collider.offset.z * scale.z,
+    );
+
+    match &collider.shape {
+        ColliderShape::Cuboid { size } => {
+            let ax = rot * Vector3::new(size.x * scale.x, 0.0, 0.0);
+            let ay = rot * Vector3::new(0.0, size.y * scale.y, 0.0);
+            let az = rot * Vector3::new(0.0, 0.0, size.z * scale.z);
+
+            let corners: [Vector3<f32>; 8] = [
+                center + ax + ay + az,
+                center + ax + ay - az,
+                center + ax - ay + az,
+                center + ax - ay - az,
+                center - ax + ay + az,
+                center - ax + ay - az,
+                center - ax - ay + az,
+                center - ax - ay - az,
+            ];
+
+            let edges: [(usize, usize); 12] = [
+                (0, 1), (2, 3), (4, 5), (6, 7),
+                (0, 2), (1, 3), (4, 6), (5, 7),
+                (0, 4), (1, 5), (2, 6), (3, 7),
+            ];
+
+            for (a, b) in edges {
+                if let (Some(pa), Some(pb)) = (
+                    project(corners[a], view_proj, frame_rect),
+                    project(corners[b], view_proj, frame_rect),
+                ) {
+                    painter.line_segment([pa, pb], stroke);
+                }
+            }
+        }
+        ColliderShape::Sphere { radius } => {
+            let rx = radius * scale.x;
+            let ry = radius * scale.y;
+            let rz = radius * scale.z;
+            for axis in 0..3u8 {
+                let pts: Vec<Pos2> = (0..=RING_SEGS)
+                    .filter_map(|j| {
+                        let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
+                        let p = match axis {
+                            0 => center + rot * Vector3::new(0.0, ry * a.cos(), rz * a.sin()),
+                            1 => center + rot * Vector3::new(rx * a.cos(), 0.0, rz * a.sin()),
+                            _ => center + rot * Vector3::new(rx * a.cos(), ry * a.sin(), 0.0),
+                        };
+                        project(p, view_proj, frame_rect)
+                    })
+                    .collect();
+                for pair in pts.windows(2) {
+                    painter.line_segment([pair[0], pair[1]], stroke);
+                }
+            }
+        }
+        ColliderShape::Capsule { radius, height } | ColliderShape::Cylinder { radius, height } => {
+            let r = radius * scale.x.max(scale.z);
+            let h = height * 0.5 * scale.y;
+            let y_up = rot * Vector3::new(0.0, 1.0, 0.0);
+            let top_c = center + y_up * h;
+            let bot_c = center - y_up * h;
+
+            for ring_c in [top_c, bot_c] {
+                let pts: Vec<Pos2> = (0..=RING_SEGS)
+                    .filter_map(|j| {
+                        let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
+                        let off = rot * Vector3::new(r * a.cos(), 0.0, r * a.sin());
+                        project(ring_c + off, view_proj, frame_rect)
+                    })
+                    .collect();
+                for pair in pts.windows(2) {
+                    painter.line_segment([pair[0], pair[1]], stroke);
+                }
+            }
+
+            for (cx, cz) in [(r, 0.0_f32), (-r, 0.0), (0.0, r), (0.0, -r)] {
+                let off = rot * Vector3::new(cx, 0.0, cz);
+                if let (Some(pt), Some(pb)) = (
+                    project(top_c + off, view_proj, frame_rect),
+                    project(bot_c + off, view_proj, frame_rect),
+                ) {
+                    painter.line_segment([pt, pb], stroke);
+                }
+            }
+        }
+    }
 }

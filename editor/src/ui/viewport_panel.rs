@@ -3,6 +3,7 @@ use apostasy_core::{
     cgmath::Vector3,
     egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
     objects::{components::transform::Transform, scene::ObjectId, world::World},
+    physics::collider::Collider,
     rendering::{
         components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
         shared::{UpdateRenderer, anti_alisaing::{AntiAliasing, AntiAliasingAmount}},
@@ -157,7 +158,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .ok()
         .cloned()
         .unwrap_or_default();
-    let gizmo_data: Option<(ObjectId, Transform, apostasy_core::cgmath::Matrix4<f32>)> = {
+    let gizmo_data: Option<(ObjectId, Transform, apostasy_core::cgmath::Matrix4<f32>, Option<Collider>)> = {
         let sel_id = world
             .get_resource::<CellSearchState>()
             .ok()
@@ -168,6 +169,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 .get_component::<Transform>()
                 .ok()?
                 .clone();
+            let collider = world
+                .get_object(id)
+                .and_then(|o| o.get_component::<Collider>().ok().cloned());
             let cam_t = world
                 .get_objects_with_component::<Camera>()
                 .first()?
@@ -185,7 +189,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 .map(|v| v.logical_width / v.logical_height)
                 .unwrap_or(1.0);
             let view_proj = get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t);
-            Some((id, obj_t, view_proj))
+            Some((id, obj_t, view_proj, collider))
         })
     };
     let mut new_gizmo_state_from_fn: Option<crate::ui::gizmo::GizmoState> = None;
@@ -282,10 +286,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 ui.put(frame_rect, label);
             }
 
-            if let Some((_, ref obj_t, view_proj)) = gizmo_data {
+            if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
                 let (new_t, gs) = crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
                 gizmo_transform_out = new_t;
                 new_gizmo_state_from_fn = Some(gs);
+                if let Some(collider) = maybe_collider {
+                    crate::ui::gizmo::collider_gizmo(ui, obj_t, collider, view_proj, frame_rect);
+                }
             }
 
             if ctx_obj_id.is_some() {
@@ -408,7 +415,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
             *s = final_state;
         }
     }
-    if let (Some(new_t), Some((id, _, _))) = (gizmo_transform_out, gizmo_data) {
+    if let (Some(new_t), Some((id, _, _, _))) = (gizmo_transform_out, gizmo_data) {
         if let Some(obj) = world.get_object_mut(id) {
             if let Ok(t) = obj.get_component_mut::<Transform>() {
                 *t = new_t;

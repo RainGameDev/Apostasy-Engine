@@ -26,7 +26,7 @@ impl Default for EditorCameraSettings {
     }
 }
 
-#[update(mode = "editor")]
+#[update(mode = "editor", priority = 2)]
 pub fn editor_camera_move(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());
