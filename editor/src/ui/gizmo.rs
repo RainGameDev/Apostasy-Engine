@@ -423,11 +423,13 @@ pub fn collider_gizmo(
 
     let rot = transform.global_rotation;
     let scale = transform.global_scale;
-    let center = transform.global_position + rot * Vector3::new(
-        collider.offset.x * scale.x,
-        collider.offset.y * scale.y,
-        collider.offset.z * scale.z,
-    );
+    let center = transform.global_position
+        + rot
+            * Vector3::new(
+                collider.offset.x * scale.x,
+                collider.offset.y * scale.y,
+                collider.offset.z * scale.z,
+            );
 
     match &collider.shape {
         ColliderShape::Cuboid { size } => {
@@ -447,9 +449,18 @@ pub fn collider_gizmo(
             ];
 
             let edges: [(usize, usize); 12] = [
-                (0, 1), (2, 3), (4, 5), (6, 7),
-                (0, 2), (1, 3), (4, 6), (5, 7),
-                (0, 4), (1, 5), (2, 6), (3, 7),
+                (0, 1),
+                (2, 3),
+                (4, 5),
+                (6, 7),
+                (0, 2),
+                (1, 3),
+                (4, 6),
+                (5, 7),
+                (0, 4),
+                (1, 5),
+                (2, 6),
+                (3, 7),
             ];
 
             for (a, b) in edges {
@@ -482,7 +493,63 @@ pub fn collider_gizmo(
                 }
             }
         }
-        ColliderShape::Capsule { radius, height } | ColliderShape::Cylinder { radius, height } => {
+        ColliderShape::Capsule { radius, height } => {
+            let r = radius * scale.x.max(scale.z);
+            let ry = radius * scale.y;
+            let h = height * 0.5 * scale.y;
+            let y_up = rot * Vector3::new(0.0, 1.0, 0.0);
+            let top_c = center + y_up * h;
+            let bot_c = center - y_up * h;
+
+            // Cylinder rings at hemisphere junctions
+            for ring_c in [top_c, bot_c] {
+                let pts: Vec<Pos2> = (0..=RING_SEGS)
+                    .filter_map(|j| {
+                        let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
+                        project(
+                            ring_c + rot * Vector3::new(r * a.cos(), 0.0, r * a.sin()),
+                            view_proj,
+                            frame_rect,
+                        )
+                    })
+                    .collect();
+                for pair in pts.windows(2) {
+                    painter.line_segment([pair[0], pair[1]], stroke);
+                }
+            }
+
+            // side lines
+            for (cx, cz) in [(r, 0.0_f32), (-r, 0.0), (0.0, r), (0.0, -r)] {
+                let off = rot * Vector3::new(cx, 0.0, cz);
+                if let (Some(pt), Some(pb)) = (
+                    project(top_c + off, view_proj, frame_rect),
+                    project(bot_c + off, view_proj, frame_rect),
+                ) {
+                    painter.line_segment([pt, pb], stroke);
+                }
+            }
+
+            // Hemispheres
+            let half = RING_SEGS / 2;
+            for (cap_c, sign) in [(top_c, 1.0_f32), (bot_c, -1.0)] {
+                for plane in 0..2u8 {
+                    let pts: Vec<Pos2> = (0..=half)
+                        .filter_map(|j| {
+                            let a = j as f32 / half as f32 * std::f32::consts::PI;
+                            let local = match plane {
+                                0 => Vector3::new(r * a.cos(), sign * ry * a.sin(), 0.0),
+                                _ => Vector3::new(0.0, sign * ry * a.sin(), r * a.cos()),
+                            };
+                            project(cap_c + rot * local, view_proj, frame_rect)
+                        })
+                        .collect();
+                    for pair in pts.windows(2) {
+                        painter.line_segment([pair[0], pair[1]], stroke);
+                    }
+                }
+            }
+        }
+        ColliderShape::Cylinder { radius, height } => {
             let r = radius * scale.x.max(scale.z);
             let h = height * 0.5 * scale.y;
             let y_up = rot * Vector3::new(0.0, 1.0, 0.0);
@@ -493,8 +560,11 @@ pub fn collider_gizmo(
                 let pts: Vec<Pos2> = (0..=RING_SEGS)
                     .filter_map(|j| {
                         let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
-                        let off = rot * Vector3::new(r * a.cos(), 0.0, r * a.sin());
-                        project(ring_c + off, view_proj, frame_rect)
+                        project(
+                            ring_c + rot * Vector3::new(r * a.cos(), 0.0, r * a.sin()),
+                            view_proj,
+                            frame_rect,
+                        )
                     })
                     .collect();
                 for pair in pts.windows(2) {

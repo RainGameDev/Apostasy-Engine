@@ -14,10 +14,10 @@ object_window:
   - 679.625
 viewport:
   pos:
-  - 117.0
+  - 0.0
   - 35.0
   size:
-  - 1080.375
+  - 1032.1562
   - 623.46875
 viewport_open: true
 object_window_open: true
