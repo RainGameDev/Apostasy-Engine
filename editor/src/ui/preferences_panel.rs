@@ -2,9 +2,11 @@ use anyhow::Result;
 use apostasy_core::{
     egui,
     objects::{
+        resources::input_manager::{InputManager, KeyBind, ModifierKeys},
         world::World,
         worldspace_streaming::{MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, WorldspaceStreaming},
     },
+    winit::keyboard::PhysicalKey,
     rendering::shared::{
         UpdateRenderer,
         anti_alisaing::{AntiAliasing, AntiAliasingAmount},
@@ -17,7 +19,7 @@ use apostasy_core::{
 };
 use apostasy_macros::Resource;
 
-use super::{EditorStyle, style::Theme};
+use super::{EditorStyle, keybind_widget::{is_modifier_key, pretty_bind, keybind_editor, KeybindCapture}, style::Theme};
 use crate::{objects::editor_camera::EditorCameraSettings, ui::viewport_panel::EditorGraphics};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -110,6 +112,13 @@ const PAGES: &[PageMeta] = &[
     PageMeta {
         label: "Graphics",
         terms: &["SSAA", "MSAA", "Render Distance"],
+    },
+    PageMeta {
+        label: "Keybinds",
+        terms: &[
+            "Move", "Rotate", "Scale", "Snap", "Undo", "Redo",
+            "Copy", "Paste", "Duplicate", "Control", "Modifier",
+        ],
     },
 ];
 
@@ -427,11 +436,120 @@ impl GraphicsPage {
     }
 }
 
+// ─── Keybinds tab ────────────────────────────────────────────────────────────
+
+/// Ordered list of (bind_name, display_label) shown in the Keybinds tab.
+const KEYBIND_DISPLAY: &[(&str, &str)] = &[
+    ("GizmoTranslate", "Gizmo: Move"),
+    ("GizmoRotate",    "Gizmo: Rotate"),
+    ("GizmoScale",     "Gizmo: Scale"),
+    ("SnapModifier",   "Snap Modifier"),
+    ("Undo",           "Undo"),
+    ("Redo",           "Redo"),
+    ("Copy",           "Copy"),
+    ("Paste",          "Paste"),
+    ("Duplicate",      "Duplicate"),
+];
+
+/// Returns the display label of the first other keybind that shares the same
+/// key + modifier combo (non-modifier keys only — modifier keys may be shared).
+fn find_conflict(
+    binds: &[(&'static str, &'static str, Option<KeyBind>, Option<KeyBind>)],
+    key: &PhysicalKey,
+    modifiers: &ModifierKeys,
+    skip_name: &str,
+) -> Option<&'static str> {
+    if is_modifier_key(key) {
+        return None;
+    }
+    binds.iter().find_map(|(name, label, bind, _default)| {
+        if *name == skip_name {
+            return None;
+        }
+        bind.as_ref()
+            .filter(|b| b.key == *key && b.modifiers == *modifiers)
+            .map(|_| *label)
+    })
+}
+
+struct KeybindsPage {
+    /// (bind_name, display_label, current bind, default bind)
+    binds: Vec<(&'static str, &'static str, Option<KeyBind>, Option<KeyBind>)>,
+}
+
+impl KeybindsPage {
+    fn from_world(world: &World) -> Self {
+        let inputs = world.get_resource::<InputManager>().ok();
+        let binds = KEYBIND_DISPLAY
+            .iter()
+            .map(|&(name, label)| {
+                let bind    = inputs.and_then(|i| i.keybinds.get(name).cloned());
+                let default = inputs.and_then(|i| i.default_keybinds.get(name).cloned());
+                (name, label, bind, default)
+            })
+            .collect();
+        Self { binds }
+    }
+
+    fn draw(
+        &self,
+        ui: &mut egui::Ui,
+        style: &EditorStyle,
+        query: &str,
+        capture: &KeybindCapture,
+        error: &mut Option<String>,
+        pending: &mut Vec<(&'static str, KeyBind)>,
+    ) {
+        let row_h = style.row_height();
+
+        // Conflict / error banner
+        if let Some(ref msg) = error.clone() {
+            ui.horizontal(|ui| {
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), msg);
+            });
+            ui.add_space(4.0);
+        }
+
+        for (name, label, bind, default) in &self.binds {
+            if !query.is_empty() && !label.to_lowercase().contains(query) {
+                continue;
+            }
+
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    egui::Vec2::new(160.0, row_h),
+                    egui::Label::new(egui::RichText::new(*label).color(style.dim_col)),
+                );
+
+                let id = egui::Id::new(("keybind_chip", *name));
+                if let Some(new_bind) = keybind_editor(ui, id, bind.as_ref(), default.as_ref(), capture, style) {
+                    if let Some(other) = find_conflict(&self.binds, &new_bind.key, &new_bind.modifiers, name) {
+                        *error = Some(format!(
+                            "'{}' is already bound to '{}'. Choose a different key or add a modifier.",
+                            pretty_bind(&new_bind),
+                            other,
+                        ));
+                    } else {
+                        *error = None;
+                        pending.push((name, new_bind));
+                    }
+                }
+            });
+
+            ui.add_space(2.0);
+        }
+    }
+}
+
+// ─── Preferences window state ─────────────────────────────────────────────────
+
 #[derive(Resource, Clone)]
 pub struct PreferencesState {
     pub open: bool,
     pub selected_tab: usize,
     pub tab_search: String,
+    /// Conflict message shown when the chosen key is already taken by another action.
+    pub rebind_error: Option<String>,
 }
 
 impl Default for PreferencesState {
@@ -440,6 +558,7 @@ impl Default for PreferencesState {
             open: false,
             selected_tab: 0,
             tab_search: String::new(),
+            rebind_error: None,
         }
     }
 }
@@ -465,6 +584,14 @@ pub fn preferences(world: &mut World) -> Result<()> {
     let mut editor = EditorPage::from_world(world);
     let mut viewport = ViewportPage::from_world(world);
     let mut graphics = GraphicsPage::from_world(world);
+    let keybinds = KeybindsPage::from_world(world);
+
+    let capture = world
+        .get_resource::<InputManager>()
+        .map(|i| KeybindCapture::from_inputs(i))
+        .unwrap_or_else(|_| KeybindCapture::none());
+
+    let mut pending: Vec<(&'static str, KeyBind)> = Vec::new();
 
     egui::Window::new("Preferences")
         .id(egui::Id::new("preferences_window"))
@@ -582,6 +709,7 @@ pub fn preferences(world: &mut World) -> Result<()> {
                     0 => editor.draw(ui, &style, effective_query),
                     1 => viewport.draw(ui, &style, effective_query),
                     2 => graphics.draw(ui, &style, effective_query),
+                    3 => keybinds.draw(ui, &style, effective_query, &capture, &mut state.rebind_error, &mut pending),
                     _ => {}
                 });
             });
@@ -592,6 +720,13 @@ pub fn preferences(world: &mut World) -> Result<()> {
         s.open = window_open;
         s.tab_search = state.tab_search;
         s.selected_tab = state.selected_tab;
+        s.rebind_error = state.rebind_error;
+    }
+
+    for (name, bind) in pending {
+        if let Ok(inputs) = world.get_resource_mut::<InputManager>() {
+            inputs.rebind_key(name.to_string(), bind);
+        }
     }
 
     editor.apply(world)?;

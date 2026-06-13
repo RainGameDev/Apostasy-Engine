@@ -36,9 +36,9 @@
   - [x] Inertia
   - [x] Raycasting
 
-- [ ] Scene serialization
-  - [ ] Save scene to file
-  - [ ] Load scene from file
+- [x] Scene serialization
+  - [x] Save scene to file
+  - [x] Load scene from file
 
 - [ ] Audio system
 
@@ -52,13 +52,13 @@
     - [x] Object deletion
     - [x] Object creation
   - [-] Object Editor
-    - [ ] Name bar (inline rename)
+    - [x] Name bar (inline rename)
     - [x] Component adding
     - [x] Component editing
     - [x] Component removal
     - [x] Component copy/paste/cut
-    - [ ] Tag adding
-    - [ ] Tag removal
+    - [x] Tag adding
+    - [x] Tag removal
   - [x] Assets panel (loaded assets display)
   - [x] Viewport panel
   - [x] Cell / Objects panel
@@ -67,10 +67,10 @@
     - [x] Camera speed setting
     - [x] Graphics settings (AA, supersampling)
     - [x] Saving and loading preferences
-  - [ ] Scenes panel
-    - [ ] Scene creation
+  - [-] Scenes panel
+    - [x] Scene creation
     - [ ] Scene deletion
-    - [ ] Scene switching
+    - [x] Scene switching
   - [ ] UI Editor
 
 - [-] Editor Camera
@@ -95,6 +95,6 @@
   - [ ] Play / Pause / Stop
   - [ ] Switch between editor and game camera
 
-- [ ] Undo / Redo
+- [x] Undo / Redo
 
 # Apostasy

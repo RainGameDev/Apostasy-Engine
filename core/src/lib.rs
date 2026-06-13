@@ -37,6 +37,7 @@ use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::WindowInfo;
 use crate::rendering::components::camera::ActiveCamera;
+use crate::rendering::components::camera::EditorCamera;
 use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
@@ -231,9 +232,21 @@ impl Core {
                         return;
                     };
 
-                    let Ok(camera) = world.get_object_with_tag::<ActiveCamera>() else {
-                        return;
+                    // If an EditorCamera exists, only render from an object that has
+                    // both ActiveCamera + EditorCamera. If no EditorCamera is in the
+                    // world (game / standalone mode), fall back to any ActiveCamera.
+                    let has_editor_cam = !world.get_objects_with_tag::<EditorCamera>().is_empty();
+                    let active_with_ids = world.get_objects_with_tag_with_ids::<ActiveCamera>();
+                    let camera_id = if has_editor_cam {
+                        active_with_ids
+                            .iter()
+                            .find(|(_, obj)| obj.has_tag::<EditorCamera>())
+                            .map(|(id, _)| *id)
+                    } else {
+                        active_with_ids.first().map(|(id, _)| *id)
                     };
+                    let Some(camera_id) = camera_id else { return; };
+                    let Some(camera) = world.get_object(camera_id) else { return; };
                     let camera_transform = camera.get_component::<Transform>().unwrap().clone();
                     let camera_pos = camera_transform.global_position;
                     let view = get_view_matrix(&camera_transform);

@@ -3,7 +3,7 @@ use apostasy_core::{
     objects::world::World,
     rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing},
     start,
-    ui::{ui_context::ViewportSize, FontRegistry},
+    ui::{FontRegistry, ui_context::ViewportSize},
 };
 
 pub mod shared;
@@ -17,6 +17,7 @@ pub mod assets_panel;
 pub mod cell_panel;
 pub mod gizmo;
 pub mod inspector_panel;
+pub mod keybind_widget;
 pub mod preferences_panel;
 pub mod top_bar;
 pub mod ui_manager;
@@ -61,14 +62,16 @@ pub fn init(world: &mut World) -> Result<()> {
     style.font_size = prefs.font_size;
     world.insert_resource(style);
 
-    if !prefs.active_font.is_empty() {
-        if let Ok(reg) = world.get_resource_mut::<FontRegistry>() {
-            reg.set_active(prefs.active_font);
-        }
+    if !prefs.active_font.is_empty()
+        && let Ok(reg) = world.get_resource_mut::<FontRegistry>()
+    {
+        reg.set_active(prefs.active_font);
     }
 
     use crate::objects::editor_camera::EditorCameraSettings;
-    world.insert_resource(EditorCameraSettings { move_speed: prefs.camera_speed });
+    world.insert_resource(EditorCameraSettings {
+        move_speed: prefs.camera_speed,
+    });
 
     let graphics = EditorGraphics::load();
     if let Ok(vs) = world.get_resource_mut::<ViewportSize>() {

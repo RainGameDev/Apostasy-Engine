@@ -1,8 +1,13 @@
 use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
-    egui::{self, Color32, ComboBox, Image, Label, RichText, Sense, Slider, Window},
-    objects::{components::transform::Transform, cell::ObjectId, world::World},
+    egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
+    objects::{
+        components::transform::Transform,
+        cell::ObjectId,
+        resources::input_manager::InputManager,
+        world::World,
+    },
     physics::collider::Collider,
     rendering::{
         components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
@@ -197,6 +202,41 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let drag_start_transform = gizmo_state.drag.as_ref().map(|d| d.start_transform.clone());
     let had_drag = gizmo_state.drag.is_some();
 
+    // Activate the "viewport" context when the viewport is hovered and no text
+    // field has keyboard focus. Gizmo keybinds are registered with this context
+    // so they automatically suppress themselves in all other situations.
+    {
+        let viewport_hovered = world
+            .get_resource::<ViewportInfo>()
+            .map(|v| v.is_hovered)
+            .unwrap_or(false);
+        if let Ok(inputs) = world.get_resource_mut::<InputManager>() {
+            if viewport_hovered && !ctx.egui_wants_keyboard_input() {
+                inputs.active_contexts.insert("viewport".to_string());
+            }
+        }
+    }
+
+    // Keybind-driven gizmo mode switching and snap modifier.
+    {
+        use crate::ui::gizmo::GizmoMode;
+        if let Ok(inputs) = world.get_resource::<InputManager>() {
+            gizmo_state.shift_snap_held = inputs.is_keybind_active("SnapModifier");
+            if inputs.is_keybind_active("GizmoTranslate") {
+                gizmo_state.mode = GizmoMode::Translate;
+                gizmo_state.drag = None;
+            }
+            if inputs.is_keybind_active("GizmoRotate") {
+                gizmo_state.mode = GizmoMode::Rotate;
+                gizmo_state.drag = None;
+            }
+            if inputs.is_keybind_active("GizmoScale") {
+                gizmo_state.mode = GizmoMode::Scale;
+                gizmo_state.drag = None;
+            }
+        }
+    }
+
     let vp = window
         .open(&mut is_open)
         .resizable(true)
@@ -263,6 +303,52 @@ pub fn viewport(world: &mut World) -> Result<()> {
                             gizmo_state.local = true;
                             gizmo_state.drag = None;
                         }
+
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+
+                        if ui
+                            .selectable_label(gizmo_state.snap_translate, "Grid")
+                            .on_hover_text("Snap position to grid")
+                            .clicked()
+                        {
+                            gizmo_state.snap_translate = !gizmo_state.snap_translate;
+                        }
+                        ui.add(
+                            DragValue::new(&mut gizmo_state.snap_translate_size)
+                                .range(0.001_f32..=100.0)
+                                .speed(0.05),
+                        );
+
+                        ui.add_space(4.0);
+                        if ui
+                            .selectable_label(gizmo_state.snap_rotate, "Angle")
+                            .on_hover_text("Snap rotation to angle increment")
+                            .clicked()
+                        {
+                            gizmo_state.snap_rotate = !gizmo_state.snap_rotate;
+                        }
+                        ui.add(
+                            DragValue::new(&mut gizmo_state.snap_rotate_deg)
+                                .range(0.1_f32..=180.0)
+                                .speed(0.5)
+                                .suffix("°"),
+                        );
+
+                        ui.add_space(4.0);
+                        if ui
+                            .selectable_label(gizmo_state.snap_scale, "Step")
+                            .on_hover_text("Snap scale to step increment")
+                            .clicked()
+                        {
+                            gizmo_state.snap_scale = !gizmo_state.snap_scale;
+                        }
+                        ui.add(
+                            DragValue::new(&mut gizmo_state.snap_scale_size)
+                                .range(0.001_f32..=10.0)
+                                .speed(0.01),
+                        );
                     });
                 });
 

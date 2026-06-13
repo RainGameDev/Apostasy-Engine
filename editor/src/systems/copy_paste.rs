@@ -17,20 +17,35 @@ pub fn init(world: &mut World) -> Result<()> {
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
 
     inputs.register_default_keybind(
-        "ControlModifier",
-        KeyBind::new(PhysicalKey::Code(KeyCode::ControlLeft), KeyAction::Hold),
-    );
-    inputs.register_default_keybind(
         "Copy",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press).with_ctrl(),
     );
     inputs.register_default_keybind(
         "Paste",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyV), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyV), KeyAction::Press).with_ctrl(),
     );
     inputs.register_default_keybind(
         "Duplicate",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Press).with_ctrl(),
+    );
+    inputs.register_default_keybind(
+        "GizmoTranslate",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyG), KeyAction::Press)
+            .with_context("viewport"),
+    );
+    inputs.register_default_keybind(
+        "GizmoRotate",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyR), KeyAction::Press)
+            .with_context("viewport"),
+    );
+    inputs.register_default_keybind(
+        "GizmoScale",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyS), KeyAction::Press)
+            .with_context("viewport"),
+    );
+    inputs.register_default_keybind(
+        "SnapModifier",
+        KeyBind::new(PhysicalKey::Code(KeyCode::ShiftLeft), KeyAction::Hold),
     );
     Ok(())
 }
@@ -42,21 +57,16 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
     }
 
     let inputs = world.get_resource::<InputManager>().unwrap();
-    let ctrl = inputs.is_keybind_active("ControlModifier");
-    let do_copy = ctrl && inputs.is_keybind_active("Copy");
-    let do_paste = ctrl && inputs.is_keybind_active("Paste");
-    let do_duplicate = ctrl && inputs.is_keybind_active("Duplicate");
+    let do_copy      = inputs.is_keybind_active("Copy");
+    let do_paste     = inputs.is_keybind_active("Paste");
+    let do_duplicate = inputs.is_keybind_active("Duplicate");
 
-    let clipboard = world.get_resource::<CellSearchState>()?.copied_obj.clone();
+    let clipboard  = world.get_resource::<CellSearchState>()?.copied_obj.clone();
     let selected_id = world.get_resource::<CellSearchState>()?.selected_obj;
+    let selected_obj: Option<Object> = selected_id.and_then(|id| world.get_object(id).cloned());
 
-    let selected_obj: Option<Object> = selected_id
-        .and_then(|id| world.get_object(id).cloned());
-
-    if do_copy {
-        if let Some(obj) = selected_obj.clone() {
-            world.get_resource_mut::<CellSearchState>()?.copied_obj = Some(obj);
-        }
+    if do_copy && let Some(obj) = selected_obj.clone() {
+        world.get_resource_mut::<CellSearchState>()?.copied_obj = Some(obj);
     }
 
     if do_paste {
@@ -65,12 +75,10 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
             cmd.execute(world)?;
             world.get_resource_mut::<crate::systems::history::History>()?.push(cmd);
         }
-    } else if do_duplicate {
-        if let Some(obj) = selected_obj {
-            let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
-            cmd.execute(world)?;
-            world.get_resource_mut::<crate::systems::history::History>()?.push(cmd);
-        }
+    } else if do_duplicate && let Some(obj) = selected_obj {
+        let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
+        cmd.execute(world)?;
+        world.get_resource_mut::<crate::systems::history::History>()?.push(cmd);
     }
 
     Ok(())

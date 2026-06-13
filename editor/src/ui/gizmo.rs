@@ -37,14 +37,40 @@ pub struct GizmoDrag {
     sensitivity: f32,
 }
 
-#[derive(Resource, Clone, Default)]
+#[derive(Resource, Clone)]
 pub struct GizmoState {
     pub mode: GizmoMode,
-    /// true = axes follow object orientationm false = world-aligned axes
+    /// true = axes follow object orientation, false = world-aligned axes
     pub local: bool,
     pub drag: Option<GizmoDrag>,
-    /// True when cursor is near a gizmo handlem suppresses viewport deselect on raycast miss
+    /// True when cursor is near a gizmo handle, suppresses viewport deselect on raycast miss
     pub consuming: bool,
+    pub snap_translate: bool,
+    pub snap_translate_size: f32,
+    pub snap_rotate: bool,
+    pub snap_rotate_deg: f32,
+    pub snap_scale: bool,
+    pub snap_scale_size: f32,
+    /// Set each frame by the viewport when Shift is held; XORs against each snap toggle.
+    pub shift_snap_held: bool,
+}
+
+impl Default for GizmoState {
+    fn default() -> Self {
+        Self {
+            mode: GizmoMode::default(),
+            local: false,
+            drag: None,
+            consuming: false,
+            snap_translate: false,
+            snap_translate_size: 1.0,
+            snap_rotate: false,
+            snap_rotate_deg: 15.0,
+            snap_scale: false,
+            snap_scale_size: 0.25,
+            shift_snap_held: false,
+        }
+    }
 }
 
 fn project(pos: Vector3<f32>, vp: Matrix4<f32>, rect: egui::Rect) -> Option<Pos2> {
@@ -244,14 +270,32 @@ pub fn gizmo(
             let delta = cur - drag.start_mouse;
             let proj = delta.x * drag.screen_dir.x + delta.y * drag.screen_dir.y;
             let mut t = drag.start_transform.clone();
+            // Shift held temporarily inverts each snap toggle.
+            let eff_snap_translate = state.snap_translate ^ state.shift_snap_held;
+            let eff_snap_rotate = state.snap_rotate ^ state.shift_snap_held;
+            let eff_snap_scale = state.snap_scale ^ state.shift_snap_held;
+
             match state.mode {
                 GizmoMode::Translate => {
                     let d = drag.axis_world_dir * (proj * drag.sensitivity);
-                    t.local_position = drag.start_transform.local_position + d;
-                    t.global_position = t.local_position;
+                    let mut pos = drag.start_transform.local_position + d;
+                    if eff_snap_translate {
+                        let s = state.snap_translate_size.max(0.001);
+                        pos.x = (pos.x / s).round() * s;
+                        pos.y = (pos.y / s).round() * s;
+                        pos.z = (pos.z / s).round() * s;
+                    }
+                    t.local_position = pos;
+                    t.global_position = pos;
                 }
                 GizmoMode::Rotate => {
-                    let angle_deg = proj * drag.sensitivity;
+                    let raw_deg = proj * drag.sensitivity;
+                    let angle_deg = if eff_snap_rotate {
+                        let s = state.snap_rotate_deg.max(0.1);
+                        (raw_deg / s).round() * s
+                    } else {
+                        raw_deg
+                    };
                     let q = apostasy_core::cgmath::Quaternion::from_axis_angle(
                         drag.axis_world_dir,
                         apostasy_core::cgmath::Deg(angle_deg),
@@ -265,15 +309,23 @@ pub fn gizmo(
                 }
                 GizmoMode::Scale => {
                     let ds = proj * drag.sensitivity;
+                    let snap = |raw: f32| -> f32 {
+                        if eff_snap_scale {
+                            let s = state.snap_scale_size.max(0.001);
+                            ((raw / s).round() * s).max(0.001)
+                        } else {
+                            raw.max(0.001)
+                        }
+                    };
                     match drag.axis {
                         GizmoAxis::X => {
-                            t.local_scale.x = (drag.start_transform.local_scale.x + ds).max(0.001)
+                            t.local_scale.x = snap(drag.start_transform.local_scale.x + ds);
                         }
                         GizmoAxis::Y => {
-                            t.local_scale.y = (drag.start_transform.local_scale.y + ds).max(0.001)
+                            t.local_scale.y = snap(drag.start_transform.local_scale.y + ds);
                         }
                         GizmoAxis::Z => {
-                            t.local_scale.z = (drag.start_transform.local_scale.z + ds).max(0.001)
+                            t.local_scale.z = snap(drag.start_transform.local_scale.z + ds);
                         }
                     }
                     t.global_scale = t.local_scale;

@@ -11,9 +11,14 @@ pub const UP: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
 pub const RIGHT: Vector3<f32> = Vector3::new(1.0, 0.0, 0.0);
 pub const FORWARD: Vector3<f32> = Vector3::new(0.0, 0.0, -1.0);
 
+/// Position, rotation, and scale of an object in world space.
+///
+/// Local fields are set directly; global fields are derived from local values
+/// (plus any parent transform) each frame by `transform_update`.
 #[derive(Component, Clone, Debug)]
 pub struct Transform {
     pub local_position: Vector3<f32>,
+    /// Euler angles in degrees, applied as Ry * Rx * Rz.
     pub local_euler_angles: Vector3<f32>,
     pub local_rotation: Quaternion<f32>,
     pub local_scale: Vector3<f32>,
@@ -40,35 +45,34 @@ impl Default for Transform {
 
 impl Transform {
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        if let Some(seq) = value.get("local_position").and_then(|v| v.as_sequence()) {
-            if seq.len() >= 3 {
-                self.local_position = Vector3::new(
-                    seq[0].as_f64().unwrap_or(0.0) as f32,
-                    seq[1].as_f64().unwrap_or(0.0) as f32,
-                    seq[2].as_f64().unwrap_or(0.0) as f32,
-                );
-            }
+        if let Some(seq) = value.get("local_position").and_then(|v| v.as_sequence())
+            && seq.len() >= 3
+        {
+            self.local_position = Vector3::new(
+                seq[0].as_f64().unwrap_or(0.0) as f32,
+                seq[1].as_f64().unwrap_or(0.0) as f32,
+                seq[2].as_f64().unwrap_or(0.0) as f32,
+            );
         }
         if let Some(seq) = value
             .get("local_euler_angles")
             .and_then(|v| v.as_sequence())
+            && seq.len() >= 3
         {
-            if seq.len() >= 3 {
-                self.local_euler_angles = Vector3::new(
-                    seq[0].as_f64().unwrap_or(0.0) as f32,
-                    seq[1].as_f64().unwrap_or(0.0) as f32,
-                    seq[2].as_f64().unwrap_or(0.0) as f32,
-                );
-            }
+            self.local_euler_angles = Vector3::new(
+                seq[0].as_f64().unwrap_or(0.0) as f32,
+                seq[1].as_f64().unwrap_or(0.0) as f32,
+                seq[2].as_f64().unwrap_or(0.0) as f32,
+            );
         }
-        if let Some(seq) = value.get("local_scale").and_then(|v| v.as_sequence()) {
-            if seq.len() >= 3 {
-                self.local_scale = Vector3::new(
-                    seq[0].as_f64().unwrap_or(1.0) as f32,
-                    seq[1].as_f64().unwrap_or(1.0) as f32,
-                    seq[2].as_f64().unwrap_or(1.0) as f32,
-                );
-            }
+        if let Some(seq) = value.get("local_scale").and_then(|v| v.as_sequence())
+            && seq.len() >= 3
+        {
+            self.local_scale = Vector3::new(
+                seq[0].as_f64().unwrap_or(1.0) as f32,
+                seq[1].as_f64().unwrap_or(1.0) as f32,
+                seq[2].as_f64().unwrap_or(1.0) as f32,
+            );
         }
 
         self.global_position = self.local_position;
@@ -81,25 +85,32 @@ impl Transform {
         });
         Ok(())
     }
+    /// Up direction in local space.
     pub fn calculate_up(&self) -> Vector3<f32> {
         self.local_rotation.rotate_vector(UP)
     }
 
+    /// Forward direction in local space.
     pub fn calculate_forward(&self) -> Vector3<f32> {
         self.local_rotation.rotate_vector(FORWARD)
     }
 
+    /// Right direction in local space.
     pub fn calculate_right(&self) -> Vector3<f32> {
         self.local_rotation.rotate_vector(RIGHT)
     }
 
+    /// Forward direction in world space.
     pub fn calculate_global_forward(&self) -> Vector3<f32> {
         self.global_rotation.rotate_vector(FORWARD)
     }
 
+    /// Up direction in world space.
     pub fn calculate_global_up(&self) -> Vector3<f32> {
         self.global_rotation.rotate_vector(UP)
     }
+
+    /// Right direction in world space.
     pub fn calculate_global_right(&self) -> Vector3<f32> {
         self.global_rotation.rotate_vector(RIGHT)
     }

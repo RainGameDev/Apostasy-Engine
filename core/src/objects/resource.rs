@@ -3,6 +3,7 @@ use std::any::{Any, TypeId, type_name};
 use anyhow::{Result, anyhow};
 use hashbrown::HashMap;
 
+/// A trait that defines a resource that can be attached to the world.
 pub trait Resource: ResourceContainer {
     fn name() -> &'static str
     where
@@ -12,6 +13,7 @@ pub trait Resource: ResourceContainer {
     fn type_name(&self) -> &'static str;
 }
 
+/// Wrapper for a workaround of object safety.
 pub trait ResourceContainer {
     fn clone_box(&self) -> Box<dyn Resource>;
 }
@@ -30,6 +32,8 @@ impl Clone for Box<dyn Resource> {
     }
 }
 
+/// Contains all stored and registered resources.
+/// Resources are registered on startup.
 pub struct ResourceRegistration {
     pub type_name: &'static str,
     // pub serialize: fn(&dyn Resource) -> serde_yaml::Value,
@@ -39,11 +43,13 @@ pub struct ResourceRegistration {
 
 inventory::collect!(ResourceRegistration);
 
+/// Takes in type [`type_name`] and returns the registered resource.
 pub fn get_resource_registration(type_name: &str) -> Option<&'static ResourceRegistration> {
     inventory::iter::<ResourceRegistration>()
         .find(|r| r.type_name.to_lowercase() == type_name.to_lowercase())
 }
 
+/// A hashmap that contains all resources.
 #[derive(Default, Clone)]
 pub struct ResourceMap {
     pub(crate) map: HashMap<TypeId, Box<dyn Resource>>,

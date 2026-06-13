@@ -4,14 +4,12 @@ use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
 use egui::ComboBox;
 
 use crate::{
-    objects::{
-        component::Inspect, components::transform::Transform, cell::ObjectId, world::World,
-    },
+    objects::{cell::ObjectId, component::Inspect, components::transform::Transform, world::World},
     physics::velocity::Velocity,
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
-///  A shape of a collider, might add more if needed
+/// The geometric shape used for collision detection.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ColliderShape {
     Cuboid { size: Vector3<f32> },
@@ -45,10 +43,12 @@ impl ColliderShape {
     }
 }
 
-/// A component that defines a colliders data
+/// Collision volume attached to an object.
+/// `is_static` objects are immovable, `is_area` objects detect overlaps but do not resolve them.
 #[derive(Component, Debug, Clone)]
 pub struct Collider {
     pub shape: ColliderShape,
+    /// Local-space offset from the object's origin to the collider center.
     pub offset: Vector3<f32>,
     pub is_static: bool,
     pub is_area: bool,
@@ -188,7 +188,10 @@ impl Default for Collider {
 
 impl Collider {
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        let shape_str = value.get("shape").and_then(|v| v.as_str()).unwrap_or("Cuboid");
+        let shape_str = value
+            .get("shape")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Cuboid");
         self.shape = match shape_str {
             "Sphere" => ColliderShape::Sphere {
                 radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
@@ -202,17 +205,21 @@ impl Collider {
                 height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
             },
             _ => {
-                let size = value.get("size").and_then(|v| v.as_sequence()).map(|seq| {
-                    if seq.len() >= 3 {
-                        Vector3::new(
-                            seq[0].as_f64().unwrap_or(1.0) as f32,
-                            seq[1].as_f64().unwrap_or(1.0) as f32,
-                            seq[2].as_f64().unwrap_or(1.0) as f32,
-                        )
-                    } else {
-                        Vector3::new(1.0, 1.0, 1.0)
-                    }
-                }).unwrap_or(Vector3::new(1.0, 1.0, 1.0));
+                let size = value
+                    .get("size")
+                    .and_then(|v| v.as_sequence())
+                    .map(|seq| {
+                        if seq.len() >= 3 {
+                            Vector3::new(
+                                seq[0].as_f64().unwrap_or(1.0) as f32,
+                                seq[1].as_f64().unwrap_or(1.0) as f32,
+                                seq[2].as_f64().unwrap_or(1.0) as f32,
+                            )
+                        } else {
+                            Vector3::new(1.0, 1.0, 1.0)
+                        }
+                    })
+                    .unwrap_or(Vector3::new(1.0, 1.0, 1.0));
                 ColliderShape::Cuboid { size }
             }
         };
@@ -234,7 +241,7 @@ impl Collider {
         Ok(())
     }
 
-    /// Creates a dynamic collider
+    /// Creates a dynamic collider.
     pub fn new(shape: ColliderShape, offset: Vector3<f32>) -> Self {
         Self {
             shape,
@@ -244,7 +251,7 @@ impl Collider {
         }
     }
 
-    /// Creates a static collider
+    /// Creates a static collider.
     pub fn new_static(shape: ColliderShape, offset: Vector3<f32>) -> Self {
         Self {
             shape,
@@ -273,6 +280,7 @@ impl Collider {
         self.shape.half_extents()
     }
 
+    /// Returns the minimum translation vector to separate this collider from `other`, or `None` if they are not overlapping.
     pub fn translation_vector_against(
         &self,
         pos_a: Vector3<f32>,
@@ -344,6 +352,7 @@ impl Collider {
         Some(min_axis * min_overlap)
     }
 
+    /// Returns `true` if `point` (world space) lies inside this collider.
     pub fn contains_point(
         &self,
         position: Vector3<f32>,
@@ -375,7 +384,7 @@ fn rotate_vector(q: Quaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {
     v + t * q.s + qv.cross(t)
 }
 
-/// Contains information about a collision event
+/// Data produced when two colliders overlap during a frame.
 #[derive(Debug, Clone)]
 pub struct CollisionEvent {
     pub node_a: String,
@@ -400,7 +409,7 @@ impl CollisionEvents {
     }
 }
 
-/// A snapshot of a collider and it's needed data
+/// A snapshot of a collider and it's needed data.
 #[derive(Clone)]
 struct Snapshot {
     id: ObjectId,

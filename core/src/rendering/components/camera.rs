@@ -6,11 +6,15 @@ use crate::{
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
+/// Perspective camera component.
+/// Mark `is_main = true` to use this camera for rendering.
 #[derive(Component, Clone, Debug)]
 pub struct Camera {
+    /// Vertical field of view in degrees.
     pub fov_y: f32,
     pub near: f32,
     pub far: f32,
+    /// Whether this is the active camera used for rendering.
     pub is_main: bool,
 }
 
@@ -70,6 +74,7 @@ impl Camera {
     }
 }
 
+/// Returns a Vulkan-compatible perspective projection matrix (Y axis flipped for NDC).
 pub fn get_perspective_projection(camera: &Camera, aspect: f32) -> Matrix4<f32> {
     let mut proj: Matrix4<f32> = PerspectiveFov::to_perspective(&PerspectiveFov {
         fovy: Deg(camera.fov_y).into(),
@@ -84,6 +89,7 @@ pub fn get_perspective_projection(camera: &Camera, aspect: f32) -> Matrix4<f32> 
     proj
 }
 
+/// Returns a right-handed view matrix from the transform's global position and forward direction.
 pub fn get_view_matrix(transform: &Transform) -> Matrix4<f32> {
     let eye = Point3::new(
         transform.global_position.x,
@@ -109,6 +115,8 @@ pub struct GameCamera;
 
 inventory::submit!(crate::objects::tag::TagRegistration {
     type_name: "GameCamera",
+    singleton: false,
+    hidden: false,
     create: || Box::new(GameCamera),
 });
 
@@ -117,6 +125,8 @@ pub struct EditorCamera;
 
 inventory::submit!(crate::objects::tag::TagRegistration {
     type_name: "EditorCamera",
+    singleton: true,
+    hidden: true,
     create: || Box::new(EditorCamera),
 });
 
@@ -125,5 +135,7 @@ pub struct ActiveCamera;
 
 inventory::submit!(crate::objects::tag::TagRegistration {
     type_name: "ActiveCamera",
+    singleton: true,
+    hidden: false,
     create: || Box::new(ActiveCamera),
 });

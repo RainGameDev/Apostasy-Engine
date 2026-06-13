@@ -1,13 +1,16 @@
 use anyhow::Result;
 use std::any::Any;
 
+/// Loads a category of game assets from YAML data into a typed registry.
 pub trait YamlAssetLoader: Send + Sync {
+    /// The asset class this loader handles, used to match YAML keys during loading.
     fn class_name(&self) -> &'static str;
+    /// Parses and stores asset definitions from a raw YAML value.
     fn load(&mut self, raw: &serde_yaml::Value) -> Result<()>;
     fn clone_box(&self) -> Box<dyn YamlAssetLoader>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
-    /// Returns (namespace, name) pairs for all loaded definitions.
+    /// Returns `(namespace, name)` pairs for all loaded definitions.
     fn list_entries(&self) -> Vec<(String, String)> {
         Vec::new()
     }

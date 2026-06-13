@@ -193,16 +193,12 @@ pub fn init_history(world: &mut World) -> Result<()> {
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();
     inputs.register_default_keybind(
-        "ControlModifier",
-        KeyBind::new(PhysicalKey::Code(KeyCode::ControlLeft), KeyAction::Hold),
-    );
-    inputs.register_default_keybind(
         "Undo",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyZ), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyZ), KeyAction::Press).with_ctrl(),
     );
     inputs.register_default_keybind(
         "Redo",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyY), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyY), KeyAction::Press).with_ctrl(),
     );
     Ok(())
 }
@@ -227,22 +223,18 @@ pub fn remap_history_after_migration(world: &mut World) -> Result<()> {
 
 #[update(mode = "editor")]
 pub fn handle_undo_redo(world: &mut World) -> Result<()> {
-    let (ctrl, undo, redo) = {
+    let (undo, redo) = {
         let inputs = world.get_resource::<InputManager>()?;
-        (
-            inputs.is_keybind_active("ControlModifier"),
-            inputs.is_keybind_active("Undo"),
-            inputs.is_keybind_active("Redo"),
-        )
+        (inputs.is_keybind_active("Undo"), inputs.is_keybind_active("Redo"))
     };
 
-    if ctrl && undo {
+    if undo {
         let cmd = world.get_resource_mut::<History>()?.undo_stack.pop();
         if let Some(mut cmd) = cmd {
             cmd.undo(world)?;
             world.get_resource_mut::<History>()?.redo_stack.push(cmd);
         }
-    } else if ctrl && redo {
+    } else if redo {
         let cmd = world.get_resource_mut::<History>()?.redo_stack.pop();
         if let Some(mut cmd) = cmd {
             cmd.execute(world)?;

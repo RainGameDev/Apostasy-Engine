@@ -7,6 +7,7 @@ use apostasy_core::{
     objects::{
         component::{BoxedComponent, Component, InspectorRegistry},
         fmt_key,
+        tag::TagRegistration,
         world::World,
     },
     ui::{DRAG_SIZE, ui_context::EguiContext},
@@ -111,6 +112,40 @@ pub fn inspector(world: &mut World) -> Result<()> {
         })
         .unwrap_or_default();
 
+    let is_editor_camera = selected_id
+        .and_then(|id| world.get_object(id))
+        .map(|obj| {
+            obj.tags.iter().any(|t| {
+                t.type_name()
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(t.type_name())
+                    .eq_ignore_ascii_case("EditorCamera")
+            })
+        })
+        .unwrap_or(false);
+
+    let has_camera_component = existing_component_names.iter().any(|&n| n == "Camera");
+
+    let all_tag_names: Vec<&'static str> = inventory::iter::<TagRegistration>()
+        .filter(|r| !r.hidden)
+        .filter(|r| {
+            !r.type_name.eq_ignore_ascii_case("ActiveCamera")
+                || (has_camera_component && !is_editor_camera)
+        })
+        .map(|r| r.type_name)
+        .collect();
+
+    let existing_tag_names: Vec<&'static str> = selected_id
+        .and_then(|id| world.get_object(id))
+        .map(|obj| {
+            obj.tags
+                .iter()
+                .filter_map(|t| t.type_name().rsplit("::").next())
+                .collect()
+        })
+        .unwrap_or_default();
+
     let picker_state = world.get_resource::<ComponentPickerState>().unwrap();
     let picker_open = picker_state.open;
     let mut new_picker_open = picker_open;
@@ -120,6 +155,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let mut component_to_remove: Option<TypeId> = None;
     let mut component_to_copy: Option<BoxedComponent> = None;
     let mut to_paste_component = false;
+    let mut tag_to_add: Option<String> = None;
+    let mut tag_to_remove: Option<String> = None;
 
     let screen_height = ctx.input(|i| {
         i.raw
@@ -170,11 +207,76 @@ pub fn inspector(world: &mut World) -> Result<()> {
                         if let Some(obj) = world.get_object_mut(id) {
                             ui.horizontal(|ui| {
                                 ui.label("Name");
+
+                                let btn_w = 72.0;
+                                let text_w =
+                                    (ui.available_width() - btn_w - ui.spacing().item_spacing.x)
+                                        .max(0.0);
                                 ui.add_sized(
-                                    egui::vec2(ui.available_width(), DRAG_SIZE.y),
+                                    egui::vec2(text_w, DRAG_SIZE.y),
                                     egui::TextEdit::singleline(&mut obj.name)
                                         .hint_text("Object name..."),
                                 );
+
+                                let tag_count = existing_tag_names.len();
+                                let tags_label = if tag_count > 0 {
+                                    format!("Tags ({})", tag_count)
+                                } else {
+                                    "Tags".to_string()
+                                };
+                                let tags_btn = ui.add_sized(
+                                    egui::vec2(btn_w, DRAG_SIZE.y),
+                                    egui::Button::new(&tags_label),
+                                );
+
+                                let popup_id = ui.id().with("tags_popup");
+                                let popup_resp = egui::Popup::from_response(&tags_btn)
+                                    .id(popup_id)
+                                    .open_memory(
+                                        tags_btn.clicked().then_some(egui::SetOpenCommand::Toggle),
+                                    )
+                                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        ui.set_min_width(140.0);
+                                        if all_tag_names.is_empty() {
+                                            ui.label(
+                                                egui::RichText::new("No tags registered")
+                                                    .italics()
+                                                    .weak(),
+                                            );
+                                        } else {
+                                            for &type_name in &all_tag_names {
+                                                let short_name = type_name
+                                                    .split("::")
+                                                    .last()
+                                                    .unwrap_or(type_name);
+                                                let has_tag = existing_tag_names
+                                                    .iter()
+                                                    .any(|&t| t == type_name);
+                                                let mut checked = has_tag;
+                                                if ui.checkbox(&mut checked, short_name).changed() {
+                                                    if checked {
+                                                        tag_to_add = Some(type_name.to_string());
+                                                    } else {
+                                                        tag_to_remove = Some(type_name.to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+
+                                if let Some(ref inner) = popup_resp {
+                                    let pressed_outside = ui.input(|i| {
+                                        i.pointer.any_pressed()
+                                            && i.pointer
+                                                .press_origin()
+                                                .map(|p| !inner.response.rect.contains(p))
+                                                .unwrap_or(false)
+                                    });
+                                    if pressed_outside {
+                                        egui::Popup::close_id(ui.ctx(), popup_id);
+                                    }
+                                }
                             });
                             ui.add_space(6.0);
                             for (component, (type_id, f)) in
@@ -362,6 +464,51 @@ pub fn inspector(world: &mut World) -> Result<()> {
         && let Err(e) = obj.add_component_by_name(&name)
     {
         log_warn!("Failed to add component '{}': {}", name, e);
+    }
+
+    if let Some(ref type_name) = tag_to_add {
+        let is_singleton = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.eq_ignore_ascii_case(type_name))
+            .map(|r| r.singleton)
+            .unwrap_or(false);
+
+        if is_singleton {
+            let ids_to_clear: Vec<_> = world
+                .get_all_objects()
+                .into_iter()
+                .filter(|(id, obj)| {
+                    Some(*id) != selected_id
+                        && obj.tags.iter().any(|t| {
+                            t.type_name()
+                                .rsplit("::")
+                                .next()
+                                .unwrap_or(t.type_name())
+                                .eq_ignore_ascii_case(type_name)
+                        })
+                })
+                .map(|(id, _)| id)
+                .collect();
+
+            for obj_id in ids_to_clear {
+                if let Some(obj) = world.get_object_mut(obj_id) {
+                    obj.remove_tag_by_name(type_name);
+                }
+            }
+        }
+
+        if let Some(id) = selected_id
+            && let Some(obj) = world.get_object_mut(id)
+            && let Err(e) = obj.add_tag_by_name(type_name)
+        {
+            log_warn!("Failed to add tag '{}': {}", type_name, e);
+        }
+    }
+
+    if let Some(type_name) = tag_to_remove
+        && let Some(id) = selected_id
+        && let Some(obj) = world.get_object_mut(id)
+    {
+        obj.remove_tag_by_name(&type_name);
     }
 
     if let Ok(state) = world.get_resource_mut::<InspectorPanelState>() {

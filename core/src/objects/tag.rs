@@ -1,5 +1,6 @@
 use std::any::Any;
 
+/// A trait that defines a tag that can be attached to an object.
 pub trait Tag: TagContainer + Send + Sync {
     fn name() -> &'static str
     where
@@ -20,6 +21,7 @@ impl PartialEq for dyn Tag {
 
 impl Eq for dyn Tag {}
 
+/// Wrapper for a workaround of object saftey.
 pub trait TagContainer {
     fn clone_box(&self) -> Box<dyn Tag + Send + Sync>;
 }
@@ -38,15 +40,18 @@ impl Clone for Box<dyn Tag + Send + Sync> {
     }
 }
 
+/// Contains all stored and registered tags.
+/// Tags are registered on startup.
 pub struct TagRegistration {
     pub type_name: &'static str,
-    // pub serialize: fn(&dyn Tag) -> serde_yaml::Value,
-    // pub deserialize: fn(serde_yaml::Value) -> Box<dyn Tag>,
+    pub singleton: bool,
+    pub hidden: bool,
     pub create: fn() -> Box<dyn Tag + Send + Sync>,
 }
 
 inventory::collect!(TagRegistration);
 
+/// Takes in type [`type_name`] and returns the registered tag.
 pub fn get_tag_registration(type_name: &str) -> Option<&'static TagRegistration> {
     inventory::iter::<TagRegistration>()
         .find(|r| r.type_name.to_lowercase() == type_name.to_lowercase())

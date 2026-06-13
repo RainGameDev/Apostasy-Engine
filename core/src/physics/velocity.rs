@@ -11,20 +11,24 @@ use crate::{
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
+/// Rigid body physics state for an object.
+/// Set `mass` to `0.0` or `process` to `false` to make the object immovable.
 #[derive(Component, Clone, Debug)]
 pub struct Velocity {
     pub angular_velocity: Vector3<f32>,
     pub linear_velocity: Vector3<f32>,
     pub mass: f32,
+    /// Set by the collision system each frame, `true` if resting on a surface.
     pub is_grounded: bool,
+    /// Whether physics simulation is applied to this object each frame.
     pub process: bool,
 
     pub inertia_tensor: Vector3<f32>,
-    // static friction coefficient
+    /// Static friction coefficient.
     pub mu_static: f32,
-    // kinetic friction coefficient
+    /// Kinetic friction coefficient.
     pub mu_kinetic: f32,
-    // bounciness, 0 = no bounce
+    /// Bounciness; `0.0` = no bounce.
     pub restitution: f32,
     pub linear_damping: f32,
     pub angular_damping: f32,
@@ -95,6 +99,7 @@ impl Default for Velocity {
 }
 
 impl Velocity {
+    /// Creates a zero-mass, non-processing velocity for immovable objects.
     pub fn static_object() -> Self {
         Self {
             angular_velocity: Vector3::zero(),
@@ -112,7 +117,7 @@ impl Velocity {
         }
     }
 
-    /// Note: Default goes to cuboid
+    /// Default velocity preset for a sphere collider with high damping and no bounce.
     pub fn default_sphere() -> Self {
         Self {
             angular_velocity: Vector3::zero(),
@@ -241,11 +246,13 @@ pub fn physics_debug(world: &mut World, _: f32) -> Result<()> {
     Ok(())
 }
 
+/// Computes the diagonal inertia tensor for a solid sphere.
 pub fn compute_inertia_sphere(mass: f32, radius: f32) -> Vector3<f32> {
     let i = 2.0 / 5.0 * mass * radius * radius;
     Vector3::new(i, i, i)
 }
 
+/// Computes the diagonal inertia tensor for a solid cuboid given its half-extents.
 pub fn compute_inertia_cuboid(mass: f32, half: Vector3<f32>) -> Vector3<f32> {
     let (hx, hy, hz) = (half.x, half.y, half.z);
     Vector3::new(
