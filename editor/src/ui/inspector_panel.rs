@@ -359,72 +359,98 @@ pub fn inspector(world: &mut World) -> Result<()> {
 
             ui.separator();
 
-            if selected_id.is_some() && ui.button("+ Add Component").clicked() {
-                new_picker_open = !new_picker_open;
-                if new_picker_open {
-                    new_search.clear();
+            let add_btn_resp = if selected_id.is_some() {
+                Some(ui.button("+ Add Component"))
+            } else {
+                None
+            };
+            if let Some(ref resp) = add_btn_resp {
+                if resp.clicked() {
+                    new_picker_open = !new_picker_open;
+                    if new_picker_open {
+                        new_search.clear();
+                    }
                 }
             }
 
             ui.add_space(8.0);
 
             if new_picker_open {
-                egui::Frame::popup(&ctx.global_style())
-                    .fill(style.dark_bg)
-                    .show(ui, |ui| {
-                        let popup_width = ui.available_width().max(280.0);
-                        ui.set_min_width(popup_width);
-                        ui.set_min_height(85.0);
-                        ui.set_max_height(85.0);
+                let anchor = add_btn_resp
+                    .as_ref()
+                    .map(|r| r.rect.left_bottom())
+                    .unwrap_or_default();
 
-                        let search_resp = ui.text_edit_singleline(&mut new_search);
-                        if picker_open != new_picker_open {
-                            search_resp.request_focus();
-                        }
-                        ui.add_space(4.0);
-
-                        let query = new_search.to_lowercase();
-
-                        egui::ScrollArea::vertical()
-                            .max_height(52.0)
+                let area_resp = egui::Area::new(ui.id().with("component_picker_area"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(anchor)
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(&ui.style())
+                            .fill(style.dark_bg)
                             .show(ui, |ui| {
-                                let mut any_shown = false;
+                                ui.set_width(280.0);
 
-                                for &name in &all_component_names {
-                                    if !query.is_empty() && !name.to_lowercase().contains(&query) {
-                                        continue;
-                                    }
+                                let search_resp = ui.text_edit_singleline(&mut new_search);
+                                if picker_open != new_picker_open {
+                                    search_resp.request_focus();
+                                }
+                                ui.add_space(4.0);
 
-                                    let name = name.split("::").collect::<Vec<&str>>();
-                                    let name = name.last().unwrap();
-                                    let already_present = existing_component_names.contains(name);
+                                let query = new_search.to_lowercase();
 
-                                    ui.add_enabled_ui(!already_present, |ui| {
-                                        let resp = ui.selectable_label(false, *name);
-                                        if resp.clicked() && !already_present {
-                                            component_to_add = Some(name.to_string());
-                                            new_picker_open = false;
+                                egui::ScrollArea::vertical()
+                                    .max_height(200.0)
+                                    .show(ui, |ui| {
+                                        let mut any_shown = false;
+
+                                        for &name in &all_component_names {
+                                            if !query.is_empty()
+                                                && !name.to_lowercase().contains(&query)
+                                            {
+                                                continue;
+                                            }
+
+                                            let name = name.split("::").collect::<Vec<&str>>();
+                                            let name = name.last().unwrap();
+                                            let already_present =
+                                                existing_component_names.contains(name);
+
+                                            ui.add_enabled_ui(!already_present, |ui| {
+                                                let resp = ui.selectable_label(false, *name);
+                                                if resp.clicked() && !already_present {
+                                                    component_to_add = Some(name.to_string());
+                                                    new_picker_open = false;
+                                                }
+                                                if already_present {
+                                                    resp.on_disabled_hover_text(
+                                                        "Already on this object",
+                                                    );
+                                                }
+                                            });
+
+                                            any_shown = true;
                                         }
-                                        if already_present {
-                                            resp.on_disabled_hover_text("Already on this object");
+
+                                        if !any_shown {
+                                            ui.label(
+                                                egui::RichText::new("No components found")
+                                                    .italics()
+                                                    .weak(),
+                                            );
                                         }
+
+                                        ui.allocate_space(ui.available_size());
                                     });
-
-                                    any_shown = true;
-                                }
-
-                                if !any_shown {
-                                    ui.label(
-                                        egui::RichText::new("No components found").italics().weak(),
-                                    );
-                                }
-                                ui.allocate_space(ui.available_size());
                             });
-
-                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                            new_picker_open = false;
-                        }
                     });
+
+                if ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    || (picker_open
+                        && ui.input(|i| i.pointer.any_click())
+                        && !area_resp.response.hovered())
+                {
+                    new_picker_open = false;
+                }
             }
         });
 
