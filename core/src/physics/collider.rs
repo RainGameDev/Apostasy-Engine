@@ -59,7 +59,7 @@ impl Inspect for Collider {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Shape"));
-                ComboBox::from_label("")
+                ComboBox::from_id_salt("collider_shape")
                     .selected_text(self.shape.to_string())
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
