@@ -109,17 +109,20 @@ fn ring_perps_from_dir(axis: Vector3<f32>) -> (Vector3<f32>, Vector3<f32>) {
     (p1, p2)
 }
 
-/// YXZ-Euler matching `transform_update` systems convention
+/// YXZ-Euler matching `transform_update` systems convention (Ry * Rx * Rz).
+/// For that matrix, m[2][1] = -sin(X) and m[2][0] = sin(Y)*cos(X).
 fn quat_to_euler_deg(q: apostasy_core::cgmath::Quaternion<f32>) -> Vector3<f32> {
     let m = Matrix3::from(q);
-    let sin_x = m[2][1].clamp(-1.0, 1.0);
+    let sin_x = (-m[2][1]).clamp(-1.0, 1.0);
     let x = sin_x.asin();
     let cos_x = x.cos();
     let (y, z) = if cos_x.abs() > 1e-6 {
-        ((-m[2][0]).atan2(m[2][2]), m[0][1].atan2(m[1][1]))
+        (m[2][0].atan2(m[2][2]), m[0][1].atan2(m[1][1]))
     } else if sin_x > 0.0 {
+        // X ≈ +90°: only Y-Z recoverable, set Z=0
         (m[1][0].atan2(m[0][0]), 0.0)
     } else {
+        // X ≈ -90°: only Y+Z recoverable, set Z=0
         ((-m[1][0]).atan2(m[0][0]), 0.0)
     };
     Vector3::new(x.to_degrees(), y.to_degrees(), z.to_degrees())

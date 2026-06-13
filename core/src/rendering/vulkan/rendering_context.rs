@@ -412,9 +412,9 @@ impl VulkanRenderingContext {
         aa_amount: AntiAliasingAmount,
     ) -> Result<Pipeline> {
         let entry_point = std::ffi::CString::new("main").unwrap();
-        let attachment_formats = [pipeline_options.image_format];
+        let color_formats: Vec<_> = pipeline_options.image_format.into_iter().collect();
         let mut render_info =
-            PipelineRenderingCreateInfo::default().color_attachment_formats(&attachment_formats);
+            PipelineRenderingCreateInfo::default().color_attachment_formats(&color_formats);
         if let Some(depth_format) = pipeline_options.depth_format {
             render_info = render_info.depth_attachment_format(depth_format);
         }
@@ -427,9 +427,12 @@ impl VulkanRenderingContext {
         };
 
         unsafe {
-            // Prepare multisample state separately so the struct lives long
-            // enough for the pipeline creation call (avoid referencing a
-            // temporary value).
+            let color_blend_attachments: Vec<_> = if pipeline_options.image_format.is_some() {
+                vec![rendering_settings.color_blend_settings.blend_attachment]
+            } else {
+                vec![]
+            };
+
             // Only enable sample shading when using more than 1 sample AND the
             // physical device supports the sampleRateShading feature.
             let enable_sample_shading = aa_samples != SampleCountFlags::TYPE_1
@@ -496,9 +499,8 @@ impl VulkanRenderingContext {
                         )
                         .multisample_state(&multisample_state)
                         .color_blend_state(
-                            &PipelineColorBlendStateCreateInfo::default().attachments(&[
-                                rendering_settings.color_blend_settings.blend_attachment,
-                            ]),
+                            &PipelineColorBlendStateCreateInfo::default()
+                                .attachments(&color_blend_attachments),
                         )
                         .dynamic_state(&PipelineDynamicStateCreateInfo::default().dynamic_states(
                             &rendering_settings.dynamic_state_settings.dynamic_states,
@@ -608,6 +610,35 @@ impl VulkanRenderingContext {
                             .store_op(AttachmentStoreOp::STORE),
                     )
                     .render_area(render_area),
+            );
+        }
+    }
+
+    pub fn begin_depth_only_rendering(
+        &self,
+        command_buffer: CommandBuffer,
+        depth_view: vk::ImageView,
+        render_area: Rect2D,
+    ) {
+        unsafe {
+            self.device.cmd_begin_rendering(
+                command_buffer,
+                &RenderingInfo::default()
+                    .render_area(render_area)
+                    .layer_count(1)
+                    .depth_attachment(
+                        &RenderingAttachmentInfo::default()
+                            .image_view(depth_view)
+                            .image_layout(ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                            .load_op(AttachmentLoadOp::CLEAR)
+                            .store_op(AttachmentStoreOp::STORE)
+                            .clear_value(ClearValue {
+                                depth_stencil: ClearDepthStencilValue {
+                                    depth: 1.0,
+                                    stencil: 0,
+                                },
+                            }),
+                    ),
             );
         }
     }

@@ -379,7 +379,8 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 gizmo_transform_out = new_t;
                 new_gizmo_state_from_fn = Some(gs);
                 if let Some(collider) = maybe_collider {
-                    crate::ui::gizmo::collider_gizmo(ui, obj_t, collider, view_proj, frame_rect);
+                    let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
+                    crate::ui::gizmo::collider_gizmo(ui, display_t, collider, view_proj, frame_rect);
                 }
             }
 

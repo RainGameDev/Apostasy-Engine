@@ -6,20 +6,25 @@ use apostasy_core::{
         world::World,
         worldspace_streaming::{MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, WorldspaceStreaming},
     },
-    winit::keyboard::PhysicalKey,
     rendering::shared::{
         UpdateRenderer,
         anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+        shadow_settings::ShadowDistance,
     },
     ui::{
         FontRegistry,
         ui_context::{EguiContext, ViewportSize},
     },
     update,
+    winit::keyboard::PhysicalKey,
 };
 use apostasy_macros::Resource;
 
-use super::{EditorStyle, keybind_widget::{is_modifier_key, pretty_bind, keybind_editor, KeybindCapture}, style::Theme};
+use super::{
+    EditorStyle,
+    keybind_widget::{KeybindCapture, is_modifier_key, keybind_editor, pretty_bind},
+    style::Theme,
+};
 use crate::{objects::editor_camera::EditorCameraSettings, ui::viewport_panel::EditorGraphics};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -31,6 +36,8 @@ pub struct EditorPreferences {
     pub camera_speed: f32,
     #[serde(default = "EditorPreferences::default_render_distance")]
     pub render_distance: i32,
+    #[serde(default = "EditorPreferences::default_shadow_distance")]
+    pub shadow_distance: f32,
     #[serde(default)]
     pub last_scene: String,
 }
@@ -43,6 +50,7 @@ impl Default for EditorPreferences {
             active_font: String::new(),
             camera_speed: 5.0,
             render_distance: Self::default_render_distance(),
+            shadow_distance: Self::default_shadow_distance(),
             last_scene: String::new(),
         }
     }
@@ -88,9 +96,19 @@ impl EditorPreferences {
         prefs.save();
     }
 
+    fn default_shadow_distance() -> f32 {
+        128.0
+    }
+
     pub fn save_render_distance(distance: i32) {
         let mut prefs = Self::load();
         prefs.render_distance = distance;
+        prefs.save();
+    }
+
+    pub fn save_shadow_distance(distance: f32) {
+        let mut prefs = Self::load();
+        prefs.shadow_distance = distance;
         prefs.save();
     }
 }
@@ -116,8 +134,17 @@ const PAGES: &[PageMeta] = &[
     PageMeta {
         label: "Keybinds",
         terms: &[
-            "Move", "Rotate", "Scale", "Snap", "Undo", "Redo",
-            "Copy", "Paste", "Duplicate", "Control", "Modifier",
+            "Move",
+            "Rotate",
+            "Scale",
+            "Snap",
+            "Undo",
+            "Redo",
+            "Copy",
+            "Paste",
+            "Duplicate",
+            "Control",
+            "Modifier",
         ],
     },
 ];
@@ -290,11 +317,7 @@ impl ViewportPage {
 
     fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
         draw_setting(ui, style.dim_col, "Camera Speed", query, |ui| {
-            ui.add(
-                egui::Slider::new(&mut self.camera_speed, 1.0_f32..=256.0)
-                    .logarithmic(true)
-                    .suffix(" m/s"),
-            );
+            ui.add(egui::Slider::new(&mut self.camera_speed, 1.0_f32..=256.0).suffix(" m/s"));
         });
     }
 
@@ -320,6 +343,7 @@ struct GraphicsPage {
     anti_aliasing: AntiAliasingAmount,
     available_aa: Vec<AntiAliasingAmount>,
     render_distance: i32,
+    shadow_distance: f32,
 }
 
 impl GraphicsPage {
@@ -339,6 +363,10 @@ impl GraphicsPage {
                 .get_resource::<WorldspaceStreaming>()
                 .map(|s| s.render_distance)
                 .unwrap_or_else(|_| EditorPreferences::load().render_distance),
+            shadow_distance: world
+                .get_resource::<ShadowDistance>()
+                .map(|s| s.distance)
+                .unwrap_or(EditorPreferences::default().shadow_distance),
         }
     }
 
@@ -351,9 +379,14 @@ impl GraphicsPage {
                     &mut self.render_distance,
                     MIN_RENDER_DISTANCE..=MAX_RENDER_DISTANCE,
                 )
-                .logarithmic(true)
                 .integer()
                 .suffix(" cells"),
+            );
+        });
+
+        draw_setting(ui, dim_col, "Shadow Distance", query, |ui| {
+            ui.add(
+                egui::Slider::new(&mut self.shadow_distance, 0.0_f32..=16384.0).suffix(" units"),
             );
         });
 
@@ -411,6 +444,17 @@ impl GraphicsPage {
             EditorPreferences::save_render_distance(self.render_distance);
         }
 
+        let sd_cur = world
+            .get_resource::<ShadowDistance>()
+            .map(|s| s.distance)
+            .unwrap_or(self.shadow_distance);
+        if (self.shadow_distance - sd_cur).abs() > f32::EPSILON {
+            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
+                s.distance = self.shadow_distance;
+            }
+            EditorPreferences::save_shadow_distance(self.shadow_distance);
+        }
+
         let aa_changed = self.anti_aliasing != aa_cur;
         let ss_changed = (self.supersample - ss_cur).abs() > f32::EPSILON;
 
@@ -441,14 +485,14 @@ impl GraphicsPage {
 /// Ordered list of (bind_name, display_label) shown in the Keybinds tab.
 const KEYBIND_DISPLAY: &[(&str, &str)] = &[
     ("GizmoTranslate", "Gizmo: Move"),
-    ("GizmoRotate",    "Gizmo: Rotate"),
-    ("GizmoScale",     "Gizmo: Scale"),
-    ("SnapModifier",   "Snap Modifier"),
-    ("Undo",           "Undo"),
-    ("Redo",           "Redo"),
-    ("Copy",           "Copy"),
-    ("Paste",          "Paste"),
-    ("Duplicate",      "Duplicate"),
+    ("GizmoRotate", "Gizmo: Rotate"),
+    ("GizmoScale", "Gizmo: Scale"),
+    ("SnapModifier", "Snap Modifier"),
+    ("Undo", "Undo"),
+    ("Redo", "Redo"),
+    ("Copy", "Copy"),
+    ("Paste", "Paste"),
+    ("Duplicate", "Duplicate"),
 ];
 
 /// Returns the display label of the first other keybind that shares the same
@@ -483,7 +527,7 @@ impl KeybindsPage {
         let binds = KEYBIND_DISPLAY
             .iter()
             .map(|&(name, label)| {
-                let bind    = inputs.and_then(|i| i.keybinds.get(name).cloned());
+                let bind = inputs.and_then(|i| i.keybinds.get(name).cloned());
                 let default = inputs.and_then(|i| i.default_keybinds.get(name).cloned());
                 (name, label, bind, default)
             })
@@ -709,7 +753,14 @@ pub fn preferences(world: &mut World) -> Result<()> {
                     0 => editor.draw(ui, &style, effective_query),
                     1 => viewport.draw(ui, &style, effective_query),
                     2 => graphics.draw(ui, &style, effective_query),
-                    3 => keybinds.draw(ui, &style, effective_query, &capture, &mut state.rebind_error, &mut pending),
+                    3 => keybinds.draw(
+                        ui,
+                        &style,
+                        effective_query,
+                        &capture,
+                        &mut state.rebind_error,
+                        &mut pending,
+                    ),
                     _ => {}
                 });
             });

@@ -201,7 +201,7 @@ pub struct InputManager {
     pub mouse_position: PhysicalPosition<f64>,
 
     /// Raw mouse delta accumulated from `DeviceEvent::MouseMotion` this frame.
-    /// Not affected by cursor acceleration or OS pointer speed — use this for camera look.
+    /// Not affected by cursor acceleration or OS pointer speed - use this for camera look.
     /// Reset to `(0.0, 0.0)` at the end of every frame.
     pub mouse_delta: (f64, f64),
     /// Scroll wheel delta accumulated this frame as `(horizontal, vertical)` in pixels.

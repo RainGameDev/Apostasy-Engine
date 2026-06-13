@@ -1,4 +1,4 @@
-use cgmath::{InnerSpace, Quaternion, Vector3};
+use cgmath::{Deg, InnerSpace, Matrix4, PerspectiveFov, Point3, Quaternion, SquareMatrix, Vector3};
 
 use crate::{
     objects::components::transform::Transform,
@@ -68,4 +68,62 @@ impl GpuLight {
 fn rotate_vec3(q: Quaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {
     let t = q.v.cross(v) * 2.0;
     (v + t * q.s + q.v.cross(t)).normalize()
+}
+
+/// Vulkan NDC correction: flips Y and remaps depth from [-1,1] to [0,1].
+fn vulkan_correction() -> Matrix4<f32> {
+    Matrix4::new(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, -1.0, 0.0, 0.0,
+        0.0, 0.0, 0.5, 0.0,
+        0.0, 0.0, 0.5, 1.0,
+    )
+}
+
+/// Returns the light-space view-projection matrix used for shadow map rendering and sampling.
+/// Returns identity for light types that don't support single-map shadows (e.g. Point).
+pub fn compute_light_space_matrix(
+    light: &Light,
+    light_transform: &Transform,
+    camera_pos: Vector3<f32>,
+    shadow_distance: f32,
+) -> Matrix4<f32> {
+    let dir = rotate_vec3(light_transform.global_rotation, Vector3::new(0.0, 0.0, -1.0));
+    let up = if dir.y.abs() > 0.99 {
+        Vector3::unit_z()
+    } else {
+        Vector3::unit_y()
+    };
+
+    match light.light_type {
+        LightType::Directional => {
+            let light_pos = camera_pos - dir * shadow_distance;
+            let view = Matrix4::look_at_rh(
+                Point3::new(light_pos.x, light_pos.y, light_pos.z),
+                Point3::new(camera_pos.x, camera_pos.y, camera_pos.z),
+                up,
+            );
+            let s = shadow_distance;
+            let ortho = cgmath::ortho(-s, s, -s, s, -s * 2.0, s * 2.0);
+            vulkan_correction() * ortho * view
+        }
+        LightType::Spot { angle, length } => {
+            let pos = light_transform.global_position;
+            let view = Matrix4::look_at_rh(
+                Point3::new(pos.x, pos.y, pos.z),
+                Point3::new(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z),
+                up,
+            );
+            let mut proj: Matrix4<f32> = PerspectiveFov {
+                fovy: Deg(angle * 2.0).into(),
+                aspect: 1.0,
+                near: 0.1,
+                far: length,
+            }
+            .into();
+            proj[1][1] *= -1.0;
+            proj * view
+        }
+        _ => Matrix4::identity(),
+    }
 }

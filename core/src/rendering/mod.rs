@@ -11,7 +11,8 @@ use crate::rendering::lighting::gpu_light::GpuLight;
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
-    ModelPushConstants, PushConstants, VoxelPushConstants,
+    ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowVoxelPushConstants,
+    VoxelPushConstants,
 };
 use crate::rendering::{
     shared::rendering_settings::RenderingSettings,
@@ -120,7 +121,26 @@ pub trait RenderingAPI {
     fn get_descriptor_pool(&self) -> vk::DescriptorPool;
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout;
 
-    fn set_lights(&mut self, lights: &[GpuLight]);
+    /// Uploads the active lights and the light-space matrix for the shadow caster.
+    /// `light_space: None` disables shadow sampling in shaders.
+    fn set_lights(&mut self, lights: &[GpuLight], light_space: Option<[[f32; 4]; 4]>, shadow_distance: f32);
+
+    /// Begins the depth-only shadow pre-pass.
+    fn begin_shadow_pass(&mut self) -> Result<()>;
+    /// Ends the shadow pre-pass and transitions the shadow map to shader-readable.
+    fn end_shadow_pass(&mut self) -> Result<()>;
+    /// Renders a model mesh into the shadow map.
+    fn shadow_model_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowModelPushConstants,
+    ) -> Result<()>;
+    /// Renders a voxel mesh into the shadow map.
+    fn shadow_voxel_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowVoxelPushConstants,
+    ) -> Result<()>;
 
     /// Assigns the rendering_info's renderer the the value created via this
     fn new(

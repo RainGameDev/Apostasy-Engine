@@ -41,15 +41,18 @@ use crate::rendering::components::camera::Camera;
 use crate::rendering::components::camera::EditorCamera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
-use crate::rendering::components::lighting::Light;
+use crate::rendering::components::lighting::{Light, LightType};
 use crate::rendering::components::model_renderer::ModelRenderer;
-use crate::rendering::lighting::gpu_light::GpuLight;
+use crate::rendering::lighting::gpu_light::{GpuLight, compute_light_space_matrix};
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
+use crate::rendering::shared::shadow_settings::ShadowDistance;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
 use crate::rendering::shared::push_constants::ModelPushConstants;
-use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
+use crate::rendering::shared::push_constants::{
+    PushConstants, ShadowModelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
+};
 use crate::states::ShouldExit;
 use crate::ui::FontRegistry;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
@@ -146,6 +149,7 @@ impl Core {
         world.insert_resource(CursorManager::default());
         world.insert_resource(WindowManager::default());
         world.insert_resource(AntiAliasing::default());
+        world.insert_resource(ShadowDistance::default());
         world.insert_resource(InspectorRegistry::build());
         world.insert_resource(WindowInfo::default());
 
@@ -315,12 +319,101 @@ impl Core {
                         })
                         .collect();
 
-                    renderer.set_lights(&gpu_lights);
+                    // Find first directional or spot light for shadow casting.
+                    let shadow_dist = world
+                        .get_resource::<ShadowDistance>()
+                        .map(|r| r.distance)
+                        .unwrap_or(128.0);
+                    let shadow_light_space: Option<[[f32; 4]; 4]> =
+                        light_objects.iter().find_map(|obj| {
+                            let light = obj.get_component::<Light>().ok()?;
+                            let transform = obj.get_component::<Transform>().ok()?;
+                            if !light.is_emitting {
+                                return None;
+                            }
+                            match light.light_type {
+                                LightType::Directional | LightType::Spot { .. } => {
+                                    let m = compute_light_space_matrix(
+                                        light, transform, camera_pos, shadow_dist,
+                                    );
+                                    Some(*m.as_ref())
+                                }
+                                _ => None,
+                            }
+                        });
+
+                    renderer.set_lights(&gpu_lights, shadow_light_space, shadow_dist);
 
                     world.prerender();
 
                     if let Err(e) = renderer.begin_frame() {
                         log_error!("Failed to begin frame: {}", e);
+                        return;
+                    }
+
+                    // Shadow pre-pass
+                    if let Err(e) = renderer.begin_shadow_pass() {
+                        log_error!("Failed to begin shadow pass: {}", e);
+                        return;
+                    }
+                    if let Some(ls) = shadow_light_space {
+                        // Shadow models
+                        let model_ids: Vec<_> = world
+                            .get_objects_with_component_with_ids::<ModelRenderer>()
+                            .iter()
+                            .map(|o| o.0)
+                            .collect();
+                        for id in model_ids {
+                            if let Some(object) = world.get_object(id) {
+                                let model_renderer =
+                                    object.get_component::<ModelRenderer>().unwrap();
+                                if let Some(model) = &model_renderer.model {
+                                    let transform = object.get_component::<Transform>().unwrap();
+                                    let pc = ShadowModelPushConstants::new(
+                                        ls,
+                                        transform.global_position.into(),
+                                        transform.global_scale.into(),
+                                        [
+                                            transform.global_rotation.v.x,
+                                            transform.global_rotation.v.y,
+                                            transform.global_rotation.v.z,
+                                            transform.global_rotation.s,
+                                        ],
+                                    );
+                                    for mesh in &model.meshes {
+                                        if let Err(e) = renderer
+                                            .shadow_model_render(Box::new(mesh.clone()), &pc)
+                                        {
+                                            log_error!("Failed shadow model render: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Shadow voxels
+                        if self.packages.contains(&Packages::Voxel) {
+                            for object in world.get_objects_with_component::<VoxelChunkMesh>() {
+                                let transform = object.get_component::<VoxelTransform>().unwrap();
+                                let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                                let pc = ShadowVoxelPushConstants::new(
+                                    ls,
+                                    [
+                                        transform.position.x * 32,
+                                        transform.position.y * 32,
+                                        transform.position.z * 32,
+                                    ],
+                                );
+                                if let Err(e) =
+                                    renderer.shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
+                                {
+                                    log_error!("Failed shadow voxel render: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    if let Err(e) = renderer.end_shadow_pass() {
+                        log_error!("Failed to end shadow pass: {}", e);
                         return;
                     }
 

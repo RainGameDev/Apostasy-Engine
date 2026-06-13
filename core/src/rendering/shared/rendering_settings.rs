@@ -7,7 +7,8 @@ use ash::vk::{
 #[derive(Clone)]
 pub struct PipelineOptions {
     pub image_extent: Extent2D,
-    pub image_format: Format,
+    /// `None` for depth-only (shadow) pipelines that have no color attachment.
+    pub image_format: Option<Format>,
     pub depth_format: Option<Format>,
     pub vertex_shader: ShaderModule,
     pub fragment_shader: ShaderModule,

@@ -125,3 +125,59 @@ impl VoxelPushConstants {
         self.atlas_tiles = tiles;
     }
 }
+
+/// Push constants for the depth-only shadow pass for model geometry (112 bytes).
+/// Layout must match `shadow_model.vert`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ShadowModelPushConstants {
+    pub light_space: [[f32; 4]; 4],
+    pub pos: [f32; 3],
+    _pad0: f32,
+    pub scale: [f32; 3],
+    _pad1: f32,
+    pub rotation: [f32; 4],
+}
+
+impl ShadowModelPushConstants {
+    pub fn new(
+        light_space: [[f32; 4]; 4],
+        pos: [f32; 3],
+        scale: [f32; 3],
+        rotation: [f32; 4],
+    ) -> Self {
+        Self { light_space, pos, _pad0: 0.0, scale, _pad1: 0.0, rotation }
+    }
+
+    #[allow(unnecessary_transmutes)]
+    pub fn return_renderable(&self) -> Vec<u8> {
+        unsafe {
+            let bytes: [u8; 112] = transmute(*self);
+            bytes.to_vec()
+        }
+    }
+}
+
+/// Push constants for the depth-only shadow pass for voxel geometry (80 bytes).
+/// Layout must match `shadow_voxel.vert`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ShadowVoxelPushConstants {
+    pub light_space: [[f32; 4]; 4],
+    pub world_pos: [i32; 3],
+    _pad: i32,
+}
+
+impl ShadowVoxelPushConstants {
+    pub fn new(light_space: [[f32; 4]; 4], world_pos: [i32; 3]) -> Self {
+        Self { light_space, world_pos, _pad: 0 }
+    }
+
+    #[allow(unnecessary_transmutes)]
+    pub fn return_renderable(&self) -> Vec<u8> {
+        unsafe {
+            let bytes: [u8; 80] = transmute(*self);
+            bytes.to_vec()
+        }
+    }
+}

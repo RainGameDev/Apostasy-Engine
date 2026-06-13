@@ -28,11 +28,14 @@ struct GpuLight {
 
 layout(set = 1, binding = 0, std430) readonly buffer LightBuffer {
   uint     count;
-  uint     _pad0;
-  uint     _pad1;
+  uint     shadow_enabled;
+  float    shadow_distance;
   uint     _pad2;
+  mat4     light_space;
   GpuLight lights[];
 } light_buf;
+
+layout(set = 1, binding = 1) uniform sampler2DShadow shadowMap;
 
 layout(location = 0) out vec4 outColor;
 
@@ -69,8 +72,18 @@ vec3 compute_lighting(vec3 N) {
             * smoothstep(light.angle_cos, light.angle_cos + 0.05, spot_cos);
     }
 
-    float diff = max(dot(N, L), 0.0);
-    result += light.color * light.intensity * diff * atten;
+    float diff   = max(dot(N, L), 0.0);
+    float shadow = 0.0;
+    if (light.light_type == LIGHT_DIRECTIONAL && light_buf.shadow_enabled != 0u) {
+      vec4 sc = light_buf.light_space * vec4(fragWorldPos, 1.0);
+      sc.xyz /= sc.w;
+      sc.xy = sc.xy * 0.5 + 0.5;
+      if (sc.z <= 1.0 && sc.z >= 0.0 && sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0) {
+        float bias = 0.005 * (128.0 / max(light_buf.shadow_distance, 1.0));
+        shadow = 1.0 - texture(shadowMap, vec3(sc.xy, sc.z - bias));
+      }
+    }
+    result += light.color * light.intensity * diff * atten * (1.0 - shadow);
   }
   return result;
 }

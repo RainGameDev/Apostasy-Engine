@@ -5,9 +5,12 @@ use crate::rendering::lighting::gpu_light::{GpuLight, MAX_LIGHTS};
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
-    ModelPushConstants, PushConstants, VoxelPushConstants,
+    ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowVoxelPushConstants,
+    VoxelPushConstants,
 };
-use crate::rendering::shared::rendering_settings::{PipelineOptions, RenderingSettings};
+use crate::rendering::shared::rendering_settings::{
+    PipelineOptions, RasterizationSettings, RenderingSettings,
+};
 use crate::rendering::shared::vertex::{Vertex, VertexDefinition};
 use crate::rendering::vulkan::image_layout::ImageLayouts;
 use crate::rendering::vulkan::pipeline_manager::PipelineManager;
@@ -98,6 +101,18 @@ pub struct VulkanRenderer {
     pub light_descriptor_set_layout: vk::DescriptorSetLayout,
     pub light_descriptor_set: vk::DescriptorSet,
 
+    pub shadow_image: vk::Image,
+    pub shadow_image_memory: vk::DeviceMemory,
+    pub shadow_image_view: vk::ImageView,
+    pub shadow_sampler: vk::Sampler,
+    pub shadow_model_pipeline: Pipeline,
+    pub shadow_model_pipeline_layout: PipelineLayout,
+    pub shadow_voxel_pipeline: Pipeline,
+    pub shadow_voxel_pipeline_layout: PipelineLayout,
+    pub shadow_model_vertex_shader: String,
+    pub shadow_voxel_vertex_shader: String,
+    pub shadow_fragment_shader: String,
+
     pub ubo: Ubo,
     pub pipeline_manager: PipelineManager,
     pub default_vertex_shader: String,
@@ -126,6 +141,9 @@ impl VulkanRenderer {
         let voxel_fragment_shader = self.load_shader_module(&self.voxel_fragment_shader)?;
         let water_vertex_shader = self.load_shader_module(&self.water_vertex_shader)?;
         let water_fragment_shader = self.load_shader_module(&self.water_fragment_shader)?;
+        let shadow_model_vert = self.load_shader_module(&self.shadow_model_vertex_shader)?;
+        let shadow_voxel_vert = self.load_shader_module(&self.shadow_voxel_vertex_shader)?;
+        let shadow_frag = self.load_shader_module(&self.shadow_fragment_shader)?;
 
         let swapchain = self.swapchain.clone();
         let context = self.context.clone();
@@ -134,7 +152,7 @@ impl VulkanRenderer {
 
         unsafe {
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader,
@@ -157,7 +175,7 @@ impl VulkanRenderer {
             )?;
 
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader: voxel_vertex_shader,
@@ -181,7 +199,7 @@ impl VulkanRenderer {
             )?;
 
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader: water_vertex_shader,
@@ -216,6 +234,60 @@ impl VulkanRenderer {
                 .device
                 .destroy_shader_module(water_fragment_shader, None);
 
+            let shadow_extent = vk::Extent2D {
+                width: 16384,
+                height: 16384,
+            };
+            let shadow_model_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: None,
+                    image_extent: shadow_extent,
+                    depth_format: Some(vk::Format::D32_SFLOAT),
+                    vertex_shader: shadow_model_vert,
+                    fragment_shader: shadow_frag,
+                    vertex_bindings: vec![Vertex::get_binding_description()],
+                    vertex_attributes: Vertex::get_attribute_descriptions(),
+                },
+                RenderingSettings {
+                    rasterization_settings: RasterizationSettings {
+                        cull_mode: vk::CullModeFlags::FRONT,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                self.shadow_model_pipeline_layout,
+                AntiAliasingAmount::X0,
+            )?;
+
+            let shadow_voxel_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: None,
+                    image_extent: shadow_extent,
+                    depth_format: Some(vk::Format::D32_SFLOAT),
+                    vertex_shader: shadow_voxel_vert,
+                    fragment_shader: shadow_frag,
+                    vertex_bindings: vec![VoxelVertex::get_binding_description()],
+                    vertex_attributes: VoxelVertex::get_attribute_descriptions(),
+                },
+                RenderingSettings {
+                    rasterization_settings: RasterizationSettings {
+                        cull_mode: vk::CullModeFlags::FRONT,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                self.shadow_voxel_pipeline_layout,
+                AntiAliasingAmount::X0,
+            )?;
+
+            context
+                .device
+                .destroy_shader_module(shadow_model_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_voxel_vert, None);
+            context.device.destroy_shader_module(shadow_frag, None);
+
             self.context.device.destroy_pipeline(self.pipeline, None);
             self.context
                 .device
@@ -229,12 +301,20 @@ impl VulkanRenderer {
             self.context
                 .device
                 .destroy_pipeline(self.water_pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.shadow_model_pipeline, None);
+            self.context
+                .device
+                .destroy_pipeline(self.shadow_voxel_pipeline, None);
 
             self.pipeline = pipeline;
             self.wireframe_pipeline = wireframe_pipeline;
             self.voxel_pipeline = voxel_pipeline;
             self.voxel_wireframe_pipeline = voxel_wireframe_pipeline;
             self.water_pipeline = water_pipeline;
+            self.shadow_model_pipeline = shadow_model_pipeline;
+            self.shadow_voxel_pipeline = shadow_voxel_pipeline;
         }
 
         Ok(())
@@ -466,8 +546,11 @@ impl RenderingAPI for VulkanRenderer {
         unsafe {
             let context = rendering_info.context.clone();
 
-            let light_ssbo_size =
-                (size_of::<u32>() * 4 + size_of::<GpuLight>() * MAX_LIGHTS) as vk::DeviceSize;
+            // Header: 4×u32 (16 bytes) + mat4 light_space (64 bytes) = 80 bytes
+            let light_ssbo_size = (size_of::<u32>() * 4
+                + size_of::<[[f32; 4]; 4]>()
+                + size_of::<GpuLight>() * MAX_LIGHTS)
+                as vk::DeviceSize;
 
             let (light_ssbo, light_ssbo_memory) = context.create_buffer(
                 light_ssbo_size,
@@ -481,18 +564,31 @@ impl RenderingAPI for VulkanRenderer {
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
+            let shadow_sampler_binding = vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+
             let light_descriptor_set_layout = context.device.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[light_ssbo_binding]),
+                &vk::DescriptorSetLayoutCreateInfo::default()
+                    .bindings(&[light_ssbo_binding, shadow_sampler_binding]),
                 None,
             )?;
 
             let light_descriptor_pool = context.device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
                     .max_sets(1)
-                    .pool_sizes(&[vk::DescriptorPoolSize {
-                        ty: vk::DescriptorType::STORAGE_BUFFER,
-                        descriptor_count: 1,
-                    }]),
+                    .pool_sizes(&[
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::STORAGE_BUFFER,
+                            descriptor_count: 1,
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                            descriptor_count: 1,
+                        },
+                    ]),
                 None,
             )?;
 
@@ -541,7 +637,7 @@ impl RenderingAPI for VulkanRenderer {
             )?;
 
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader,
@@ -573,7 +669,7 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader: voxel_vertex_shader,
@@ -605,7 +701,7 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
             let pipeline_options = PipelineOptions {
-                image_format: swapchain.format,
+                image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
                 depth_format: Some(swapchain.depth_format),
                 vertex_shader: water_vertex_shader,
@@ -766,6 +862,151 @@ impl RenderingAPI for VulkanRenderer {
                 &[],
             );
 
+            // Shadow map resources
+            let shadow_extent = vk::Extent2D {
+                width: 16384,
+                height: 16384,
+            };
+            let image_layouts = ImageLayouts::default();
+
+            let (shadow_image, shadow_image_memory) = context.create_image(
+                shadow_extent,
+                vk::Format::D32_SFLOAT,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                SampleCountFlags::TYPE_1,
+            )?;
+            let shadow_image_view = context.create_image_view(
+                shadow_image,
+                vk::Format::D32_SFLOAT,
+                vk::ImageAspectFlags::DEPTH,
+            )?;
+
+            // Transition to DEPTH_STENCIL_READ_ONLY_OPTIMAL so the descriptor is valid before the first frame.
+            let init_cmd = context.begin_single_time_commands(context.command_pool);
+            context.transition_image_layout(
+                init_cmd,
+                shadow_image,
+                image_layouts.undefined,
+                image_layouts.depth_stencil_read_only,
+                vk::ImageAspectFlags::DEPTH,
+            );
+            context.end_single_time_commands(
+                init_cmd,
+                context.queues[&context.queue_families.graphics],
+                context.command_pool,
+            );
+
+            let shadow_sampler = context.device.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                    .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
+                    .compare_enable(true)
+                    .compare_op(vk::CompareOp::LESS_OR_EQUAL),
+                None,
+            )?;
+
+            // Write shadow sampler into the light descriptor set at binding 1.
+            let shadow_image_info = vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                .image_view(shadow_image_view)
+                .sampler(shadow_sampler);
+            context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(light_descriptor_set)
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&[shadow_image_info])],
+                &[],
+            );
+
+            // Shadow pipeline layouts and pipelines.
+            let shadow_model_vert_module = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "shadow_model.vert",
+            )?;
+            let shadow_voxel_vert_module = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "shadow_voxel.vert",
+            )?;
+            let shadow_frag_module = pipeline_manager
+                .create_shader_module(&rendering_info.context.clone().into(), "shadow.frag")?;
+
+            let shadow_model_pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
+                    vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX)
+                        .offset(0)
+                        .size(112),
+                ]),
+                None,
+            )?;
+
+            let shadow_voxel_pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
+                    vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX)
+                        .offset(0)
+                        .size(80),
+                ]),
+                None,
+            )?;
+
+            let shadow_rasterization = RasterizationSettings {
+                cull_mode: vk::CullModeFlags::FRONT,
+                ..Default::default()
+            };
+
+            let shadow_model_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: None,
+                    image_extent: shadow_extent,
+                    depth_format: Some(vk::Format::D32_SFLOAT),
+                    vertex_shader: shadow_model_vert_module,
+                    fragment_shader: shadow_frag_module,
+                    vertex_bindings: vec![Vertex::get_binding_description()],
+                    vertex_attributes: Vertex::get_attribute_descriptions(),
+                },
+                RenderingSettings {
+                    rasterization_settings: shadow_rasterization,
+                    ..Default::default()
+                },
+                shadow_model_pipeline_layout,
+                AntiAliasingAmount::X0,
+            )?;
+
+            let shadow_voxel_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: None,
+                    image_extent: shadow_extent,
+                    depth_format: Some(vk::Format::D32_SFLOAT),
+                    vertex_shader: shadow_voxel_vert_module,
+                    fragment_shader: shadow_frag_module,
+                    vertex_bindings: vec![VoxelVertex::get_binding_description()],
+                    vertex_attributes: VoxelVertex::get_attribute_descriptions(),
+                },
+                RenderingSettings {
+                    rasterization_settings: shadow_rasterization,
+                    ..Default::default()
+                },
+                shadow_voxel_pipeline_layout,
+                AntiAliasingAmount::X0,
+            )?;
+
+            context
+                .device
+                .destroy_shader_module(shadow_model_vert_module, None);
+            context
+                .device
+                .destroy_shader_module(shadow_voxel_vert_module, None);
+            context
+                .device
+                .destroy_shader_module(shadow_frag_module, None);
+
             let renderer = VulkanRenderer {
                 current_image_index: 0,
                 in_flight_frames_count,
@@ -809,6 +1050,18 @@ impl RenderingAPI for VulkanRenderer {
                 light_descriptor_pool,
                 light_descriptor_set_layout,
                 light_descriptor_set,
+
+                shadow_image,
+                shadow_image_memory,
+                shadow_image_view,
+                shadow_sampler,
+                shadow_model_pipeline,
+                shadow_model_pipeline_layout,
+                shadow_voxel_pipeline,
+                shadow_voxel_pipeline_layout,
+                shadow_model_vertex_shader: "shadow_model.vert".to_string(),
+                shadow_voxel_vertex_shader: "shadow_voxel.vert".to_string(),
+                shadow_fragment_shader: "shadow.frag".to_string(),
 
                 ubo,
                 pipeline_manager,
@@ -1476,10 +1729,10 @@ impl RenderingAPI for VulkanRenderer {
         self.voxel_descriptor_set_layout
     }
 
-    fn set_lights(&mut self, lights: &[GpuLight]) {
+    fn set_lights(&mut self, lights: &[GpuLight], light_space: Option<[[f32; 4]; 4]>, shadow_distance: f32) {
         let count = lights.len().min(MAX_LIGHTS) as u32;
-        let header = size_of::<u32>() * 4;
-        let body = size_of::<GpuLight>() * count as usize;
+        // SSBO layout: [count u32][shadow_enabled u32][shadow_distance f32][_pad u32][mat4 light_space][GpuLight...]
+        const LIGHTS_OFFSET: usize = size_of::<u32>() * 4 + size_of::<[[f32; 4]; 4]>();
 
         unsafe {
             let ptr = self
@@ -1488,17 +1741,173 @@ impl RenderingAPI for VulkanRenderer {
                 .map_memory(
                     self.light_ssbo_memory,
                     0,
-                    (header + body) as vk::DeviceSize,
+                    vk::WHOLE_SIZE,
                     vk::MemoryMapFlags::empty(),
                 )
                 .unwrap() as *mut u8;
 
             (ptr as *mut u32).write(count);
-            (ptr.add(header) as *mut GpuLight)
+            (ptr.add(4) as *mut u32).write(if light_space.is_some() { 1 } else { 0 });
+            (ptr.add(8) as *mut f32).write(shadow_distance);
+
+            let matrix = light_space.unwrap_or([[0.0f32; 4]; 4]);
+            (ptr.add(16) as *mut [[f32; 4]; 4]).write(matrix);
+
+            (ptr.add(LIGHTS_OFFSET) as *mut GpuLight)
                 .copy_from_nonoverlapping(lights.as_ptr(), count as usize);
 
             self.context.device.unmap_memory(self.light_ssbo_memory);
         }
+    }
+
+    fn begin_shadow_pass(&mut self) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let shadow_extent = vk::Extent2D {
+            width: 16384,
+            height: 16384,
+        };
+
+        self.context.transition_image_layout(
+            frame.command_buffer,
+            self.shadow_image,
+            self.image_layouts.depth_stencil_read_only,
+            self.image_layouts.depth_write,
+            vk::ImageAspectFlags::DEPTH,
+        );
+
+        self.context.begin_depth_only_rendering(
+            frame.command_buffer,
+            self.shadow_image_view,
+            vk::Rect2D::default().extent(shadow_extent),
+        );
+
+        unsafe {
+            self.context.device.cmd_set_viewport(
+                frame.command_buffer,
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 16384.0,
+                    height: 16384.0,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
+            );
+            self.context.device.cmd_set_scissor(
+                frame.command_buffer,
+                0,
+                &[vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: shadow_extent,
+                }],
+            );
+        }
+
+        Ok(())
+    }
+
+    fn end_shadow_pass(&mut self) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        unsafe {
+            self.context.device.cmd_end_rendering(frame.command_buffer);
+        }
+        self.context.transition_image_layout(
+            frame.command_buffer,
+            self.shadow_image,
+            self.image_layouts.depth_write,
+            self.image_layouts.depth_stencil_read_only,
+            vk::ImageAspectFlags::DEPTH,
+        );
+        Ok(())
+    }
+
+    fn shadow_model_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowModelPushConstants,
+    ) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let data = pc.return_renderable();
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.shadow_model_pipeline,
+            );
+            self.context.device.cmd_push_constants(
+                frame.command_buffer,
+                self.shadow_model_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                &data,
+            );
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+        Ok(())
+    }
+
+    fn shadow_voxel_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowVoxelPushConstants,
+    ) -> Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let data = pc.return_renderable();
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.shadow_voxel_pipeline,
+            );
+            self.context.device.cmd_push_constants(
+                frame.command_buffer,
+                self.shadow_voxel_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                &data,
+            );
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+        Ok(())
     }
 
     fn reload_shaders(&mut self) -> Result<bool> {

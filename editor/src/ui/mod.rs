@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     objects::world::World,
-    rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing},
+    rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing, shadow_settings::ShadowDistance},
     start,
     ui::{FontRegistry, ui_context::ViewportSize},
 };
@@ -72,6 +72,9 @@ pub fn init(world: &mut World) -> Result<()> {
     world.insert_resource(EditorCameraSettings {
         move_speed: prefs.camera_speed,
     });
+    if let Ok(sd) = world.get_resource_mut::<ShadowDistance>() {
+        sd.distance = prefs.shadow_distance;
+    }
 
     let graphics = EditorGraphics::load();
     if let Ok(vs) = world.get_resource_mut::<ViewportSize>() {
