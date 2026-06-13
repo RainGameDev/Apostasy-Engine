@@ -19,7 +19,7 @@ use crate::{
         collider::{Collider, ColliderShape},
         velocity::Velocity,
     },
-    rendering::components::{camera::Camera, model_renderer::ModelRenderer},
+    rendering::components::{camera::Camera, lighting::{Light, LightType}, model_renderer::ModelRenderer},
 };
 
 fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
@@ -98,6 +98,30 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
         "Gravity" => {
             let g = component.as_any().downcast_ref::<Gravity>()?;
             map.insert("strength".into(), (g.strength as f64).into());
+        }
+        "Light" => {
+            let l = component.as_any().downcast_ref::<Light>()?;
+            match l.light_type {
+                LightType::Point { radius } => {
+                    map.insert("light_type".into(), "Point".into());
+                    map.insert("radius".into(), (radius as f64).into());
+                }
+                LightType::Directional => {
+                    map.insert("light_type".into(), "Directional".into());
+                }
+                LightType::Spot { length, angle } => {
+                    map.insert("light_type".into(), "Spot".into());
+                    map.insert("length".into(), (length as f64).into());
+                    map.insert("angle".into(), (angle as f64).into());
+                }
+            }
+            let mut color = serde_yaml::Mapping::new();
+            color.insert("r".into(), (l.color.x as f64).into());
+            color.insert("g".into(), (l.color.y as f64).into());
+            color.insert("b".into(), (l.color.z as f64).into());
+            map.insert("color".into(), serde_yaml::Value::Mapping(color));
+            map.insert("intensity".into(), (l.intensity as f64).into());
+            map.insert("is_emitting".into(), l.is_emitting.into());
         }
         _ => return None,
     }
