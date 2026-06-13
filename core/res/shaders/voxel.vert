@@ -9,6 +9,8 @@ layout(location = 2) out flat uint fragAtlasTiles;
 layout(location = 3) out flat uint fragFace;
 layout(location = 4) out float fragAO;
 layout(location = 5) out vec3 fragTint;
+layout(location = 6) out vec3 fragWorldPos;
+layout(location = 7) out vec3 fragWorldNormal;
 
 layout(push_constant) uniform Push {
   mat4 proj_view;
@@ -47,8 +49,19 @@ void main() {
   fragFace = face;
   fragAO = float(ao) / 3.0;
 
+  vec3 faceNormals[6] = vec3[6](
+    vec3( 1.0,  0.0,  0.0),
+    vec3(-1.0,  0.0,  0.0),
+    vec3( 0.0,  1.0,  0.0),
+    vec3( 0.0, -1.0,  0.0),
+    vec3( 0.0,  0.0,  1.0),
+    vec3( 0.0,  0.0, -1.0)
+  );
+  fragWorldNormal = faceNormals[face];
+
   vec3 world_offset = vec3(pc.world_pos);
-  gl_Position = pc.proj_view * vec4(float(x) + world_offset.x,
+  fragWorldPos = vec3(float(x) + world_offset.x,
       float(y) + world_offset.y,
-      float(z) + world_offset.z, 1.0);
+      float(z) + world_offset.z);
+  gl_Position = pc.proj_view * vec4(fragWorldPos, 1.0);
 }

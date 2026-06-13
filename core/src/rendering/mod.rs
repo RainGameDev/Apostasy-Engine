@@ -7,6 +7,7 @@ use egui::{Context, TextureId};
 use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
+use crate::rendering::lighting::gpu_light::GpuLight;
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
@@ -23,6 +24,7 @@ use crate::rendering::{
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 
 pub mod components;
+pub mod lighting;
 pub mod opengl;
 pub mod shared;
 pub mod vulkan;
@@ -117,6 +119,9 @@ pub trait RenderingAPI {
     fn get_aspect(&self) -> f32;
     fn get_descriptor_pool(&self) -> vk::DescriptorPool;
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout;
+
+    fn set_lights(&mut self, lights: &[GpuLight]);
+
     /// Assigns the rendering_info's renderer the the value created via this
     fn new(
         rendering_info: Arc<Mutex<RenderingInfo>>,

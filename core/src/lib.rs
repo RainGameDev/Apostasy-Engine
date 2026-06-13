@@ -37,11 +37,13 @@ use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::WindowInfo;
 use crate::rendering::components::camera::ActiveCamera;
-use crate::rendering::components::camera::EditorCamera;
 use crate::rendering::components::camera::Camera;
+use crate::rendering::components::camera::EditorCamera;
 use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
+use crate::rendering::components::lighting::Light;
 use crate::rendering::components::model_renderer::ModelRenderer;
+use crate::rendering::lighting::gpu_light::GpuLight;
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::frustrum::Frustum;
@@ -49,8 +51,8 @@ use crate::rendering::shared::frustrum::ObjectsDrawing;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{PushConstants, VoxelPushConstants};
 use crate::states::ShouldExit;
-use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
 use crate::ui::FontRegistry;
+use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
@@ -137,10 +139,7 @@ impl Core {
         world.insert_resource(engine_mode);
         {
             let mut input_manager = InputManager::default();
-            let keybinds_path = format!(
-                "{}/res/.editor/keybinds.yaml",
-                env!("CARGO_MANIFEST_DIR")
-            );
+            let keybinds_path = format!("{}/res/.editor/keybinds.yaml", env!("CARGO_MANIFEST_DIR"));
             input_manager.load_or_init_keybinds(keybinds_path);
             world.insert_resource(input_manager);
         }
@@ -245,8 +244,12 @@ impl Core {
                     } else {
                         active_with_ids.first().map(|(id, _)| *id)
                     };
-                    let Some(camera_id) = camera_id else { return; };
-                    let Some(camera) = world.get_object(camera_id) else { return; };
+                    let Some(camera_id) = camera_id else {
+                        return;
+                    };
+                    let Some(camera) = world.get_object(camera_id) else {
+                        return;
+                    };
                     let camera_transform = camera.get_component::<Transform>().unwrap().clone();
                     let camera_pos = camera_transform.global_position;
                     let view = get_view_matrix(&camera_transform);
@@ -296,6 +299,24 @@ impl Core {
                             ));
                         }
                     }
+
+                    // Collect active lights and upload to GPU
+                    let light_objects = world.get_objects_with_component::<Light>();
+                    let gpu_lights: Vec<GpuLight> = light_objects
+                        .iter()
+                        .filter_map(|obj| {
+                            let light = obj.get_component::<Light>().ok()?;
+                            let transform = obj.get_component::<Transform>().ok()?;
+                            if light.is_emitting {
+                                Some(GpuLight::from_component(light, transform))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    renderer.set_lights(&gpu_lights);
+
                     world.prerender();
 
                     if let Err(e) = renderer.begin_frame() {

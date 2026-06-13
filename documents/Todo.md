@@ -13,11 +13,36 @@
   - [x] Frustum culling
   - [x] Shader registry and loader
   - [x] GLTF / model loading
-  - [ ] Lighting
-    - [ ] Shadow maps
-    - [ ] Point lights
-    - [ ] Directional lights
-    - [ ] Spot lights
+  - [-] Lighting
+    - [-] Phase 1 — Forward Lighting (no shadows)
+      - [x] CPU: define `#[repr(C)]` `GpuLight` struct (type discriminant, position, direction, color, intensity, radius, angle, length)
+      - [x] CPU: create light SSBO in `VulkanRenderer` (MAX_LIGHTS=32 + count header)
+      - [x] CPU: add light descriptor set layout (set 1, binding 0, `STORAGE_BUFFER`, fragment stage)
+      - [ ] CPU: update all three pipeline layouts (model, voxel, water) to include the light descriptor set
+      - [ ] CPU: add `set_lights(lights: &[GpuLight])` on `RenderingAPI`; call `cmd_bind_descriptor_sets` before draws
+      - [ ] CPU: add system that queries `(Light, Transform)` each frame, packs `Vec<GpuLight>`, calls `set_lights`
+      - [ ] Shader: define `GpuLight` struct + `LightBuffer` SSBO in GLSL (shared include or per-shader)
+      - [ ] Shader: `shader.vert` — confirm `fragWorldPos` and `fragWorldNormal` are world-space (already close)
+      - [ ] Shader: `shader.frag` — replace hardcoded light with loop; Lambert diffuse + Blinn-Phong specular + ambient term
+      - [ ] Shader: `voxel.vert` — output `fragWorldPos` (x+world_pos) and `fragWorldNormal` (derive from face index 0-5 → ±X/Y/Z)
+      - [ ] Shader: `voxel.frag` — add light loop after texture fetch; multiply with AO; keep face shading as ambient hint
+      - [ ] Shader: `water.vert`/`water.frag` — same treatment as voxel
+      - [ ] Shader: implement per-type light dispatch in GLSL
+        - [ ] Directional (type 0): use direction, no attenuation (sun)
+        - [ ] Point (type 1): direction to light, quadratic attenuation by radius
+        - [ ] Spot (type 2): cone angle check + attenuation
+      - [ ] Recompile all 6 shaders to `.spv` with `glslc`
+    - [ ] Phase 2 — Shadow maps (directional/sun)
+      - [ ] Create depth-only render pass + pipeline for shadow casting
+      - [ ] Create `2048×2048` depth image + sampler with `compareEnable` for PCF
+      - [ ] Render all opaque geometry from the directional light's perspective before main pass
+      - [ ] Compute light-space matrix from the Directional light entity's Transform
+      - [ ] Pass `lightSpaceMatrix` to fragment shaders
+      - [ ] Sample shadow map in frag with 3×3 PCF kernel; multiply lighting by shadow factor
+      - [ ] Consider cascaded shadow maps for large voxel view distances
+    - [ ] Phase 3 — Point / spot shadows
+      - [ ] Point lights: render 6-face cube map depth pass per light, sample with `samplerCube`
+      - [ ] Spot lights: single depth map pass, sample with `sampler2D`
   - [ ] Ambient effects
     - [ ] Ambient lighting
     - [ ] Fog

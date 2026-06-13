@@ -13,6 +13,7 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out vec3 fragWorldPos;
 
 
 vec3 applyQuaternion(vec4 q, vec3 v) {
@@ -27,9 +28,10 @@ void main() {
     vec3 offset = vec3(pc.pos.x, pc.pos.y, pc.pos.z);
     vec3 worldPos = rotatedPosition + offset;
 
-    gl_Position = pc.mvp * vec4(worldPos, 1.0);
-    fragNormal = normalize(mat3(transpose(inverse(pc.model))) * inNormal);
+    gl_Position  = pc.mvp * vec4(worldPos, 1.0);
+    fragNormal   = normalize(mat3(transpose(inverse(pc.model))) * inNormal);
     fragTexCoord = inTexCoord;
+    fragWorldPos = worldPos;
 }
 
 

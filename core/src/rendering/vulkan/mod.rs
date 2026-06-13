@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::log;
+use crate::rendering::lighting::gpu_light::{GpuLight, MAX_LIGHTS};
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
@@ -90,6 +91,12 @@ pub struct VulkanRenderer {
     pub viewport_extent: vk::Extent2D,
     pub viewport_target_initialized: bool,
     pub viewport_depth_initialized: bool,
+
+    pub light_ssbo: vk::Buffer,
+    pub light_ssbo_memory: vk::DeviceMemory,
+    pub light_descriptor_pool: vk::DescriptorPool,
+    pub light_descriptor_set_layout: vk::DescriptorSetLayout,
+    pub light_descriptor_set: vk::DescriptorSet,
 
     pub ubo: Ubo,
     pub pipeline_manager: PipelineManager,
@@ -458,16 +465,60 @@ impl RenderingAPI for VulkanRenderer {
 
         unsafe {
             let context = rendering_info.context.clone();
-            let pipeline_layout = rendering_info.context.device.create_pipeline_layout(
-                &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
-                    vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX)
-                        .offset(0)
-                        .size(176),
-                ]),
+
+            let light_ssbo_size =
+                (size_of::<u32>() * 4 + size_of::<GpuLight>() * MAX_LIGHTS) as vk::DeviceSize;
+
+            let (light_ssbo, light_ssbo_memory) = context.create_buffer(
+                light_ssbo_size,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )?;
+
+            let light_ssbo_binding = vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+
+            let light_descriptor_set_layout = context.device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[light_ssbo_binding]),
                 None,
             )?;
 
+            let light_descriptor_pool = context.device.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::default()
+                    .max_sets(1)
+                    .pool_sizes(&[vk::DescriptorPoolSize {
+                        ty: vk::DescriptorType::STORAGE_BUFFER,
+                        descriptor_count: 1,
+                    }]),
+                None,
+            )?;
+
+            let light_descriptor_set = context
+                .device
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(light_descriptor_pool)
+                        .set_layouts(&[light_descriptor_set_layout]),
+                )?
+                .remove(0);
+
+            let light_buffer_info = vk::DescriptorBufferInfo::default()
+                .buffer(light_ssbo)
+                .offset(0)
+                .range(light_ssbo_size);
+
+            let pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default()
+                    .push_constant_ranges(&[vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .offset(0)
+                        .size(176)])
+                    .set_layouts(&[light_descriptor_set_layout]),
+                None,
+            )?;
             let sampler_binding = vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -518,7 +569,7 @@ impl RenderingAPI for VulkanRenderer {
                         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                         .offset(0)
                         .size(160)])
-                    .set_layouts(&[descriptor_set_layout]),
+                    .set_layouts(&[descriptor_set_layout, light_descriptor_set_layout]),
                 None,
             )?;
             let pipeline_options = PipelineOptions {
@@ -550,7 +601,7 @@ impl RenderingAPI for VulkanRenderer {
                         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                         .offset(0)
                         .size(160)])
-                    .set_layouts(&[descriptor_set_layout]),
+                    .set_layouts(&[descriptor_set_layout, light_descriptor_set_layout]),
                 None,
             )?;
             let pipeline_options = PipelineOptions {
@@ -706,6 +757,14 @@ impl RenderingAPI for VulkanRenderer {
                 .lock()
                 .unwrap()
                 .add_user_texture(viewport_descriptor_set);
+            context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(light_descriptor_set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&[light_buffer_info])],
+                &[],
+            );
 
             let renderer = VulkanRenderer {
                 current_image_index: 0,
@@ -744,6 +803,12 @@ impl RenderingAPI for VulkanRenderer {
                 viewport_extent,
                 viewport_target_initialized: false,
                 viewport_depth_initialized: false,
+
+                light_ssbo,
+                light_ssbo_memory,
+                light_descriptor_pool,
+                light_descriptor_set_layout,
+                light_descriptor_set,
 
                 ubo,
                 pipeline_manager,
@@ -1098,6 +1163,14 @@ impl RenderingAPI for VulkanRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.light_descriptor_set],
+                &[],
+            );
 
             let mut data = push_constants.return_renderable();
             data.extend(model_push_constants.return_renderable());
@@ -1150,6 +1223,14 @@ impl RenderingAPI for VulkanRenderer {
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.wireframe_pipeline,
+            );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.light_descriptor_set],
+                &[],
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -1214,6 +1295,14 @@ impl RenderingAPI for VulkanRenderer {
                 &[atlas.descriptor_set],
                 &[],
             );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.voxel_pipeline_layout,
+                1,
+                &[self.light_descriptor_set],
+                &[],
+            );
             self.context.device.cmd_bind_vertex_buffers(
                 frame.command_buffer,
                 0,
@@ -1267,6 +1356,14 @@ impl RenderingAPI for VulkanRenderer {
                 self.water_pipeline_layout,
                 0,
                 &[atlas.descriptor_set],
+                &[],
+            );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.water_pipeline_layout,
+                1,
+                &[self.light_descriptor_set],
                 &[],
             );
             self.context.device.cmd_bind_vertex_buffers(
@@ -1377,6 +1474,31 @@ impl RenderingAPI for VulkanRenderer {
 
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.voxel_descriptor_set_layout
+    }
+
+    fn set_lights(&mut self, lights: &[GpuLight]) {
+        let count = lights.len().min(MAX_LIGHTS) as u32;
+        let header = size_of::<u32>() * 4;
+        let body = size_of::<GpuLight>() * count as usize;
+
+        unsafe {
+            let ptr = self
+                .context
+                .device
+                .map_memory(
+                    self.light_ssbo_memory,
+                    0,
+                    (header + body) as vk::DeviceSize,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .unwrap() as *mut u8;
+
+            (ptr as *mut u32).write(count);
+            (ptr.add(header) as *mut GpuLight)
+                .copy_from_nonoverlapping(lights.as_ptr(), count as usize);
+
+            self.context.device.unmap_memory(self.light_ssbo_memory);
+        }
     }
 
     fn reload_shaders(&mut self) -> Result<bool> {
