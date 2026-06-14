@@ -50,7 +50,7 @@ use crate::{
     ui::{
         cell_panel::CellSearchState,
         inspector_panel::InspectorPanelState,
-        shared::{WindowLayout, save_layout},
+        shared::WindowLayout,
     },
 };
 
@@ -485,7 +485,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
         layout.viewport.update_from_rect(rect);
-        save_layout(layout);
+        layout.dirty = true;
     }
 
     if pending_focus {

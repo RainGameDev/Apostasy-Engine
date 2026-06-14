@@ -1,5 +1,6 @@
-use apostasy_core::egui::{self, Pos2, Vec2};
-use apostasy_macros::Resource;
+use anyhow::Result;
+use apostasy_core::{egui::{self, Pos2, Vec2}, objects::world::World};
+use apostasy_macros::{Resource, late_update};
 use serde::{Deserialize, Serialize};
 
 /// Fixed position and size for a window (in pixels)
@@ -56,38 +57,32 @@ pub struct WindowLayout {
     pub asset_editor: NormalizedWindow,
     #[serde(default)]
     pub asset_editor_open: bool,
+    #[serde(skip)]
+    pub dirty: bool,
 }
 
 impl Default for WindowLayout {
     fn default() -> Self {
         Self {
-            cell_search: NormalizedWindow {
-                pos: [96.0, 54.0],
-                size: [768.0, 346.0],
-            },
-            object_window: NormalizedWindow {
-                pos: [58.0, 65.0],
-                size: [634.0, 518.0],
-            },
-            viewport: NormalizedWindow {
-                pos: [960.0, 54.0],
-                size: [960.0, 540.0],
-            },
+            cell_search: NormalizedWindow { pos: [96.0, 54.0], size: [768.0, 346.0] },
+            object_window: NormalizedWindow { pos: [58.0, 65.0], size: [634.0, 518.0] },
+            viewport: NormalizedWindow { pos: [960.0, 54.0], size: [960.0, 540.0] },
             viewport_open: true,
             object_window_open: true,
             cell_open: true,
             inspector_visible: false,
-            scenes_panel: NormalizedWindow { pos: [96.0, 420.0], size: [300.0, 200.0] },
+            scenes_panel: default_scenes_panel(),
             scenes_open: false,
-            asset_editor: NormalizedWindow { pos: [700.0, 54.0], size: [380.0, 560.0] },
+            asset_editor: default_asset_editor(),
             asset_editor_open: false,
+            dirty: false,
         }
     }
 }
 
 const LAYOUT_PATH: &str = "res/.editor/editor_layout.yaml";
 
-pub fn save_layout(layout: &WindowLayout) {
+fn save_layout(layout: &WindowLayout) {
     let path = std::path::Path::new(LAYOUT_PATH);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -102,4 +97,25 @@ pub fn load_layout() -> WindowLayout {
         .ok()
         .and_then(|s| serde_yaml::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+#[late_update(mode = "editor")]
+pub fn flush_layout(world: &mut World) -> Result<()> {
+    let should_save = if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
+        if layout.dirty {
+            layout.dirty = false;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if should_save {
+        if let Ok(layout) = world.get_resource::<WindowLayout>() {
+            save_layout(layout);
+        }
+    }
+    Ok(())
 }

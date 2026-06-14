@@ -1,5 +1,5 @@
 use super::EditorStyle;
-use super::shared::{WindowLayout, save_layout};
+use super::shared::WindowLayout;
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
@@ -195,12 +195,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    // get the window layout info
-    let layout = world.get_resource::<WindowLayout>().ok();
-    let state = if let Some(layout) = layout {
-        layout.object_window.clone()
-    } else {
-        return Ok(());
+    let state = match world.get_resource::<WindowLayout>() {
+        Ok(l) => l.object_window.clone(),
+        Err(_) => return Ok(()),
     };
 
     let pos = state.to_pos();
@@ -714,7 +711,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
         layout.object_window.update_from_rect(rect);
-        save_layout(layout);
+        layout.dirty = true;
     }
 
     world.get_resource_mut::<ObjectWindowState>()?.open = window_open;
@@ -744,9 +741,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         }
         if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
             layout.asset_editor_open = true;
-        }
-        if let Ok(layout) = world.get_resource::<WindowLayout>() {
-            save_layout(layout);
+            layout.dirty = true;
         }
     }
 

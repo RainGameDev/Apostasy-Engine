@@ -12,7 +12,7 @@ use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
 use super::EditorStyle;
-use super::shared::{WindowLayout, save_layout};
+use super::shared::WindowLayout;
 use crate::systems::history::EditorCommand;
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
@@ -158,11 +158,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let font_hdr = style.font_ui();
     let font_row = style.font_ui();
 
-    let layout = world.get_resource::<WindowLayout>().ok();
-    let state = if let Some(layout) = layout {
-        layout.cell_search.clone()
-    } else {
-        return Ok(());
+    let state = match world.get_resource::<WindowLayout>() {
+        Ok(l) => l.cell_search.clone(),
+        Err(_) => return Ok(()),
     };
 
     let pos = state.to_pos();
@@ -767,7 +765,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         let rect = response.response.rect;
         let layout = world.get_resource_mut::<WindowLayout>()?;
         layout.cell_search.update_from_rect(rect);
-        save_layout(layout);
+        layout.dirty = true;
     }
 
     if let Some((id, new_name)) = pending_rename {

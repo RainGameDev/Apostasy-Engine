@@ -11,6 +11,8 @@ use crate::rendering::vulkan::{
 
 pub mod fonts;
 pub use fonts::FontRegistry;
+pub mod profiler_panel;
+pub use profiler_panel::ProfilerPanelState;
 pub mod ui_context;
 use std::sync::Mutex;
 

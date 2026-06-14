@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use super::{
     EditorStyle,
     assets_panel::ObjectWindowState,
-    shared::{WindowLayout, save_layout},
+    shared::WindowLayout,
 };
 
 // Known asset class names for the "New" dialog.
@@ -242,7 +242,6 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
         .get_resource::<WindowLayout>()
         .cloned()
         .unwrap_or_default();
-
     // Check for duplicate name/namespace/class before the mutable state borrow.
     let (new_name_chk, new_ns_chk, new_class_chk) = world
         .get_resource::<AssetEditorState>()
@@ -1071,9 +1070,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
         }
         if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
             layout.asset_editor_open = false;
-        }
-        if let Ok(layout) = world.get_resource::<WindowLayout>() {
-            save_layout(layout);
+            layout.dirty = true;
         }
         return Ok(());
     }

@@ -16,7 +16,8 @@ use crate::ui::assets_panel::ObjectWindowState;
 use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::{EditorPreferences, PreferencesState};
-use crate::ui::shared::{WindowLayout, save_layout};
+use apostasy_core::ui::ProfilerPanelState;
+use crate::ui::shared::WindowLayout;
 use crate::ui::viewport_panel::ViewportInfo;
 
 #[derive(Resource, Clone, Default)]
@@ -79,6 +80,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         .get_resource::<AssetEditorState>()
         .map(|s| s.open)
         .unwrap_or(false);
+    let profiler_open = world
+        .get_resource::<ProfilerPanelState>()
+        .map(|s| s.open)
+        .unwrap_or(false);
 
     let current_scene = EditorPreferences::load().last_scene;
 
@@ -88,6 +93,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let mut toggle_inspector = false;
     let mut toggle_asset_editor = false;
     let mut toggle_preferences = false;
+    let mut toggle_profiler = false;
     let mut do_save_current = false;
     let mut open_save_as = false;
     let mut load_scene_name: Option<String> = None;
@@ -208,6 +214,13 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                         .clicked()
                                     {
                                         toggle_asset_editor = true;
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .selectable_label(profiler_open, "Profiler")
+                                        .clicked()
+                                    {
+                                        toggle_profiler = true;
                                         ui.close();
                                     }
                                 });
@@ -334,9 +347,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             layout.cell_open = cell_open;
             layout.inspector_visible = inspector_visible;
             layout.asset_editor_open = asset_editor_open;
-        }
-        if let Ok(layout) = world.get_resource::<WindowLayout>() {
-            save_layout(layout);
+            layout.dirty = true;
         }
     }
     if toggle_preferences {
@@ -347,6 +358,13 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                 open: true,
                 ..Default::default()
             });
+        }
+    }
+    if toggle_profiler {
+        if let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
+            s.open = !s.open;
+        } else {
+            world.insert_resource(ProfilerPanelState { open: true });
         }
     }
 

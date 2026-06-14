@@ -58,6 +58,7 @@ use crate::rendering::shared::push_constants::{
     ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
 };
 use crate::states::ShouldExit;
+use crate::utils::profiler::{FrameSample, Profiler};
 use crate::ui::FontRegistry;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
 use crate::voxels::VoxelTransform;
@@ -161,6 +162,7 @@ impl Core {
         world.insert_resource(ModelPushConstants::default());
         world.insert_resource(ObjectsDrawing(0));
         world.insert_resource(EngineTimer(0.0));
+        world.insert_resource(Profiler::default());
 
         for package in packages.clone() {
             add_package(&mut world, package);
@@ -208,6 +210,7 @@ impl Core {
                     }
                 }
                 WindowEvent::RedrawRequested => {
+                    let frame_start = std::time::Instant::now();
                     let mut objects_dawn = 0;
                     let mut world = self.world.lock().unwrap();
                     let asset_manager = world.get_resource::<AssetManager>().unwrap().clone();
@@ -424,13 +427,17 @@ impl Core {
                         [camera_forward.x, camera_forward.y, camera_forward.z],
                     );
 
+                    let prerender_start = std::time::Instant::now();
                     world.prerender();
+                    let prerender_ns = prerender_start.elapsed().as_nanos() as u64;
 
+                    let render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_frame() {
                         log_error!("Failed to begin frame: {}", e);
                         return;
                     }
 
+                    let shadow_start = std::time::Instant::now();
                     // Shadow pre-pass - one pass per cascade (csm_cascade_count for directional, 1 for spot).
                     let cascade_count = match &shadow_result {
                         Some(ShadowCastData::Directional { .. }) => csm_cascade_count,
@@ -590,6 +597,8 @@ impl Core {
                         }
                     }
 
+                    let shadow_ns = shadow_start.elapsed().as_nanos() as u64;
+
                     if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
                         let w = viewport_size.pixel_width as u32;
                         let h = viewport_size.pixel_height as u32;
@@ -601,10 +610,15 @@ impl Core {
                     }
                     renderer.begin_ui();
 
+                    let world_update_start = std::time::Instant::now();
                     world.update();
+                    let world_update_ns = world_update_start.elapsed().as_nanos() as u64;
 
+                    let world_fixed_update_start = std::time::Instant::now();
                     world.fixed_update();
+                    let world_fixed_update_ns = world_fixed_update_start.elapsed().as_nanos() as u64;
 
+                    let viewport_render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_viewport_render() {
                         log_error!("Failed to begin viewport render: {}", e);
                     }
@@ -752,6 +766,8 @@ impl Core {
                     if let Err(e) = renderer.end_viewport_render() {
                         log_error!("Failed to end viewport render: {}", e);
                     }
+                    let viewport_render_ns = viewport_render_start.elapsed().as_nanos() as u64;
+
                     if let Err(e) = renderer.begin_swapchain_render() {
                         log_error!("Failed to begin swapchain render: {}", e);
                     }
@@ -761,7 +777,26 @@ impl Core {
                     if let Err(e) = renderer.end_frame() {
                         log_error!("Failed to end frame: {}", e);
                     }
+                    let render_total_ns = render_start.elapsed().as_nanos() as u64;
+
+                    let world_late_update_start = std::time::Instant::now();
                     world.late_update();
+                    let world_late_update_ns = world_late_update_start.elapsed().as_nanos() as u64;
+
+                    let frame_time_ns = frame_start.elapsed().as_nanos() as u64;
+
+                    if let Ok(profiler) = world.get_resource_mut::<Profiler>() {
+                        profiler.push_sample(FrameSample {
+                            frame_ns: frame_time_ns,
+                            render_total_ns,
+                            shadow_pass_ns: shadow_ns,
+                            viewport_render_ns,
+                            world_prerender_ns: prerender_ns,
+                            world_update_ns,
+                            world_fixed_update_ns,
+                            world_late_update_ns,
+                        });
+                    }
                 }
 
                 _ => {}
