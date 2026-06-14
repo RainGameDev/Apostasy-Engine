@@ -28,14 +28,17 @@ struct GpuLight {
 
 layout(set = 1, binding = 0, std430) readonly buffer LightBuffer {
   uint     count;
-  uint     shadow_enabled;
+  uint     shadow_enabled;  // 0=off, 1=spot, 2=directional CSM
+  uint     cascade_count;
   float    shadow_distance;
-  uint     _pad2;
-  mat4     light_space;
+  vec4     camera_world_pos; // xyz = camera position
+  vec4     camera_world_dir; // xyz = normalized view forward
+  mat4     light_space[4];
+  float    cascade_splits[4];
   GpuLight lights[];
 } light_buf;
 
-layout(set = 1, binding = 1) uniform sampler2DShadow shadowMap;
+layout(set = 1, binding = 1) uniform sampler2DArrayShadow shadowMap;
 
 layout(location = 0) out vec4 outColor;
 
@@ -75,12 +78,18 @@ vec3 compute_lighting(vec3 N) {
     float diff   = max(dot(N, L), 0.0);
     float shadow = 0.0;
     if (light.light_type == LIGHT_DIRECTIONAL && light_buf.shadow_enabled != 0u) {
-      vec4 sc = light_buf.light_space * vec4(fragWorldPos, 1.0);
+      float depth = dot(fragWorldPos - light_buf.camera_world_pos.xyz, light_buf.camera_world_dir.xyz);
+      if (depth <= 0.0) { result += light.color * light.intensity * diff * atten; continue; }
+      int cascade = int(light_buf.cascade_count) - 1;
+      for (int ci = 0; ci < int(light_buf.cascade_count); ci++) {
+        if (depth < light_buf.cascade_splits[ci]) { cascade = ci; break; }
+      }
+      if (light_buf.shadow_enabled == 1u) cascade = 0;
+      vec4 sc = light_buf.light_space[cascade] * vec4(fragWorldPos, 1.0);
       sc.xyz /= sc.w;
       sc.xy = sc.xy * 0.5 + 0.5;
       if (sc.z <= 1.0 && sc.z >= 0.0 && sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0) {
-        float bias = 0.005 * (128.0 / max(light_buf.shadow_distance, 1.0));
-        shadow = 1.0 - texture(shadowMap, vec3(sc.xy, sc.z - bias));
+        shadow = 1.0 - texture(shadowMap, vec4(sc.xy, float(cascade), sc.z));
       }
     }
     result += light.color * light.intensity * diff * atten * (1.0 - shadow);

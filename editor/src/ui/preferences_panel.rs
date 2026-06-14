@@ -38,6 +38,14 @@ pub struct EditorPreferences {
     pub render_distance: i32,
     #[serde(default = "EditorPreferences::default_shadow_distance")]
     pub shadow_distance: f32,
+    #[serde(default = "EditorPreferences::default_cascade_count")]
+    pub cascade_count: usize,
+    #[serde(default = "EditorPreferences::default_bias_constant")]
+    pub bias_constant: f32,
+    #[serde(default = "EditorPreferences::default_bias_slope")]
+    pub bias_slope: f32,
+    #[serde(default = "EditorPreferences::default_shadow_map_size")]
+    pub shadow_map_size: u32,
     #[serde(default)]
     pub last_scene: String,
 }
@@ -51,6 +59,10 @@ impl Default for EditorPreferences {
             camera_speed: 5.0,
             render_distance: Self::default_render_distance(),
             shadow_distance: Self::default_shadow_distance(),
+            cascade_count: Self::default_cascade_count(),
+            bias_constant: Self::default_bias_constant(),
+            bias_slope: Self::default_bias_slope(),
+            shadow_map_size: Self::default_shadow_map_size(),
             last_scene: String::new(),
         }
     }
@@ -100,6 +112,22 @@ impl EditorPreferences {
         128.0
     }
 
+    fn default_cascade_count() -> usize {
+        4
+    }
+
+    fn default_bias_constant() -> f32 {
+        2.0
+    }
+
+    fn default_bias_slope() -> f32 {
+        2.0
+    }
+
+    fn default_shadow_map_size() -> u32 {
+        2048
+    }
+
     pub fn save_render_distance(distance: i32) {
         let mut prefs = Self::load();
         prefs.render_distance = distance;
@@ -109,6 +137,25 @@ impl EditorPreferences {
     pub fn save_shadow_distance(distance: f32) {
         let mut prefs = Self::load();
         prefs.shadow_distance = distance;
+        prefs.save();
+    }
+
+    pub fn save_cascade_count(count: usize) {
+        let mut prefs = Self::load();
+        prefs.cascade_count = count;
+        prefs.save();
+    }
+
+    pub fn save_bias(constant: f32, slope: f32) {
+        let mut prefs = Self::load();
+        prefs.bias_constant = constant;
+        prefs.bias_slope = slope;
+        prefs.save();
+    }
+
+    pub fn save_shadow_map_size(size: u32) {
+        let mut prefs = Self::load();
+        prefs.shadow_map_size = size;
         prefs.save();
     }
 }
@@ -129,7 +176,7 @@ const PAGES: &[PageMeta] = &[
     },
     PageMeta {
         label: "Graphics",
-        terms: &["SSAA", "MSAA", "Render Distance"],
+        terms: &["SSAA", "MSAA", "Render Distance", "Shadow", "Cascades", "Bias", "Resolution"],
     },
     PageMeta {
         label: "Keybinds",
@@ -344,6 +391,10 @@ struct GraphicsPage {
     available_aa: Vec<AntiAliasingAmount>,
     render_distance: i32,
     shadow_distance: f32,
+    cascade_count: usize,
+    bias_constant: f32,
+    bias_slope: f32,
+    shadow_map_size: u32,
 }
 
 impl GraphicsPage {
@@ -367,6 +418,22 @@ impl GraphicsPage {
                 .get_resource::<ShadowDistance>()
                 .map(|s| s.distance)
                 .unwrap_or(EditorPreferences::default().shadow_distance),
+            cascade_count: world
+                .get_resource::<ShadowDistance>()
+                .map(|s| s.cascade_count)
+                .unwrap_or(EditorPreferences::default().cascade_count),
+            bias_constant: world
+                .get_resource::<ShadowDistance>()
+                .map(|s| s.bias_constant)
+                .unwrap_or(EditorPreferences::default().bias_constant),
+            bias_slope: world
+                .get_resource::<ShadowDistance>()
+                .map(|s| s.bias_slope)
+                .unwrap_or(EditorPreferences::default().bias_slope),
+            shadow_map_size: world
+                .get_resource::<ShadowDistance>()
+                .map(|s| s.shadow_map_size)
+                .unwrap_or(EditorPreferences::default().shadow_map_size),
         }
     }
 
@@ -388,6 +455,46 @@ impl GraphicsPage {
             ui.add(
                 egui::Slider::new(&mut self.shadow_distance, 0.0_f32..=16384.0).suffix(" units"),
             );
+        });
+
+        draw_setting(ui, dim_col, "Shadow Cascades", query, |ui| {
+            let label = match self.cascade_count {
+                1 => "1 (no CSM)",
+                2 => "2",
+                3 => "3",
+                _ => "4",
+            };
+            egui::ComboBox::from_id_salt("cascade_count_combo")
+                .selected_text(egui::RichText::new(label).color(text_col))
+                .show_ui(ui, |ui| {
+                    for (count, lbl) in [(1, "1 (no CSM)"), (2, "2"), (3, "3"), (4, "4")] {
+                        ui.selectable_value(&mut self.cascade_count, count, lbl);
+                    }
+                });
+        });
+
+        draw_setting(ui, dim_col, "Shadow Bias Constant", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.bias_constant, 0.0_f32..=10.0).step_by(0.1));
+        });
+
+        draw_setting(ui, dim_col, "Shadow Bias Slope", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.bias_slope, 0.0_f32..=10.0).step_by(0.1));
+        });
+
+        draw_setting(ui, dim_col, "Shadow Map Resolution", query, |ui| {
+            let label = match self.shadow_map_size {
+                512  => "512 (low)",
+                1024 => "1024",
+                4096 => "4096 (high)",
+                _    => "2048 (default)",
+            };
+            egui::ComboBox::from_id_salt("shadow_map_size_combo")
+                .selected_text(egui::RichText::new(label).color(text_col))
+                .show_ui(ui, |ui| {
+                    for (size, lbl) in [(512u32, "512 (low)"), (1024, "1024"), (2048, "2048 (default)"), (4096, "4096 (high)")] {
+                        ui.selectable_value(&mut self.shadow_map_size, size, lbl);
+                    }
+                });
         });
 
         draw_setting(ui, dim_col, "Supersampling (SSAA)", query, |ui| {
@@ -444,15 +551,36 @@ impl GraphicsPage {
             EditorPreferences::save_render_distance(self.render_distance);
         }
 
-        let sd_cur = world
+        let (sd_cur, cc_cur, bc_cur, bs_cur, sms_cur) = world
             .get_resource::<ShadowDistance>()
-            .map(|s| s.distance)
-            .unwrap_or(self.shadow_distance);
+            .map(|s| (s.distance, s.cascade_count, s.bias_constant, s.bias_slope, s.shadow_map_size))
+            .unwrap_or((self.shadow_distance, self.cascade_count, self.bias_constant, self.bias_slope, self.shadow_map_size));
         if (self.shadow_distance - sd_cur).abs() > f32::EPSILON {
             if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
                 s.distance = self.shadow_distance;
             }
             EditorPreferences::save_shadow_distance(self.shadow_distance);
+        }
+        if self.cascade_count != cc_cur {
+            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
+                s.cascade_count = self.cascade_count;
+            }
+            EditorPreferences::save_cascade_count(self.cascade_count);
+        }
+        if (self.bias_constant - bc_cur).abs() > f32::EPSILON
+            || (self.bias_slope - bs_cur).abs() > f32::EPSILON
+        {
+            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
+                s.bias_constant = self.bias_constant;
+                s.bias_slope = self.bias_slope;
+            }
+            EditorPreferences::save_bias(self.bias_constant, self.bias_slope);
+        }
+        if self.shadow_map_size != sms_cur {
+            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
+                s.shadow_map_size = self.shadow_map_size;
+            }
+            EditorPreferences::save_shadow_map_size(self.shadow_map_size);
         }
 
         let aa_changed = self.anti_aliasing != aa_cur;

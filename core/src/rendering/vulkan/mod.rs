@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::log;
-use crate::rendering::lighting::gpu_light::{GpuLight, MAX_LIGHTS};
+use crate::rendering::lighting::gpu_light::{CSM_CASCADE_COUNT, GpuLight, MAX_LIGHTS, ShadowData};
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
@@ -9,7 +9,7 @@ use crate::rendering::shared::push_constants::{
     VoxelPushConstants,
 };
 use crate::rendering::shared::rendering_settings::{
-    PipelineOptions, RasterizationSettings, RenderingSettings,
+    DynamicStateSettings, PipelineOptions, RasterizationSettings, RenderingSettings,
 };
 use crate::rendering::shared::vertex::{Vertex, VertexDefinition};
 use crate::rendering::vulkan::image_layout::ImageLayouts;
@@ -103,8 +103,10 @@ pub struct VulkanRenderer {
 
     pub shadow_image: vk::Image,
     pub shadow_image_memory: vk::DeviceMemory,
-    pub shadow_image_view: vk::ImageView,
+    pub shadow_image_view: vk::ImageView,       // full TYPE_2D_ARRAY view for shader sampling
+    pub shadow_cascade_views: [vk::ImageView; CSM_CASCADE_COUNT], // per-layer views for rendering
     pub shadow_sampler: vk::Sampler,
+    pub shadow_map_size: u32,
     pub shadow_model_pipeline: Pipeline,
     pub shadow_model_pipeline_layout: PipelineLayout,
     pub shadow_voxel_pipeline: Pipeline,
@@ -235,8 +237,20 @@ impl VulkanRenderer {
                 .destroy_shader_module(water_fragment_shader, None);
 
             let shadow_extent = vk::Extent2D {
-                width: 16384,
-                height: 16384,
+                width: 2048,
+                height: 2048,
+            };
+            let shadow_rasterization = RasterizationSettings {
+                cull_mode: vk::CullModeFlags::FRONT,
+                depth_bias_enable: true,
+                ..Default::default()
+            };
+            let shadow_dynamic_states = DynamicStateSettings {
+                dynamic_states: vec![
+                    vk::DynamicState::VIEWPORT,
+                    vk::DynamicState::SCISSOR,
+                    vk::DynamicState::DEPTH_BIAS,
+                ],
             };
             let shadow_model_pipeline = context.create_graphics_pipeline(
                 PipelineOptions {
@@ -249,10 +263,8 @@ impl VulkanRenderer {
                     vertex_attributes: Vertex::get_attribute_descriptions(),
                 },
                 RenderingSettings {
-                    rasterization_settings: RasterizationSettings {
-                        cull_mode: vk::CullModeFlags::FRONT,
-                        ..Default::default()
-                    },
+                    rasterization_settings: shadow_rasterization,
+                    dynamic_state_settings: shadow_dynamic_states.clone(),
                     ..Default::default()
                 },
                 self.shadow_model_pipeline_layout,
@@ -270,10 +282,8 @@ impl VulkanRenderer {
                     vertex_attributes: VoxelVertex::get_attribute_descriptions(),
                 },
                 RenderingSettings {
-                    rasterization_settings: RasterizationSettings {
-                        cull_mode: vk::CullModeFlags::FRONT,
-                        ..Default::default()
-                    },
+                    rasterization_settings: shadow_rasterization,
+                    dynamic_state_settings: shadow_dynamic_states,
                     ..Default::default()
                 },
                 self.shadow_voxel_pipeline_layout,
@@ -546,11 +556,8 @@ impl RenderingAPI for VulkanRenderer {
         unsafe {
             let context = rendering_info.context.clone();
 
-            // Header: 4×u32 (16 bytes) + mat4 light_space (64 bytes) = 80 bytes
-            let light_ssbo_size = (size_of::<u32>() * 4
-                + size_of::<[[f32; 4]; 4]>()
-                + size_of::<GpuLight>() * MAX_LIGHTS)
-                as vk::DeviceSize;
+            // Header: 320 bytes (see SSBO layout in set_lights)
+            let light_ssbo_size = (320 + size_of::<GpuLight>() * MAX_LIGHTS) as vk::DeviceSize;
 
             let (light_ssbo, light_ssbo_memory) = context.create_buffer(
                 light_ssbo_size,
@@ -862,35 +869,100 @@ impl RenderingAPI for VulkanRenderer {
                 &[],
             );
 
-            // Shadow map resources
+            // Shadow map resources: 2048×2048 texture array with CSM_CASCADE_COUNT layers.
+            const SHADOW_MAP_SIZE: u32 = 2048;
             let shadow_extent = vk::Extent2D {
-                width: 16384,
-                height: 16384,
+                width: SHADOW_MAP_SIZE,
+                height: SHADOW_MAP_SIZE,
             };
-            let image_layouts = ImageLayouts::default();
+            let _image_layouts = ImageLayouts::default();
 
-            let (shadow_image, shadow_image_memory) = context.create_image(
-                shadow_extent,
-                vk::Format::D32_SFLOAT,
-                vk::ImageTiling::OPTIMAL,
-                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                SampleCountFlags::TYPE_1,
+            // Create the shadow image as a 2D array (one layer per cascade).
+            let shadow_image_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D { width: SHADOW_MAP_SIZE, height: SHADOW_MAP_SIZE, depth: 1 })
+                .mip_levels(1)
+                .array_layers(CSM_CASCADE_COUNT as u32)
+                .format(vk::Format::D32_SFLOAT)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
+                .samples(SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let shadow_image = context.device.create_image(&shadow_image_info, None)?;
+            let mem_reqs = context.device.get_image_memory_requirements(shadow_image);
+            let shadow_image_memory = context.device.allocate_memory(
+                &vk::MemoryAllocateInfo::default()
+                    .allocation_size(mem_reqs.size)
+                    .memory_type_index(context.find_memory_type(
+                        mem_reqs.memory_type_bits,
+                        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    )?),
+                None,
             )?;
-            let shadow_image_view = context.create_image_view(
-                shadow_image,
-                vk::Format::D32_SFLOAT,
-                vk::ImageAspectFlags::DEPTH,
+            context.device.bind_image_memory(shadow_image, shadow_image_memory, 0)?;
+
+            // Full array view for shader sampling (TYPE_2D_ARRAY, all layers).
+            let shadow_image_view = context.device.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(shadow_image)
+                    .view_type(vk::ImageViewType::TYPE_2D_ARRAY)
+                    .format(vk::Format::D32_SFLOAT)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(CSM_CASCADE_COUNT as u32),
+                    ),
+                None,
             )?;
 
-            // Transition to DEPTH_STENCIL_READ_ONLY_OPTIMAL so the descriptor is valid before the first frame.
+            // Per-layer views for rendering (TYPE_2D, one layer each).
+            let mut shadow_cascade_views = [vk::ImageView::null(); CSM_CASCADE_COUNT];
+            for i in 0..CSM_CASCADE_COUNT {
+                shadow_cascade_views[i] = context.device.create_image_view(
+                    &vk::ImageViewCreateInfo::default()
+                        .image(shadow_image)
+                        .view_type(vk::ImageViewType::TYPE_2D)
+                        .format(vk::Format::D32_SFLOAT)
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(i as u32)
+                                .layer_count(1),
+                        ),
+                    None,
+                )?;
+            }
+
+            // Transition all 4 layers to DEPTH_STENCIL_READ_ONLY_OPTIMAL before first frame.
             let init_cmd = context.begin_single_time_commands(context.command_pool);
-            context.transition_image_layout(
+            context.device.cmd_pipeline_barrier(
                 init_cmd,
-                shadow_image,
-                image_layouts.undefined,
-                image_layouts.depth_stencil_read_only,
-                vk::ImageAspectFlags::DEPTH,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[vk::ImageMemoryBarrier::default()
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                    .image(shadow_image)
+                    .src_access_mask(vk::AccessFlags::empty())
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(CSM_CASCADE_COUNT as u32),
+                    )],
             );
             context.end_single_time_commands(
                 init_cmd,
@@ -904,14 +976,15 @@ impl RenderingAPI for VulkanRenderer {
                     .min_filter(vk::Filter::LINEAR)
                     .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
                     .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                    .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_BORDER)
                     .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
                     .compare_enable(true)
                     .compare_op(vk::CompareOp::LESS_OR_EQUAL),
                 None,
             )?;
 
-            // Write shadow sampler into the light descriptor set at binding 1.
-            let shadow_image_info = vk::DescriptorImageInfo::default()
+            // Write the full array view into the light descriptor set at binding 1.
+            let shadow_desc_image_info = vk::DescriptorImageInfo::default()
                 .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
                 .image_view(shadow_image_view)
                 .sampler(shadow_sampler);
@@ -920,7 +993,7 @@ impl RenderingAPI for VulkanRenderer {
                     .dst_set(light_descriptor_set)
                     .dst_binding(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&[shadow_image_info])],
+                    .image_info(&[shadow_desc_image_info])],
                 &[],
             );
 
@@ -958,7 +1031,17 @@ impl RenderingAPI for VulkanRenderer {
 
             let shadow_rasterization = RasterizationSettings {
                 cull_mode: vk::CullModeFlags::FRONT,
+                // Enable so cmd_set_depth_bias can override values dynamically each pass.
+                depth_bias_enable: true,
                 ..Default::default()
+            };
+
+            let shadow_dynamic_states = DynamicStateSettings {
+                dynamic_states: vec![
+                    vk::DynamicState::VIEWPORT,
+                    vk::DynamicState::SCISSOR,
+                    vk::DynamicState::DEPTH_BIAS,
+                ],
             };
 
             let shadow_model_pipeline = context.create_graphics_pipeline(
@@ -973,6 +1056,7 @@ impl RenderingAPI for VulkanRenderer {
                 },
                 RenderingSettings {
                     rasterization_settings: shadow_rasterization,
+                    dynamic_state_settings: shadow_dynamic_states.clone(),
                     ..Default::default()
                 },
                 shadow_model_pipeline_layout,
@@ -991,6 +1075,7 @@ impl RenderingAPI for VulkanRenderer {
                 },
                 RenderingSettings {
                     rasterization_settings: shadow_rasterization,
+                    dynamic_state_settings: shadow_dynamic_states,
                     ..Default::default()
                 },
                 shadow_voxel_pipeline_layout,
@@ -1054,7 +1139,9 @@ impl RenderingAPI for VulkanRenderer {
                 shadow_image,
                 shadow_image_memory,
                 shadow_image_view,
+                shadow_cascade_views,
                 shadow_sampler,
+                shadow_map_size: SHADOW_MAP_SIZE,
                 shadow_model_pipeline,
                 shadow_model_pipeline_layout,
                 shadow_voxel_pipeline,
@@ -1729,10 +1816,19 @@ impl RenderingAPI for VulkanRenderer {
         self.voxel_descriptor_set_layout
     }
 
-    fn set_lights(&mut self, lights: &[GpuLight], light_space: Option<[[f32; 4]; 4]>, shadow_distance: f32) {
+    fn set_lights(&mut self, lights: &[GpuLight], shadow_data: Option<ShadowData>, shadow_distance: f32, camera_pos: [f32; 3], camera_dir: [f32; 3]) {
         let count = lights.len().min(MAX_LIGHTS) as u32;
-        // SSBO layout: [count u32][shadow_enabled u32][shadow_distance f32][_pad u32][mat4 light_space][GpuLight...]
-        const LIGHTS_OFFSET: usize = size_of::<u32>() * 4 + size_of::<[[f32; 4]; 4]>();
+        // SSBO layout (std430, 320-byte header):
+        //   offset   0: uint  count
+        //   offset   4: uint  shadow_enabled  (0=off, 1=spot, 2=directional CSM)
+        //   offset   8: uint  cascade_count
+        //   offset  12: float shadow_distance
+        //   offset  16: vec4  camera_world_pos
+        //   offset  32: vec4  camera_world_dir   (xyz = normalized view forward)
+        //   offset  48: mat4  light_space[4]     (256 bytes)
+        //   offset 304: float cascade_splits[4]  (16 bytes)
+        //   offset 320: GpuLight[]
+        const LIGHTS_OFFSET: usize = 320;
 
         unsafe {
             let ptr = self
@@ -1746,12 +1842,29 @@ impl RenderingAPI for VulkanRenderer {
                 )
                 .unwrap() as *mut u8;
 
-            (ptr as *mut u32).write(count);
-            (ptr.add(4) as *mut u32).write(if light_space.is_some() { 1 } else { 0 });
-            (ptr.add(8) as *mut f32).write(shadow_distance);
+            let (shadow_enabled, cascade_count) = match &shadow_data {
+                None => (0u32, 0u32),
+                Some(d) if d.cascade_count == 1 => (1u32, 1u32),
+                Some(_) => (2u32, CSM_CASCADE_COUNT as u32),
+            };
 
-            let matrix = light_space.unwrap_or([[0.0f32; 4]; 4]);
-            (ptr.add(16) as *mut [[f32; 4]; 4]).write(matrix);
+            (ptr as *mut u32).write(count);
+            (ptr.add(4) as *mut u32).write(shadow_enabled);
+            (ptr.add(8) as *mut u32).write(cascade_count);
+            (ptr.add(12) as *mut f32).write(shadow_distance);
+            (ptr.add(16) as *mut [f32; 4]).write([camera_pos[0], camera_pos[1], camera_pos[2], 0.0]);
+            (ptr.add(32) as *mut [f32; 4]).write([camera_dir[0], camera_dir[1], camera_dir[2], 0.0]);
+
+            // Write 4 cascade matrices at offset 48.
+            if let Some(ref d) = shadow_data {
+                for i in 0..CSM_CASCADE_COUNT {
+                    let mat = d.matrices.get(i).copied().unwrap_or([[0.0f32; 4]; 4]);
+                    (ptr.add(48 + i * 64) as *mut [[f32; 4]; 4]).write(mat);
+                }
+                (ptr.add(304) as *mut [f32; 4]).write(d.splits);
+            } else {
+                std::ptr::write_bytes(ptr.add(48), 0, 256 + 16);
+            }
 
             (ptr.add(LIGHTS_OFFSET) as *mut GpuLight)
                 .copy_from_nonoverlapping(lights.as_ptr(), count as usize);
@@ -1760,36 +1873,185 @@ impl RenderingAPI for VulkanRenderer {
         }
     }
 
-    fn begin_shadow_pass(&mut self) -> Result<()> {
+    fn rebuild_shadow_map(&mut self, size: u32) -> Result<()> {
+        if size == self.shadow_map_size {
+            return Ok(());
+        }
+        unsafe {
+            self.context.device.device_wait_idle()?;
+
+            for view in &self.shadow_cascade_views {
+                self.context.device.destroy_image_view(*view, None);
+            }
+            self.context.device.destroy_image_view(self.shadow_image_view, None);
+            self.context.device.destroy_image(self.shadow_image, None);
+            self.context.device.free_memory(self.shadow_image_memory, None);
+
+            let shadow_image_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D { width: size, height: size, depth: 1 })
+                .mip_levels(1)
+                .array_layers(CSM_CASCADE_COUNT as u32)
+                .format(vk::Format::D32_SFLOAT)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
+                .samples(SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let shadow_image = self.context.device.create_image(&shadow_image_info, None)?;
+            let mem_reqs = self.context.device.get_image_memory_requirements(shadow_image);
+            let shadow_image_memory = self.context.device.allocate_memory(
+                &vk::MemoryAllocateInfo::default()
+                    .allocation_size(mem_reqs.size)
+                    .memory_type_index(self.context.find_memory_type(
+                        mem_reqs.memory_type_bits,
+                        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    )?),
+                None,
+            )?;
+            self.context.device.bind_image_memory(shadow_image, shadow_image_memory, 0)?;
+
+            let subresource_all = vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(CSM_CASCADE_COUNT as u32);
+
+            let shadow_image_view = self.context.device.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(shadow_image)
+                    .view_type(vk::ImageViewType::TYPE_2D_ARRAY)
+                    .format(vk::Format::D32_SFLOAT)
+                    .subresource_range(subresource_all),
+                None,
+            )?;
+
+            let mut shadow_cascade_views = [vk::ImageView::null(); CSM_CASCADE_COUNT];
+            for i in 0..CSM_CASCADE_COUNT {
+                shadow_cascade_views[i] = self.context.device.create_image_view(
+                    &vk::ImageViewCreateInfo::default()
+                        .image(shadow_image)
+                        .view_type(vk::ImageViewType::TYPE_2D)
+                        .format(vk::Format::D32_SFLOAT)
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(i as u32)
+                                .layer_count(1),
+                        ),
+                    None,
+                )?;
+            }
+
+            let cmd = self.context.begin_single_time_commands(self.context.command_pool);
+            self.context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[], &[],
+                &[vk::ImageMemoryBarrier::default()
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                    .image(shadow_image)
+                    .src_access_mask(vk::AccessFlags::empty())
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                    .subresource_range(subresource_all)],
+            );
+            self.context.end_single_time_commands(
+                cmd,
+                self.context.queues[&self.context.queue_families.graphics],
+                self.context.command_pool,
+            );
+
+            let shadow_desc_image_info = vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                .image_view(shadow_image_view)
+                .sampler(self.shadow_sampler);
+            self.context.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(self.light_descriptor_set)
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&[shadow_desc_image_info])],
+                &[],
+            );
+
+            self.shadow_image = shadow_image;
+            self.shadow_image_memory = shadow_image_memory;
+            self.shadow_image_view = shadow_image_view;
+            self.shadow_cascade_views = shadow_cascade_views;
+            self.shadow_map_size = size;
+        }
+        Ok(())
+    }
+
+    fn begin_shadow_pass(&mut self, cascade_index: usize, bias_constant: f32, bias_slope: f32) -> Result<()> {
         let frame = &self.frames[self.current_frame];
-        let shadow_extent = vk::Extent2D {
-            width: 16384,
-            height: 16384,
-        };
+        let s = self.shadow_map_size;
+        let shadow_extent = vk::Extent2D { width: s, height: s };
 
-        self.context.transition_image_layout(
-            frame.command_buffer,
-            self.shadow_image,
-            self.image_layouts.depth_stencil_read_only,
-            self.image_layouts.depth_write,
-            vk::ImageAspectFlags::DEPTH,
-        );
+        // On the first cascade, transition all layers from read-only to depth-write at once.
+        if cascade_index == 0 {
+            unsafe {
+                self.context.device.cmd_pipeline_barrier(
+                    frame.command_buffer,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[vk::ImageMemoryBarrier::default()
+                        .old_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                        .new_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                        .image(self.shadow_image)
+                        .src_access_mask(vk::AccessFlags::SHADER_READ)
+                        .dst_access_mask(
+                            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        )
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(CSM_CASCADE_COUNT as u32),
+                        )],
+                );
+            }
+        }
 
+        // Render into the per-layer view for this cascade.
         self.context.begin_depth_only_rendering(
             frame.command_buffer,
-            self.shadow_image_view,
+            self.shadow_cascade_views[cascade_index],
             vk::Rect2D::default().extent(shadow_extent),
         );
 
         unsafe {
+            // Hardware slope-scaled depth bias — eliminates shadow acne without Peter Panning.
+            // bias_constant = constant depth offset (in depth units).
+            // bias_slope    = multiplied by max depth slope of each polygon.
+            self.context.device.cmd_set_depth_bias(
+                frame.command_buffer,
+                bias_constant,
+                0.0, // clamp (0 = unclamped)
+                bias_slope,
+            );
+
             self.context.device.cmd_set_viewport(
                 frame.command_buffer,
                 0,
                 &[vk::Viewport {
                     x: 0.0,
                     y: 0.0,
-                    width: 16384.0,
-                    height: 16384.0,
+                    width: s as f32,
+                    height: s as f32,
                     min_depth: 0.0,
                     max_depth: 1.0,
                 }],
@@ -1807,18 +2069,41 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
-    fn end_shadow_pass(&mut self) -> Result<()> {
+    fn end_shadow_pass(&mut self, _cascade_index: usize) -> Result<()> {
         let frame = &self.frames[self.current_frame];
         unsafe {
             self.context.device.cmd_end_rendering(frame.command_buffer);
+
+            // Transition all cascade layers back to shader-readable after each pass.
+            // For directional CSM the next cascade's begin_shadow_pass will handle the
+            // forward barrier; for spot lights (single pass) this restores the layout correctly.
+            self.context.device.cmd_pipeline_barrier(
+                frame.command_buffer,
+                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[vk::ImageMemoryBarrier::default()
+                    .old_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+                    .image(self.shadow_image)
+                    .src_access_mask(
+                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    )
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(CSM_CASCADE_COUNT as u32),
+                    )],
+            );
         }
-        self.context.transition_image_layout(
-            frame.command_buffer,
-            self.shadow_image,
-            self.image_layouts.depth_write,
-            self.image_layouts.depth_stencil_read_only,
-            vk::ImageAspectFlags::DEPTH,
-        );
+
         Ok(())
     }
 

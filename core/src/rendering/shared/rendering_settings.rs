@@ -120,6 +120,8 @@ pub struct RasterizationSettings {
     pub cull_mode: vk::CullModeFlags,
     pub front_face: vk::FrontFace,
     pub line_width: f32,
+    /// Enable hardware depth bias (slope-scaled). Required for shadow passes.
+    pub depth_bias_enable: bool,
 }
 
 impl Default for RasterizationSettings {
@@ -129,6 +131,7 @@ impl Default for RasterizationSettings {
             cull_mode: vk::CullModeFlags::BACK,
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             line_width: 1.0,
+            depth_bias_enable: false,
         }
     }
 }

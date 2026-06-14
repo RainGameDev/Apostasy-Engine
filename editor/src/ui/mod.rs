@@ -74,6 +74,10 @@ pub fn init(world: &mut World) -> Result<()> {
     });
     if let Ok(sd) = world.get_resource_mut::<ShadowDistance>() {
         sd.distance = prefs.shadow_distance;
+        sd.cascade_count = prefs.cascade_count;
+        sd.bias_constant = prefs.bias_constant;
+        sd.bias_slope = prefs.bias_slope;
+        sd.shadow_map_size = prefs.shadow_map_size;
     }
 
     let graphics = EditorGraphics::load();

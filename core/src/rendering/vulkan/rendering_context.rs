@@ -494,7 +494,9 @@ impl VulkanRenderingContext {
                                 )
                                 .cull_mode(rendering_settings.rasterization_settings.cull_mode)
                                 .front_face(rendering_settings.rasterization_settings.front_face)
-                                .depth_bias_enable(false)
+                                .depth_bias_enable(
+                                    rendering_settings.rasterization_settings.depth_bias_enable,
+                                )
                                 .line_width(rendering_settings.rasterization_settings.line_width),
                         )
                         .multisample_state(&multisample_state)

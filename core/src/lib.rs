@@ -43,7 +43,9 @@ use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::lighting::{Light, LightType};
 use crate::rendering::components::model_renderer::ModelRenderer;
-use crate::rendering::lighting::gpu_light::{GpuLight, compute_light_space_matrix};
+use crate::rendering::lighting::gpu_light::{
+    GpuLight, ShadowData, compute_csm_matrices, compute_light_space_matrix,
+};
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::shadow_settings::ShadowDistance;
@@ -256,6 +258,9 @@ impl Core {
                     };
                     let camera_transform = camera.get_component::<Transform>().unwrap().clone();
                     let camera_pos = camera_transform.global_position;
+                    let camera_comp = camera.get_component::<Camera>().unwrap().clone();
+                    let camera_near = camera_comp.near;
+                    let camera_far = camera_comp.far;
                     let view = get_view_matrix(&camera_transform);
 
                     let aspect = if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
@@ -320,11 +325,29 @@ impl Core {
                         .collect();
 
                     // Find first directional or spot light for shadow casting.
-                    let shadow_dist = world
-                        .get_resource::<ShadowDistance>()
-                        .map(|r| r.distance)
-                        .unwrap_or(128.0);
-                    let shadow_light_space: Option<[[f32; 4]; 4]> =
+                    let (shadow_dist, csm_cascade_count, shadow_bias_constant, shadow_bias_slope, shadow_map_size) =
+                        world
+                            .get_resource::<ShadowDistance>()
+                            .map(|r| (r.distance, r.cascade_count, r.bias_constant, r.bias_slope, r.shadow_map_size))
+                            .unwrap_or((128.0, 4, 2.0, 2.0, 2048));
+
+                    if let Err(e) = renderer.rebuild_shadow_map(shadow_map_size) {
+                        log_error!("Failed to rebuild shadow map: {}", e);
+                    }
+
+                    let camera_forward = camera_transform.calculate_global_forward();
+
+                    enum ShadowCastData {
+                        Directional {
+                            matrices: [cgmath::Matrix4<f32>; 4],
+                            splits: [f32; 4],
+                        },
+                        Spot {
+                            matrix: [[f32; 4]; 4],
+                        },
+                    }
+
+                    let shadow_result: Option<ShadowCastData> =
                         light_objects.iter().find_map(|obj| {
                             let light = obj.get_component::<Light>().ok()?;
                             let transform = obj.get_component::<Transform>().ok()?;
@@ -332,17 +355,51 @@ impl Core {
                                 return None;
                             }
                             match light.light_type {
-                                LightType::Directional | LightType::Spot { .. } => {
+                                LightType::Directional => {
+                                    let (matrices, splits) = compute_csm_matrices(
+                                        light,
+                                        transform,
+                                        camera_pos,
+                                        camera_comp.fov_y,
+                                        aspect,
+                                        camera_near,
+                                        camera_far,
+                                        shadow_dist,
+                                        csm_cascade_count,
+                                        shadow_map_size,
+                                    );
+                                    Some(ShadowCastData::Directional { matrices, splits })
+                                }
+                                LightType::Spot { .. } => {
                                     let m = compute_light_space_matrix(
                                         light, transform, camera_pos, shadow_dist,
                                     );
-                                    Some(*m.as_ref())
+                                    Some(ShadowCastData::Spot { matrix: *m.as_ref() })
                                 }
                                 _ => None,
                             }
                         });
 
-                    renderer.set_lights(&gpu_lights, shadow_light_space, shadow_dist);
+                    let shadow_data = shadow_result.as_ref().map(|sr| match sr {
+                        ShadowCastData::Directional { matrices, splits } => ShadowData {
+                            matrices: matrices.iter().map(|m| *m.as_ref()).collect(),
+                            splits: *splits,
+                            cascade_count: csm_cascade_count as u32,
+                        },
+                        ShadowCastData::Spot { matrix } => ShadowData {
+                            matrices: vec![*matrix; 4],
+                            splits: [shadow_dist; 4],
+                            cascade_count: 1,
+                        },
+                    });
+
+                    renderer.set_lights(
+                        &gpu_lights,
+                        shadow_data,
+                        shadow_dist,
+                        [camera_pos.x, camera_pos.y, camera_pos.z],
+                        [camera_forward.x, camera_forward.y, camera_forward.z],
+                    );
 
                     world.prerender();
 
@@ -351,26 +408,47 @@ impl Core {
                         return;
                     }
 
-                    // Shadow pre-pass
-                    if let Err(e) = renderer.begin_shadow_pass() {
-                        log_error!("Failed to begin shadow pass: {}", e);
-                        return;
-                    }
-                    if let Some(ls) = shadow_light_space {
-                        // Shadow models
-                        let model_ids: Vec<_> = world
+                    // Shadow pre-pass — one pass per cascade (csm_cascade_count for directional, 1 for spot).
+                    let cascade_count = match &shadow_result {
+                        Some(ShadowCastData::Directional { .. }) => csm_cascade_count,
+                        Some(ShadowCastData::Spot { .. }) => 1,
+                        None => 0,
+                    };
+
+                    // Pre-collect model IDs once to avoid re-borrowing per cascade.
+                    let shadow_model_ids: Vec<_> = if cascade_count > 0 {
+                        world
                             .get_objects_with_component_with_ids::<ModelRenderer>()
                             .iter()
                             .map(|o| o.0)
-                            .collect();
-                        for id in model_ids {
+                            .collect()
+                    } else {
+                        vec![]
+                    };
+
+                    for cascade_idx in 0..cascade_count {
+                        let cascade_matrix: [[f32; 4]; 4] = match &shadow_result {
+                            Some(ShadowCastData::Directional { matrices, .. }) => {
+                                *matrices[cascade_idx].as_ref()
+                            }
+                            Some(ShadowCastData::Spot { matrix }) => *matrix,
+                            None => unreachable!(),
+                        };
+
+                        if let Err(e) = renderer.begin_shadow_pass(cascade_idx, shadow_bias_constant, shadow_bias_slope) {
+                            log_error!("Failed to begin shadow pass {}: {}", cascade_idx, e);
+                            return;
+                        }
+
+                        // Shadow models
+                        for &id in &shadow_model_ids {
                             if let Some(object) = world.get_object(id) {
                                 let model_renderer =
                                     object.get_component::<ModelRenderer>().unwrap();
                                 if let Some(model) = &model_renderer.model {
                                     let transform = object.get_component::<Transform>().unwrap();
                                     let pc = ShadowModelPushConstants::new(
-                                        ls,
+                                        cascade_matrix,
                                         transform.global_position.into(),
                                         transform.global_scale.into(),
                                         [
@@ -395,26 +473,28 @@ impl Core {
                         if self.packages.contains(&Packages::Voxel) {
                             for object in world.get_objects_with_component::<VoxelChunkMesh>() {
                                 let transform = object.get_component::<VoxelTransform>().unwrap();
-                                let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                                let voxel_mesh =
+                                    object.get_component::<VoxelChunkMesh>().unwrap();
                                 let pc = ShadowVoxelPushConstants::new(
-                                    ls,
+                                    cascade_matrix,
                                     [
                                         transform.position.x * 32,
                                         transform.position.y * 32,
                                         transform.position.z * 32,
                                     ],
                                 );
-                                if let Err(e) =
-                                    renderer.shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
+                                if let Err(e) = renderer
+                                    .shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
                                 {
                                     log_error!("Failed shadow voxel render: {}", e);
                                 }
                             }
                         }
-                    }
-                    if let Err(e) = renderer.end_shadow_pass() {
-                        log_error!("Failed to end shadow pass: {}", e);
-                        return;
+
+                        if let Err(e) = renderer.end_shadow_pass(cascade_idx) {
+                            log_error!("Failed to end shadow pass {}: {}", cascade_idx, e);
+                            return;
+                        }
                     }
 
                     if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {

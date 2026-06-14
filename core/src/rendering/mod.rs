@@ -7,7 +7,7 @@ use egui::{Context, TextureId};
 use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
-use crate::rendering::lighting::gpu_light::GpuLight;
+use crate::rendering::lighting::gpu_light::{GpuLight, ShadowData};
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
@@ -121,14 +121,15 @@ pub trait RenderingAPI {
     fn get_descriptor_pool(&self) -> vk::DescriptorPool;
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout;
 
-    /// Uploads the active lights and the light-space matrix for the shadow caster.
-    /// `light_space: None` disables shadow sampling in shaders.
-    fn set_lights(&mut self, lights: &[GpuLight], light_space: Option<[[f32; 4]; 4]>, shadow_distance: f32);
+    /// Uploads the active lights and shadow data. `shadow_data: None` disables shadow sampling.
+    fn set_lights(&mut self, lights: &[GpuLight], shadow_data: Option<ShadowData>, shadow_distance: f32, camera_pos: [f32; 3], camera_dir: [f32; 3]);
 
-    /// Begins the depth-only shadow pre-pass.
-    fn begin_shadow_pass(&mut self) -> Result<()>;
-    /// Ends the shadow pre-pass and transitions the shadow map to shader-readable.
-    fn end_shadow_pass(&mut self) -> Result<()>;
+    /// Destroys and recreates the shadow map texture array at the given size. No-op if unchanged.
+    fn rebuild_shadow_map(&mut self, size: u32) -> Result<()>;
+    /// Begins the depth-only shadow pre-pass for the given cascade index (0–3).
+    fn begin_shadow_pass(&mut self, cascade_index: usize, bias_constant: f32, bias_slope: f32) -> Result<()>;
+    /// Ends the shadow pre-pass for the given cascade index.
+    fn end_shadow_pass(&mut self, cascade_index: usize) -> Result<()>;
     /// Renders a model mesh into the shadow map.
     fn shadow_model_render(
         &mut self,
