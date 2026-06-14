@@ -5,3 +5,4 @@ pub mod loaders;
 pub mod shader;
 pub mod shader_loader;
 pub mod shader_registry;
+pub mod texture;

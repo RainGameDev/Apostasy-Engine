@@ -1,5 +1,7 @@
 use ash::vk::{Buffer, DeviceMemory};
 
+use crate::rendering::shared::material::GpuMaterial;
+
 #[derive(Clone, Debug)]
 pub struct GpuModel {
     pub meshes: Vec<Mesh>,
@@ -14,6 +16,7 @@ pub struct Mesh {
     pub index_buffer_memory: DeviceMemory,
     pub index_count: u32,
     pub material_name: String,
+    pub material: Option<GpuMaterial>,
 }
 
 impl GpuMesh for Mesh {

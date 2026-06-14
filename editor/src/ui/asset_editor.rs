@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     assets::asset_manager::AssetManager,
-    egui::{self, Color32, Margin, ScrollArea, Stroke, Window},
+    egui::{self, Color32, DragAndDrop, Margin, ScrollArea, Stroke, Window},
     objects::world::World,
     ui::ui_context::EguiContext,
     update,
@@ -16,7 +16,7 @@ use super::{
 };
 
 // Known asset class names for the "New" dialog.
-const CLASS_OPTIONS: &[&str] = &["Voxel", "Biome", "Item", "Structure"];
+const CLASS_OPTIONS: &[&str] = &["Voxel", "Biome", "Item", "Structure", "Material"];
 
 fn default_template_for_class(class: &str) -> serde_yaml::Value {
     let mut map = serde_yaml::Mapping::new();
@@ -34,6 +34,18 @@ fn default_template_for_class(class: &str) -> serde_yaml::Value {
             map.insert(
                 "components".into(),
                 serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+            );
+        }
+        "material" => {
+            map.insert("albedo".into(), serde_yaml::Value::String(String::new()));
+            map.insert(
+                "color".into(),
+                serde_yaml::Value::Sequence(vec![
+                    serde_yaml::Value::Number(serde_yaml::Number::from(1.0)),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(1.0)),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(1.0)),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(1.0)),
+                ]),
             );
         }
         "biome" => {
@@ -391,7 +403,9 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     .unwrap_or_default(),
                 _ => String::new(),
             };
-            let supports_components = !asset_class.is_empty() && asset_class != "worldspace";
+            let supports_components = !asset_class.is_empty()
+                && asset_class != "worldspace"
+                && asset_class != "material";
 
             // Property editor
             ScrollArea::vertical()
@@ -411,12 +425,18 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 }
                                 let child_id = format!("root/{}", key_str);
                                 if let Some(v) = map.get_mut(k) {
-                                    render_node(ui, &key_str, v, &child_id, dirty, &style);
+                                    if asset_class == "material" && key_str == "albedo" {
+                                        render_albedo_field(ui, v, dirty, &style);
+                                    } else if asset_class == "material" && key_str == "color" {
+                                        render_color_field(ui, key_str.as_str(), v, dirty);
+                                    } else {
+                                        render_node(ui, &key_str, v, &child_id, dirty, &style);
+                                    }
                                 }
                             }
 
                             if supports_components {
-                                // Collect existing names via shared borrow 
+                                // Collect existing names via shared borrow
                                 let existing_comp_names: Vec<String> = map
                                     .get(&serde_yaml::Value::String("components".to_string()))
                                     .and_then(|v| v.as_mapping())
@@ -766,7 +786,9 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     .copied()
                     .unwrap_or("")
                     .to_lowercase();
-                let supports_comps = !template_class.is_empty() && template_class != "worldspace";
+                let supports_comps = !template_class.is_empty()
+                    && template_class != "worldspace"
+                    && template_class != "material";
 
                 // Template fields scroll area
                 let avail_h = ui.available_height() - 36.0;
@@ -785,7 +807,13 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 }
                                 let child_id = format!("new_tmpl/{}", key_str);
                                 if let Some(v) = map.get_mut(k) {
-                                    render_node(ui, &key_str, v, &child_id, &mut tmpl_modified, &style);
+                                    if template_class == "material" && key_str == "albedo" {
+                                        render_albedo_field(ui, v, &mut tmpl_modified, &style);
+                                    } else if template_class == "material" && key_str == "color" {
+                                        render_color_field(ui, key_str.as_str(), v, &mut tmpl_modified);
+                                    } else {
+                                        render_node(ui, &key_str, v, &child_id, &mut tmpl_modified, &style);
+                                    }
                                 }
                             }
 
@@ -1097,6 +1125,87 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// RGBA color field rendered as an egui color picker button.
+/// Reads/writes a `serde_yaml::Value::Sequence` of 3 or 4 floats in [0, 1].
+fn render_color_field(
+    ui: &mut egui::Ui,
+    key: &str,
+    value: &mut serde_yaml::Value,
+    modified: &mut bool,
+) {
+    let mut rgba = [1.0f32; 4];
+    if let serde_yaml::Value::Sequence(seq) = &*value {
+        for (i, v) in seq.iter().enumerate().take(4) {
+            if let Some(f) = v.as_f64() {
+                rgba[i] = f as f32;
+            }
+        }
+        if seq.len() == 3 {
+            rgba[3] = 1.0;
+        }
+    }
+
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(key).strong());
+        if ui.color_edit_button_rgba_unmultiplied(&mut rgba).changed() {
+            *value = serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::Number(serde_yaml::Number::from(rgba[0] as f64)),
+                serde_yaml::Value::Number(serde_yaml::Number::from(rgba[1] as f64)),
+                serde_yaml::Value::Number(serde_yaml::Number::from(rgba[2] as f64)),
+                serde_yaml::Value::Number(serde_yaml::Number::from(rgba[3] as f64)),
+            ]);
+            *modified = true;
+        }
+    });
+}
+
+/// Albedo field with drag-and-drop support for texture entries from the Object Window.
+/// When a texture is dragged from the object window, dropping it here sets the albedo path.
+fn render_albedo_field(
+    ui: &mut egui::Ui,
+    value: &mut serde_yaml::Value,
+    modified: &mut bool,
+    style: &EditorStyle,
+) {
+    let mut buf = value.as_str().unwrap_or("").to_string();
+    let has_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
+
+    let inner = ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("albedo").strong());
+        ui.add(
+            egui::TextEdit::singleline(&mut buf)
+                .desired_width(f32::INFINITY)
+                .hint_text("drag a texture or type path…")
+                .font(style.font_ui()),
+        )
+    });
+
+    if inner.inner.changed() {
+        *value = serde_yaml::Value::String(buf);
+        *modified = true;
+    }
+
+    let field_rect = inner.inner.rect;
+    let is_hovering = has_drag && ui.rect_contains_pointer(field_rect);
+
+    if is_hovering {
+        // Highlight the field as a drop target
+        ui.painter().rect_stroke(
+            field_rect.expand(2.0),
+            3.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 140, 255)),
+            egui::StrokeKind::Outside,
+        );
+        // Accept the drop on pointer release
+        if let Some(payload) = inner.inner.dnd_release_payload::<String>() {
+            let id_str = (*payload).clone();
+            let path = id_str.strip_prefix("texture:").unwrap_or(&id_str);
+            *value = serde_yaml::Value::String(path.to_string());
+            *modified = true;
+        }
+    }
 }
 
 fn render_node(

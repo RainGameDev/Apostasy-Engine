@@ -1,0 +1,9 @@
+albedo: textures/grass.png
+color:
+- 1.0
+- 1.0
+- 1.0
+- 1.0
+name: GrassMod
+namespace: game
+class: Material

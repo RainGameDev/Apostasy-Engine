@@ -47,6 +47,7 @@
     - [ ] Ambient lighting
     - [ ] Fog
   - [ ] Particle system
+  - [ ] GLTF loading textures
 
 - [-] Systems
   - [x] Prerender systems
@@ -97,6 +98,7 @@
     - [ ] Scene deletion
     - [x] Scene switching
   - [ ] UI Editor
+  - [ ] Dockable Panels
 
 - [-] Editor Camera
   - [x] Camera rotation

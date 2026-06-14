@@ -4,6 +4,7 @@ use apostasy_core::{
         asset_manager::AssetManager,
         loaders::{
             biome_loader::BiomeLoader,
+            material_loader::MaterialLoader,
             worldspace_loader::{WorldspaceLoader, WorldspaceRegistry},
             structure_loader::StructureLoader,
             voxel_loader::VoxelLoader,
@@ -78,6 +79,7 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
         asset_manager.register_loader(WorldspaceLoader {
             registry: Arc::clone(&scene_registry),
         });
+        asset_manager.register_loader(MaterialLoader::new());
 
         let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
         if game_res.exists() {

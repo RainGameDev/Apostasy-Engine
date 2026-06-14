@@ -3,11 +3,13 @@ use super::shared::WindowLayout;
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
-use apostasy_core::egui::{
-    Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
-};
 use apostasy_core::objects::worldspace_serializer::load_worldspace;
-use apostasy_core::{egui, objects::world::World, ui::ui_context::EguiContext, update};
+use apostasy_core::{
+    egui::{self, Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window},
+    objects::world::World,
+    ui::ui_context::EguiContext,
+    update,
+};
 use apostasy_macros::Resource;
 use std::sync::Arc;
 
@@ -116,6 +118,7 @@ impl ObjectWindowState {
         registry_data: Vec<(String, Vec<(String, String)>)>,
         models: Vec<String>,
         shaders: Vec<String>,
+        textures: Vec<String>,
     ) {
         let mut tree = Vec::new();
         let mut entries = Vec::new();
@@ -172,6 +175,19 @@ impl ObjectWindowState {
             }
         }
 
+        if !textures.is_empty() {
+            let textures_path = vec!["Graphics".to_string(), "Textures".to_string()];
+            gfx_children.push(FilterNode::leaf("Textures", &gfx_path));
+            for name in &textures {
+                entries.push(ObjectEntry {
+                    editor_id: format!("texture:{}", name),
+                    name: name.clone(),
+                    count: 0,
+                    category_path: textures_path.clone(),
+                });
+            }
+        }
+
         if !gfx_children.is_empty() {
             tree.push(FilterNode::branch("Graphics", &[], gfx_children));
         }
@@ -217,7 +233,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         world
             .get_resource::<AssetManager>()
             .ok()
-            .map(|am| (am.all_loader_entries(), am.model_names(), am.shader_names()))
+            .map(|am| (am.all_loader_entries(), am.model_names(), am.shader_names(), am.texture_names()))
     } else {
         None
     };
@@ -232,8 +248,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
     let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
     if object_window_resource.is_first_frame {
-        if let Some((registry_data, models, shaders)) = populate_data {
-            object_window_resource.populate(registry_data, models, shaders);
+        if let Some((registry_data, models, shaders, textures)) = populate_data {
+            object_window_resource.populate(registry_data, models, shaders, textures);
         }
         object_window_resource.is_first_frame = false;
     }
@@ -243,6 +259,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
     let mut pending_scene_rename: Option<(String, String)> = None;
     let mut pending_open_in_editor: Option<String> = None;
     let mut pending_new_asset = false;
+    let mut pending_refresh = false;
 
     let window = window
         .open(&mut window_open)
@@ -256,7 +273,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
             let edid_w = object_window_resource.col_widths[1];
             let name_w = object_window_resource.col_widths[2];
             let total_w = ui.available_width();
-            let count_w = (total_w - filter_w - edid_w - name_w).max(50.0);
+            let refresh_btn_w = 26.0;
+            let count_w = (total_w - filter_w - edid_w - name_w - refresh_btn_w).max(50.0);
             let table_w = edid_w + name_w + count_w;
             let header_h = style.header_height();
             let row_h = style.row_height();
@@ -337,6 +355,28 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     font_hdr.clone(),
                     style.text_col,
                 );
+            }
+
+            // Refresh button at the right edge of the header
+            let refresh_rect = Rect::from_min_size(
+                Pos2::new(header_rect.right() - refresh_btn_w, header_rect.top()),
+                Vec2::new(refresh_btn_w, header_h),
+            );
+            let refresh_resp =
+                ui.interact(refresh_rect, ui.id().with("refresh_btn"), Sense::click());
+            if refresh_resp.hovered() {
+                ui.painter()
+                    .rect_filled(refresh_rect, 0.0, Color32::from_rgb(40, 40, 40));
+            }
+            ui.painter().text(
+                refresh_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "↺",
+                font_hdr.clone(),
+                style.text_col,
+            );
+            if refresh_resp.on_hover_text("Refresh asset lists").clicked() {
+                pending_refresh = true;
             }
 
             ui.painter().line_segment(
@@ -501,8 +541,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         let is_selected = object_window_resource.selected_entry.as_deref()
                             == Some(entry.editor_id.as_str());
 
+                        let is_texture = entry.editor_id.starts_with("texture:");
+                        let is_model = entry.editor_id.starts_with("model:");
                         let (row_rect, row_resp) =
-                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
+                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click_and_drag());
 
                         let is_scene =
                             entry.category_path.len() >= 2 && entry.category_path[1] == "worldspace";
@@ -512,6 +554,15 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         if row_resp.clicked() {
                             object_window_resource.selected_entry = Some(entry.editor_id.clone());
                         }
+
+                        // Texture and model rows are drag sources for DnD fields
+                        if is_texture || is_model {
+                            row_resp.dnd_set_drag_payload(entry.editor_id.clone());
+                            if row_resp.hovered() {
+                                ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                            }
+                        }
+
                         row_resp.context_menu(|ui| {
                             if ui.button("Edit Asset").clicked() {
                                 pending_open_in_editor = Some(entry.editor_id.clone());
@@ -748,7 +799,18 @@ pub fn object_window(world: &mut World) -> Result<()> {
     if pending_new_asset {
         if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
             ae.new_open = true;
+            ae.open = true;
             ae.new_name.clear();
+        }
+        if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
+            layout.asset_editor_open = true;
+            layout.dirty = true;
+        }
+    }
+
+    if pending_refresh {
+        if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+            ow.is_first_frame = true;
         }
     }
 

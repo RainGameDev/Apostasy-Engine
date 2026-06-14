@@ -52,6 +52,7 @@ pub struct ModelPushConstants {
     pub world_position: Vector3<f32>,
     pub world_scale: Vector3<f32>,
     pub world_rotation: Quaternion<f32>,
+    pub color_modifier: [f32; 4],
 }
 
 impl Default for ModelPushConstants {
@@ -60,6 +61,7 @@ impl Default for ModelPushConstants {
             world_position: Vector3::zero(),
             world_scale: Vector3::new(1.0, 1.0, 1.0),
             world_rotation: Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            color_modifier: [1.0, 1.0, 1.0, 1.0],
         }
     }
 }
@@ -68,17 +70,19 @@ impl ModelPushConstants {
     #[allow(unnecessary_transmutes)]
     pub fn return_renderable(&self) -> Vec<u8> {
         unsafe {
-            let mut data = Vec::with_capacity(128);
+            let mut data = Vec::with_capacity(64);
             let position: [u8; 12] = transmute(self.world_position);
             let scale: [u8; 12] = transmute(self.world_scale);
             let rotation: [u8; 16] = transmute(self.world_rotation);
+            let color: [u8; 16] = transmute(self.color_modifier);
             let pad: [u8; 4] = [0u8; 4];
             data.extend_from_slice(&position);
             data.extend_from_slice(&pad);
             data.extend_from_slice(&scale);
             data.extend_from_slice(&pad);
             data.extend_from_slice(&rotation);
-            data
+            data.extend_from_slice(&color);
+            data // 64 bytes total
         }
     }
 }

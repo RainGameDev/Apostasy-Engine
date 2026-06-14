@@ -5,6 +5,7 @@ use crate::rendering::lighting::gpu_light::{
     CSM_CASCADE_COUNT, GpuLight, MAX_LIGHTS, PointShadowData, ShadowData,
 };
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
+use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
@@ -74,6 +75,8 @@ pub struct VulkanRenderer {
     pub water_pipeline_layout: PipelineLayout,
     pub voxel_descriptor_pool: vk::DescriptorPool,
     pub voxel_descriptor_set_layout: vk::DescriptorSetLayout,
+
+    pub default_white_material: GpuMaterial,
 
     pub ui_renderer: UIRenderer,
     pub buffer_graveyard: Vec<(vk::Buffer, vk::DeviceMemory)>,
@@ -668,15 +671,8 @@ impl RenderingAPI for VulkanRenderer {
                 .offset(0)
                 .range(light_ssbo_size);
 
-            let pipeline_layout = context.device.create_pipeline_layout(
-                &PipelineLayoutCreateInfo::default()
-                    .push_constant_ranges(&[vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                        .offset(0)
-                        .size(176)])
-                    .set_layouts(&[light_descriptor_set_layout]),
-                None,
-            )?;
+            // Shared layout for any combined-image-sampler binding (material textures, voxel atlas,
+            // viewport preview). Created first so it can be referenced by pipeline_layout.
             let sampler_binding = vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -688,13 +684,25 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
 
+            // Pool for all sampler descriptor sets: voxel atlas, material textures, viewport.
+            // Up to 200 sets / 500 individual descriptors.
             let descriptor_pool = context.device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(200)
+                    .max_sets(500)
                     .pool_sizes(&[vk::DescriptorPoolSize {
                         ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                        descriptor_count: 100,
+                        descriptor_count: 500,
                     }]),
+                None,
+            )?;
+
+            let pipeline_layout = context.device.create_pipeline_layout(
+                &PipelineLayoutCreateInfo::default()
+                    .push_constant_ranges(&[vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .offset(0)
+                        .size(192)])
+                    .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
                 None,
             )?;
 
@@ -1336,6 +1344,61 @@ impl RenderingAPI for VulkanRenderer {
             context.device.destroy_shader_module(shadow_point_voxel_vert, None);
             context.device.destroy_shader_module(shadow_point_frag, None);
 
+            // 1×1 white RGBA pixel — used as the albedo texture when a mesh has no material.
+            let white_pixels: [u8; 4] = [255, 255, 255, 255];
+            let default_white_material = {
+                let size = 4u64;
+                let (staging_buf, staging_mem) = context.create_buffer(
+                    size,
+                    vk::BufferUsageFlags::TRANSFER_SRC,
+                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                )?;
+                let ptr = context.device.map_memory(staging_mem, 0, size, vk::MemoryMapFlags::empty())? as *mut u8;
+                ptr.copy_from_nonoverlapping(white_pixels.as_ptr(), 4);
+                context.device.unmap_memory(staging_mem);
+
+                let (white_image, white_memory) = context.create_image(
+                    vk::Extent2D { width: 1, height: 1 },
+                    vk::Format::R8G8B8A8_SRGB,
+                    vk::ImageTiling::OPTIMAL,
+                    vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    SampleCountFlags::TYPE_1,
+                )?;
+
+                let init_cmd = context.begin_single_time_commands(context.command_pool);
+                let sub = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
+                context.device.cmd_pipeline_barrier(init_cmd, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[],
+                    &[vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::UNDEFINED).new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).image(white_image).subresource_range(sub).src_access_mask(vk::AccessFlags::empty()).dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)]);
+                context.device.cmd_copy_buffer_to_image(init_cmd, staging_buf, white_image, vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers { aspect_mask: vk::ImageAspectFlags::COLOR, mip_level: 0, base_array_layer: 0, layer_count: 1 }).image_extent(vk::Extent3D { width: 1, height: 1, depth: 1 })]);
+                context.device.cmd_pipeline_barrier(init_cmd, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::DependencyFlags::empty(), &[], &[],
+                    &[vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL).image(white_image).subresource_range(sub).src_access_mask(vk::AccessFlags::TRANSFER_WRITE).dst_access_mask(vk::AccessFlags::SHADER_READ)]);
+                context.end_single_time_commands(init_cmd, context.queues[&context.queue_families.transfer], context.command_pool);
+                context.device.destroy_buffer(staging_buf, None);
+                context.device.free_memory(staging_mem, None);
+
+                let white_view = context.create_image_view(white_image, vk::Format::R8G8B8A8_SRGB, vk::ImageAspectFlags::COLOR)?;
+                let white_sampler = context.device.create_sampler(
+                    &vk::SamplerCreateInfo::default().mag_filter(vk::Filter::NEAREST).min_filter(vk::Filter::NEAREST)
+                        .address_mode_u(vk::SamplerAddressMode::REPEAT).address_mode_v(vk::SamplerAddressMode::REPEAT),
+                    None,
+                )?;
+                let white_ds = context.create_texture_descriptor_set(descriptor_pool, descriptor_set_layout, white_view, white_sampler);
+
+                GpuMaterial {
+                    albedo: Some(crate::rendering::shared::texture::GpuTexture {
+                        name: "default_white".to_string(),
+                        image: white_image,
+                        image_view: white_view,
+                        memory: white_memory,
+                        sampler: white_sampler,
+                        descriptor_set: white_ds,
+                    }),
+                    color: [1.0, 1.0, 1.0, 1.0],
+                }
+            };
+
             let renderer = VulkanRenderer {
                 current_image_index: 0,
                 in_flight_frames_count,
@@ -1354,6 +1417,7 @@ impl RenderingAPI for VulkanRenderer {
                 voxel_wireframe_pipeline,
                 voxel_descriptor_pool: descriptor_pool,
                 voxel_descriptor_set_layout: descriptor_set_layout,
+                default_white_material,
                 water_pipeline,
                 water_pipeline_layout,
                 buffer_graveyard: Vec::new(),
@@ -1752,8 +1816,12 @@ impl RenderingAPI for VulkanRenderer {
         mesh: Box<dyn GpuMesh>,
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
+        albedo_descriptor_set: Option<vk::DescriptorSet>,
     ) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
+        let albedo_ds = albedo_descriptor_set
+            .filter(|ds| *ds != vk::DescriptorSet::null())
+            .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
 
         unsafe {
             self.context.device.cmd_bind_pipeline(
@@ -1766,7 +1834,7 @@ impl RenderingAPI for VulkanRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &[self.light_descriptor_set],
+                &[self.light_descriptor_set, albedo_ds],
                 &[],
             );
 
@@ -1775,7 +1843,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 &data,
             );
@@ -1810,8 +1878,12 @@ impl RenderingAPI for VulkanRenderer {
         mesh: Box<dyn GpuMesh>,
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
+        albedo_descriptor_set: Option<vk::DescriptorSet>,
     ) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
+        let albedo_ds = albedo_descriptor_set
+            .filter(|ds| *ds != vk::DescriptorSet::null())
+            .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
 
         let mut data = push_constants.return_renderable();
         data.extend(model_push_constants.return_renderable());
@@ -1827,13 +1899,13 @@ impl RenderingAPI for VulkanRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &[self.light_descriptor_set],
+                &[self.light_descriptor_set, albedo_ds],
                 &[],
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
                 self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 &data,
             );

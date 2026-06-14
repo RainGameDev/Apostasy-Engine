@@ -25,6 +25,7 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
+use crate::rendering::shared::material::GpuMaterial;
 use crate::objects::component::InspectorRegistry;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
@@ -623,6 +624,20 @@ impl Core {
                         log_error!("Failed to begin viewport render: {}", e);
                     }
 
+                    // Build a name → GpuMaterial lookup for material_override on ModelRenderer.
+                    let gpu_mat_by_name: std::collections::HashMap<String, GpuMaterial> = {
+                        let mut map = std::collections::HashMap::new();
+                        for model in model_registry.paths.values() {
+                            for mesh in &model.meshes {
+                                if let Some(ref mat) = mesh.material {
+                                    map.entry(mesh.material_name.clone())
+                                        .or_insert_with(|| mat.clone());
+                                }
+                            }
+                        }
+                        map
+                    };
+
                     let object_ids: Vec<_> = world
                         .get_objects_with_component_with_ids::<ModelRenderer>()
                         .iter()
@@ -664,12 +679,26 @@ impl Core {
                         model_push.world_scale = transform.global_scale;
                         model_push.world_rotation = transform.global_rotation;
 
+                        let override_gpu_mat = model_renderer.material_override
+                            .as_ref()
+                            .and_then(|name| gpu_mat_by_name.get(name));
+
                         for mesh in &model.meshes {
+                            let effective_mat: Option<&GpuMaterial> =
+                                override_gpu_mat.or(mesh.material.as_ref());
+                            let albedo_ds = effective_mat
+                                .and_then(|m| m.albedo.as_ref())
+                                .map(|t| t.descriptor_set);
+                            let mut mesh_push = model_push.clone();
+                            if let Some(mat) = effective_mat {
+                                mesh_push.color_modifier = mat.color;
+                            }
                             if model_renderer.is_wireframe {
                                 if let Err(e) = renderer.wireframe_render(
                                     Box::new(mesh.clone()),
                                     push_constants.clone(),
-                                    &model_push,
+                                    &mesh_push,
+                                    albedo_ds,
                                 ) {
                                     log_error!("Failed to render wireframe: {}", e);
                                 }
@@ -677,7 +706,8 @@ impl Core {
                                 if let Err(e) = renderer.render(
                                     Box::new(mesh.clone()),
                                     push_constants.clone(),
-                                    &model_push,
+                                    &mesh_push,
+                                    albedo_ds,
                                 ) {
                                     log_error!("Failed to render model: {}", e);
                                 }
@@ -890,7 +920,7 @@ impl ApplicationHandler for Core {
             asset_manager.model_loader = model_loader;
 
             asset_manager
-                .load_models(Path::new("res/"), Arc::new(context.clone()), command_pool)
+                .load_models(Path::new("res/"), Arc::new(context.clone()), command_pool, descriptor_pool, descriptor_set_layout)
                 .unwrap();
 
             asset_manager
@@ -898,6 +928,8 @@ impl ApplicationHandler for Core {
                     Path::new(&format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/")),
                     Arc::new(context),
                     command_pool,
+                    descriptor_pool,
+                    descriptor_set_layout,
                 )
                 .unwrap();
 

@@ -4,6 +4,17 @@ layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
 
+layout(set = 1, binding = 0) uniform sampler2D albedoMap;
+
+layout(push_constant) uniform PushConstants {
+    mat4 mvp;
+    mat4 model;
+    vec3 pos;
+    vec3 scale;
+    vec4 rotation;
+    vec4 colorModifier;
+} pc;
+
 #define LIGHT_DIRECTIONAL 0u
 #define LIGHT_POINT       1u
 #define LIGHT_SPOT        2u
@@ -80,7 +91,7 @@ float compute_point_shadow(vec3 worldPos, vec3 N) {
 }
 
 vec3 compute_lighting(vec3 N) {
-    vec3 result = vec3(0.15);
+    vec3 result = vec3(0.00);
     for (uint i = 0u; i < light_buf.count; i++) {
         GpuLight light = light_buf.lights[i];
         vec3  L;
@@ -120,7 +131,8 @@ vec3 compute_lighting(vec3 N) {
 }
 
 void main() {
-    vec3 N     = normalize(fragNormal);
-    vec3 light = compute_lighting(N);
-    outColor   = vec4(vec3(0.8) * light, 1.0);
+    vec3 N      = normalize(fragNormal);
+    vec3 light  = compute_lighting(N);
+    vec4 albedo = texture(albedoMap, fragTexCoord) * pc.colorModifier;
+    outColor    = vec4(albedo.rgb * light, albedo.a);
 }
