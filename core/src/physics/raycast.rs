@@ -1,8 +1,9 @@
-use crate::objects::components::transform::Transform;
 use crate::objects::cell::ObjectId;
+use crate::objects::components::transform::Transform;
 use crate::objects::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;
+use crate::rendering::shared::model::Bvh;
 use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
 
 // Definition of a ray in a raycast, direction and start point
@@ -116,6 +117,7 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
                     radius: radius * scale.x.max(scale.z),
                     height: height * scale.y,
                 },
+                ColliderShape::Mesh { .. } => collider.shape.clone(),
             };
 
             let center = collider.world_center(position, rotation);
@@ -246,8 +248,6 @@ fn test_snapshot(
 
         ColliderShape::Capsule { radius, height } => {
             // Approximate as OBB for intersection, then refine normal.
-            // This is a reasonable trade-off for gameplay raycasts;
-            // swap for a full capsule analytic test if precision matters.
             let (t_enter, _, face) = ray_vs_obb(ray, snap.center, &snap.axes, snap.half_extents)?;
             let t = if t_enter >= 0.0 { t_enter } else { return None };
             if t > max_distance {
@@ -274,6 +274,15 @@ fn test_snapshot(
                 }
             };
             Some((t, point, normal, face))
+        }
+
+        ColliderShape::Mesh { bvh, .. } => {
+            let (t, normal) = ray_vs_mesh(ray, bvh, max_distance)?;
+            if t > max_distance {
+                return None;
+            }
+            let point = ray.origin + ray.direction * t;
+            Some((t, point, normal, 0))
         }
     }
 }
@@ -360,4 +369,82 @@ pub fn unproject(
     let world = inv_view_proj * clip;
     let world = Vector3::new(world.x / world.w, world.y / world.w, world.z / world.w);
     (world - camera_position).normalize()
+}
+
+fn ray_vs_mesh(ray: &Ray, bvh: &Bvh, max_distance: f32) -> Option<(f32, Vector3<f32>)> {
+    if bvh.nodes.is_empty() {
+        return None;
+    }
+
+    let identity = [
+        Vector3::new(1.0f32, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ];
+
+    let mut stack = vec![0u32];
+    let mut nearest_t = max_distance;
+    let mut nearest_normal: Option<Vector3<f32>> = None;
+
+    while let Some(idx) = stack.pop() {
+        let node = &bvh.nodes[idx as usize];
+        let center = (node.aabb_min + node.aabb_max) * 0.5;
+        let half = (node.aabb_max - node.aabb_min) * 0.5;
+
+        match ray_vs_obb(ray, center, &identity, half) {
+            None => continue,
+            Some((t_enter, _, _)) if t_enter > nearest_t => continue,
+            _ => {}
+        }
+
+        if node.left == 0 {
+            for i in node.tri_start..node.tri_start + node.tri_count {
+                if let Some((t, normal)) = ray_vs_triangle(ray, &bvh.triangles[i as usize]) {
+                    if t < nearest_t {
+                        nearest_t = t;
+                        nearest_normal = Some(normal);
+                    }
+                }
+            }
+        } else {
+            stack.push(node.left);
+            stack.push(node.right);
+        }
+    }
+
+    nearest_normal.map(|n| (nearest_t, n))
+}
+
+fn ray_vs_triangle(ray: &Ray, tri: &[Vector3<f32>; 3]) -> Option<(f32, Vector3<f32>)> {
+    let e1 = tri[1] - tri[0];
+    let e2 = tri[2] - tri[0];
+    let h = ray.direction.cross(e2);
+    let a = e1.dot(h);
+    if a.abs() < 1e-8 {
+        return None;
+    } // ray parallel to triangle
+
+    let f = 1.0 / a;
+    let s = ray.origin - tri[0];
+    let u = f * s.dot(h);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+
+    let q = s.cross(e1);
+    let v = f * ray.direction.dot(q);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+
+    let t = f * e2.dot(q);
+    if t < 1e-8 {
+        return None;
+    } // behind or at origin
+
+    let mut normal = e1.cross(e2).normalize();
+    if normal.dot(ray.direction) > 0.0 {
+        normal = -normal;
+    } // always face the ray
+    Some((t, normal))
 }

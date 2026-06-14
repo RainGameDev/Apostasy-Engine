@@ -5,16 +5,17 @@ use std::{
 
 use anyhow::Result;
 use ash::vk::{self, CommandPool, SampleCountFlags};
+use cgmath::Vector3;
 use hashbrown::HashMap;
 use walkdir::WalkDir;
 
 use crate::{
-    log, log_error,
     assets::loaders::material_loader::MaterialRegistry,
+    log, log_error,
     rendering::{
         shared::{
             material::GpuMaterial,
-            model::{GpuModel, Mesh},
+            model::{Bvh, GpuModel, Mesh},
             texture::GpuTexture,
             vertex::Vertex,
         },
@@ -96,6 +97,7 @@ pub fn load_model(
 
     let mut meshes = Vec::new();
 
+    let mut all_triangles: Vec<[Vector3<f32>; 3]> = Vec::new();
     for mesh in gltf.meshes() {
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -145,6 +147,16 @@ pub fn load_model(
                 material_registry,
             );
 
+            for chunk in indices.chunks(3) {
+                if let [i0, i1, i2] = *chunk {
+                    let p = |i: u32| {
+                        let p = positions[i as usize];
+                        Vector3::new(p[0], p[1], p[2])
+                    };
+                    all_triangles.push([p(i0), p(i1), p(i2)]);
+                }
+            }
+
             meshes.push(Mesh {
                 vertex_buffer: vertex_buffer.0,
                 vertex_buffer_memory: vertex_buffer.1,
@@ -157,7 +169,17 @@ pub fn load_model(
         }
     }
 
-    Ok(GpuModel { name, meshes })
+    let collision_bvh = if all_triangles.is_empty() {
+        None
+    } else {
+        Some(Arc::new(Bvh::build(all_triangles)))
+    };
+
+    Ok(GpuModel {
+        name,
+        meshes,
+        collision_bvh,
+    })
 }
 
 /// Resolves a mesh material: prefers a YAML-defined material by name, falls back
@@ -175,13 +197,30 @@ fn resolve_material(
     // YAML-defined material takes priority
     if let Some(yaml_mat) = material_registry.materials.get(material_name) {
         let texture = yaml_mat.albedo_path.as_deref().and_then(|path| {
-            upload_texture_from_path(path, material_name, context, command_pool, descriptor_pool, descriptor_set_layout)
+            upload_texture_from_path(
+                path,
+                material_name,
+                context,
+                command_pool,
+                descriptor_pool,
+                descriptor_set_layout,
+            )
         });
-        return Some(GpuMaterial { albedo: texture, color: yaml_mat.color });
+        return Some(GpuMaterial {
+            albedo: texture,
+            color: yaml_mat.color,
+        });
     }
 
     // Fall back to glTF embedded material
-    from_gltf_material(gltf_mat, images, context, command_pool, descriptor_pool, descriptor_set_layout)
+    from_gltf_material(
+        gltf_mat,
+        images,
+        context,
+        command_pool,
+        descriptor_pool,
+        descriptor_set_layout,
+    )
 }
 
 fn from_gltf_material(
@@ -208,7 +247,8 @@ fn from_gltf_material(
                 command_pool,
                 descriptor_pool,
                 descriptor_set_layout,
-            ).ok()
+            )
+            .ok()
         })
     });
 
@@ -244,7 +284,8 @@ fn upload_texture_from_path(
         command_pool,
         descriptor_pool,
         descriptor_set_layout,
-    ).ok()
+    )
+    .ok()
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
@@ -311,34 +352,56 @@ fn upload_texture_from_pixels(
 
     let cmd = context.begin_single_time_commands(command_pool);
     unsafe {
-        context.device.cmd_pipeline_barrier(cmd,
-            vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER,
-            vk::DependencyFlags::empty(), &[], &[],
+        context.device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
             &[vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::UNDEFINED)
                 .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .image(image).subresource_range(sub)
+                .image(image)
+                .subresource_range(sub)
                 .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)]);
+                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)],
+        );
 
-        context.device.cmd_copy_buffer_to_image(cmd, staging_buffer, image,
+        context.device.cmd_copy_buffer_to_image(
+            cmd,
+            staging_buffer,
+            image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &[vk::BufferImageCopy::default()
                 .image_subresource(vk::ImageSubresourceLayers {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
-                    mip_level: 0, base_array_layer: 0, layer_count: 1,
+                    mip_level: 0,
+                    base_array_layer: 0,
+                    layer_count: 1,
                 })
-                .image_extent(vk::Extent3D { width, height, depth: 1 })]);
+                .image_extent(vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                })],
+        );
 
-        context.device.cmd_pipeline_barrier(cmd,
-            vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER,
-            vk::DependencyFlags::empty(), &[], &[],
+        context.device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
             &[vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                 .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image(image).subresource_range(sub)
+                .image(image)
+                .subresource_range(sub)
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ)]);
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)],
+        );
     }
     let queue = context.queues[&context.queue_families.transfer];
     context.end_single_time_commands(cmd, queue, command_pool);
@@ -348,7 +411,11 @@ fn upload_texture_from_pixels(
         context.device.free_memory(staging_memory, None);
     }
 
-    let image_view = context.create_image_view(image, vk::Format::R8G8B8A8_SRGB, vk::ImageAspectFlags::COLOR)?;
+    let image_view = context.create_image_view(
+        image,
+        vk::Format::R8G8B8A8_SRGB,
+        vk::ImageAspectFlags::COLOR,
+    )?;
 
     let sampler = unsafe {
         context.device.create_sampler(
@@ -365,7 +432,10 @@ fn upload_texture_from_pixels(
     };
 
     let descriptor_set = context.create_texture_descriptor_set(
-        descriptor_pool, descriptor_set_layout, image_view, sampler,
+        descriptor_pool,
+        descriptor_set_layout,
+        image_view,
+        sampler,
     );
 
     Ok(GpuTexture {

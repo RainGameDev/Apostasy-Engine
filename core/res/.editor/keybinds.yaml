@@ -1,36 +1,12 @@
 keybinds:
-  SnapModifier:
-    key: ShiftLeft
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Duplicate:
-    key: KeyD
+  Copy:
+    key: KeyC
     action: Press
     modifiers:
       ctrl: true
       shift: false
       alt: false
     context: null
-  Undo:
-    key: KeyZ
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  GizmoRotate:
-    key: KeyR
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: viewport
   Reload Shaders:
     key: F5
     action: Press
@@ -47,38 +23,38 @@ keybinds:
       shift: false
       alt: false
     context: null
-  GizmoScale:
-    key: KeyS
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: viewport
-  Redo:
-    key: KeyY
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  Backwards:
-    key: KeyS
+  SnapModifier:
+    key: ShiftLeft
     action: Hold
     modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
-  GizmoTranslate:
-    key: KeyG
+  FocusObject:
+    key: KeyF
     action: Press
     modifiers:
       ctrl: false
       shift: false
       alt: false
-    context: viewport
+    context: null
+  Save:
+    key: KeyS
+    action: Hold
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Duplicate:
+    key: KeyD
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
   Downwards:
     key: KeyQ
     action: Hold
@@ -87,8 +63,8 @@ keybinds:
       shift: false
       alt: false
     context: null
-  Forwards:
-    key: KeyW
+  Backwards:
+    key: KeyS
     action: Hold
     modifiers:
       ctrl: false
@@ -103,32 +79,24 @@ keybinds:
       shift: false
       alt: false
     context: null
-  Left:
-    key: KeyA
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Save:
-    key: KeyS
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: true
-      alt: false
-    context: null
-  FocusObject:
-    key: KeyF
+  Redo:
+    key: KeyY
     action: Press
     modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Forwards:
+    key: KeyW
+    action: Hold
+    modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
-  Copy:
-    key: KeyC
+  Paste:
+    key: KeyV
     action: Press
     modifiers:
       ctrl: true
@@ -143,14 +111,22 @@ keybinds:
       shift: true
       alt: false
     context: null
-  Paste:
-    key: KeyV
+  GizmoRotate:
+    key: KeyR
     action: Press
     modifiers:
-      ctrl: true
+      ctrl: false
       shift: false
       alt: false
-    context: null
+    context: viewport
+  GizmoScale:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
   Jump:
     key: Space
     action: Press
@@ -159,17 +135,41 @@ keybinds:
       shift: false
       alt: false
     context: null
-mousebinds:
-  MiddleMouseClick:
-    key: Middle
+  GizmoTranslate:
+    key: KeyG
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  Undo:
+    key: KeyZ
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Left:
+    key: KeyA
     action: Hold
     modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
+mousebinds:
   RightMousePress:
     key: Right
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  MouseClick:
+    key: Left
     action: Press
     modifiers:
       ctrl: false
@@ -184,9 +184,9 @@ mousebinds:
       shift: false
       alt: false
     context: null
-  MouseClick:
-    key: Left
-    action: Press
+  MiddleMouseClick:
+    key: Middle
+    action: Hold
     modifiers:
       ctrl: false
       shift: false

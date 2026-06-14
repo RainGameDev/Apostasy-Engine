@@ -655,6 +655,23 @@ pub fn collider_gizmo(
                 }
             }
         }
+        ColliderShape::Mesh { bvh, .. } => {
+            if bvh.nodes.is_empty() {
+                return; // not yet resolved from model registry
+            }
+
+            // triangles are already baked to world space at resolve time
+            for tri in &bvh.triangles {
+                for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                    if let (Some(pa), Some(pb)) = (
+                        project(tri[a], view_proj, frame_rect),
+                        project(tri[b], view_proj, frame_rect),
+                    ) {
+                        painter.line_segment([pa, pb], stroke);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -784,9 +801,15 @@ pub fn light_gizmos(
                             .filter_map(|j| {
                                 let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
                                 let wp = match axis {
-                                    0 => pos + Vector3::new(0.0, radius * a.cos(), radius * a.sin()),
-                                    1 => pos + Vector3::new(radius * a.cos(), 0.0, radius * a.sin()),
-                                    _ => pos + Vector3::new(radius * a.cos(), radius * a.sin(), 0.0),
+                                    0 => {
+                                        pos + Vector3::new(0.0, radius * a.cos(), radius * a.sin())
+                                    }
+                                    1 => {
+                                        pos + Vector3::new(radius * a.cos(), 0.0, radius * a.sin())
+                                    }
+                                    _ => {
+                                        pos + Vector3::new(radius * a.cos(), radius * a.sin(), 0.0)
+                                    }
                                 };
                                 project(wp, view_proj, frame_rect)
                             })
@@ -797,7 +820,8 @@ pub fn light_gizmos(
                     }
                 }
                 LightType::Spot { length, angle } => {
-                    let fwd = (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
+                    let fwd =
+                        (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
                     let base_r = (angle.to_radians() / 2.0).tan() * length;
                     let base_c = pos + fwd * *length;
                     let (p1, p2) = ring_perps_from_dir(fwd);
@@ -830,7 +854,8 @@ pub fn light_gizmos(
                 }
                 LightType::Directional => {
                     // 3 parallel arrows in the light's forward direction
-                    let fwd = (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
+                    let fwd =
+                        (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
                     let (p1, _) = ring_perps_from_dir(fwd);
                     for offset in [-1.5_f32, 0.0, 1.5] {
                         let start = pos + p1 * offset;

@@ -1,21 +1,39 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use apostasy_macros::{Component, Inspect, update};
 use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
-use egui::ComboBox;
+use egui::{ComboBox, DragAndDrop};
 
 use crate::{
     objects::{cell::ObjectId, component::Inspect, components::transform::Transform, world::World},
     physics::velocity::Velocity,
+    rendering::shared::model::Bvh,
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
 /// The geometric shape used for collision detection.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ColliderShape {
-    Cuboid { size: Vector3<f32> },
-    Sphere { radius: f32 },
-    Capsule { radius: f32, height: f32 },
-    Cylinder { radius: f32, height: f32 },
+    Cuboid {
+        size: Vector3<f32>,
+    },
+    Sphere {
+        radius: f32,
+    },
+    Capsule {
+        radius: f32,
+        height: f32,
+    },
+    Cylinder {
+        radius: f32,
+        height: f32,
+    },
+    Mesh {
+        triangles: Arc<Vec<[Vector3<f32>; 3]>>,
+        bvh: Arc<Bvh>,
+        model_path: String,
+    },
 }
 
 impl ColliderShape {
@@ -29,6 +47,13 @@ impl ColliderShape {
             ColliderShape::Cylinder { radius, height } => {
                 Vector3::new(*radius, height * 0.5, *radius)
             }
+            ColliderShape::Mesh { bvh, .. } => {
+                if bvh.nodes.is_empty() {
+                    Vector3::new(0.0, 0.0, 0.0)
+                } else {
+                    (bvh.nodes[0].aabb_max - bvh.nodes[0].aabb_min) * 0.5
+                }
+            }
         }
     }
 
@@ -39,6 +64,11 @@ impl ColliderShape {
             ColliderShape::Sphere { radius } => "Sphere".into(),
             ColliderShape::Capsule { radius, height } => "Capsule".into(),
             ColliderShape::Cylinder { radius, height } => "Cylinder".into(),
+            ColliderShape::Mesh {
+                triangles,
+                bvh,
+                model_path,
+            } => "Mesh".into(),
         }
     }
 }
@@ -89,6 +119,15 @@ impl Inspect for Collider {
                                 height: 2.0,
                             },
                             "Cylinder",
+                        );
+                        ui.selectable_value(
+                            &mut self.shape,
+                            ColliderShape::Mesh {
+                                triangles: Arc::new(Vec::new()),
+                                bvh: Arc::new(Bvh::empty()),
+                                model_path: "".into(),
+                            },
+                            "Mesh",
                         );
                     });
             });
@@ -168,6 +207,35 @@ impl Inspect for Collider {
                         );
                     });
                 }
+
+                ColliderShape::Mesh { model_path, .. } => {
+                    let row_h = 20.0;
+                    let has_model_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
+                    let mut disp_model_path = model_path.clone();
+                    let inner = ui.horizontal(|ui| {
+                        ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Model"));
+                        ui.add_sized(
+                            [ui.available_width(), row_h],
+                            egui::TextEdit::singleline(&mut disp_model_path)
+                                .hint_text("drag a model here…"),
+                        )
+                    });
+                    let te_resp = inner.inner;
+                    let is_hovering = has_model_drag && ui.rect_contains_pointer(te_resp.rect);
+                    if is_hovering {
+                        ui.painter().rect_stroke(
+                            te_resp.rect.expand(2.0),
+                            3.0,
+                            egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 200, 140)),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                    if let Some(payload) = te_resp.dnd_release_payload::<String>() {
+                        if let Some(name) = payload.strip_prefix("model:") {
+                            *model_path = name.to_string();
+                        }
+                    }
+                }
             }
         });
     }
@@ -203,6 +271,15 @@ impl Collider {
             "Cylinder" => ColliderShape::Cylinder {
                 radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32,
                 height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
+            },
+            "Mesh" => ColliderShape::Mesh {
+                model_path: value
+                    .get("model_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                triangles: Arc::new(Vec::new()),
+                bvh: Arc::new(Bvh::empty()),
             },
             _ => {
                 let size = value
@@ -302,6 +379,39 @@ impl Collider {
             (ColliderShape::Sphere { radius: ra }, ColliderShape::Sphere { radius: rb }) => {
                 return sphere_vs_sphere(center_a, *ra, center_b, *rb);
             }
+
+            (ColliderShape::Sphere { radius }, ColliderShape::Mesh { bvh, .. }) => {
+                return sphere_vs_mesh(center_a, *radius, bvh);
+            }
+            (ColliderShape::Capsule { radius, height }, ColliderShape::Mesh { bvh, .. }) => {
+                let half_h = *height * 0.5;
+                let up = rotate_vector(rotation_a, Vector3::new(0.0, 1.0, 0.0));
+                return capsule_vs_mesh(
+                    center_a + up * half_h,
+                    center_a - up * half_h,
+                    *radius,
+                    bvh,
+                );
+            }
+            (ColliderShape::Mesh { bvh, .. }, ColliderShape::Sphere { radius }) => {
+                return sphere_vs_mesh(center_b, *radius, bvh).map(|v| -v);
+            }
+            (ColliderShape::Mesh { bvh, .. }, ColliderShape::Capsule { radius, height }) => {
+                let half_h = *height * 0.5;
+                let up = rotate_vector(rotation_b, Vector3::new(0.0, 1.0, 0.0));
+                return capsule_vs_mesh(
+                    center_b + up * half_h,
+                    center_b - up * half_h,
+                    *radius,
+                    bvh,
+                )
+                .map(|v| -v);
+            }
+            // cuboid/cylinder vs mesh, or mesh vs mesh — not supported, skip
+            (ColliderShape::Mesh { .. }, _) | (_, ColliderShape::Mesh { .. }) => {
+                return None;
+            }
+
             (ColliderShape::Sphere { radius }, _) => {
                 return sphere_vs_obb(center_a, *radius, center_b, &axes_b, half_b);
             }
@@ -310,6 +420,7 @@ impl Collider {
             }
             _ => {}
         }
+
         let mut min_overlap = f32::MAX;
         let mut min_axis = Vector3::new(0.0f32, 0.0, 0.0);
         let face_axes: [Vector3<f32>; 6] = [
@@ -449,6 +560,7 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
                     radius: radius * scale.x.max(scale.z),
                     height: height * scale.y,
                 },
+                ColliderShape::Mesh { .. } => collider.shape.clone(),
             };
 
             Some(Snapshot {
@@ -883,4 +995,293 @@ fn sphere_vs_obb(
         Vector3::new(0.0, 1.0, 0.0)
     };
     Some(normal * (radius - dist))
+}
+
+fn capsule_vs_mesh(
+    seg_a: Vector3<f32>,
+    seg_b: Vector3<f32>,
+    radius: f32,
+    bvh: &Bvh,
+) -> Option<Vector3<f32>> {
+    if bvh.nodes.is_empty() {
+        return None;
+    }
+    // AABB of the full capsule for BVH pruning
+    let cap_min = Vector3::new(
+        seg_a.x.min(seg_b.x) - radius,
+        seg_a.y.min(seg_b.y) - radius,
+        seg_a.z.min(seg_b.z) - radius,
+    );
+    let cap_max = Vector3::new(
+        seg_a.x.max(seg_b.x) + radius,
+        seg_a.y.max(seg_b.y) + radius,
+        seg_a.z.max(seg_b.z) + radius,
+    );
+
+    let mut stack = vec![0u32];
+    let mut deepest: Option<Vector3<f32>> = None;
+    let mut max_depth = 0.0f32;
+
+    while let Some(idx) = stack.pop() {
+        let node = &bvh.nodes[idx as usize];
+
+        if !aabb_overlaps_aabb(node.aabb_min, node.aabb_max, cap_min, cap_max) {
+            continue;
+        }
+
+        if node.left == 0 {
+            for i in node.tri_start..node.tri_start + node.tri_count {
+                let tri = &bvh.triangles[i as usize];
+                let (closest_seg, closest_tri) = closest_points_segment_triangle(seg_a, seg_b, tri);
+                let diff = closest_seg - closest_tri;
+                let dist2 = diff.magnitude2();
+                if dist2 < radius * radius {
+                    let dist = dist2.sqrt();
+                    let depth = radius - dist;
+                    if depth > max_depth {
+                        max_depth = depth;
+                        let normal = if dist > 1e-10 {
+                            diff / dist
+                        } else {
+                            triangle_normal(tri)
+                        };
+                        deepest = Some(normal * depth);
+                    }
+                }
+            }
+        } else {
+            stack.push(node.left);
+            stack.push(node.right);
+        }
+    }
+
+    deepest
+}
+
+fn sphere_vs_mesh(center: Vector3<f32>, radius: f32, bvh: &Bvh) -> Option<Vector3<f32>> {
+    if bvh.nodes.is_empty() {
+        return None;
+    }
+    let mut stack = vec![0u32];
+    let mut deepest: Option<Vector3<f32>> = None;
+    let mut max_depth = 0.0f32;
+
+    while let Some(idx) = stack.pop() {
+        let node = &bvh.nodes[idx as usize];
+
+        // prune: sphere AABB vs node AABB
+        if !aabb_overlaps_sphere(node.aabb_min, node.aabb_max, center, radius) {
+            continue;
+        }
+
+        if node.left == 0 {
+            // leaf — test each triangle
+            for i in node.tri_start..node.tri_start + node.tri_count {
+                let tri = &bvh.triangles[i as usize];
+                let closest = closest_point_on_triangle(center, tri);
+                let diff = center - closest;
+                let dist2 = diff.magnitude2();
+                if dist2 < radius * radius {
+                    let dist = dist2.sqrt();
+                    let depth = radius - dist;
+                    if depth > max_depth {
+                        max_depth = depth;
+                        let normal = if dist > 1e-10 {
+                            diff / dist
+                        } else {
+                            triangle_normal(tri)
+                        };
+                        deepest = Some(normal * depth);
+                    }
+                }
+            }
+        } else {
+            stack.push(node.left);
+            stack.push(node.right);
+        }
+    }
+
+    deepest
+}
+
+fn aabb_overlaps_sphere(
+    min: Vector3<f32>,
+    max: Vector3<f32>,
+    center: Vector3<f32>,
+    radius: f32,
+) -> bool {
+    let closest = Vector3::new(
+        center.x.clamp(min.x, max.x),
+        center.y.clamp(min.y, max.y),
+        center.z.clamp(min.z, max.z),
+    );
+    (center - closest).magnitude2() <= radius * radius
+}
+
+fn aabb_overlaps_aabb(
+    min_a: Vector3<f32>,
+    max_a: Vector3<f32>,
+    min_b: Vector3<f32>,
+    max_b: Vector3<f32>,
+) -> bool {
+    min_a.x <= max_b.x
+        && max_a.x >= min_b.x
+        && min_a.y <= max_b.y
+        && max_a.y >= min_b.y
+        && min_a.z <= max_b.z
+        && max_a.z >= min_b.z
+}
+
+fn triangle_normal(tri: &[Vector3<f32>; 3]) -> Vector3<f32> {
+    let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
+    if n.magnitude2() > 1e-10 {
+        n.normalize()
+    } else {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+}
+
+// Christer Ericson's closest point on triangle algorithm
+fn closest_point_on_triangle(p: Vector3<f32>, tri: &[Vector3<f32>; 3]) -> Vector3<f32> {
+    let (a, b, c) = (tri[0], tri[1], tri[2]);
+    let ab = b - a;
+    let ac = c - a;
+    let ap = p - a;
+    let d1 = ab.dot(ap);
+    let d2 = ac.dot(ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+
+    let bp = p - b;
+    let d3 = ab.dot(bp);
+    let d4 = ac.dot(bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+
+    let cp = p - c;
+    let d5 = ab.dot(cp);
+    let d6 = ac.dot(cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        return a + ab * (d1 / (d1 - d3));
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        return a + ac * (d2 / (d2 - d6));
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+    }
+    let denom = 1.0 / (va + vb + vc);
+    a + ab * (vb * denom) + ac * (vc * denom)
+}
+
+// Returns (closest point on segment, closest point on triangle)
+fn closest_points_segment_triangle(
+    seg_a: Vector3<f32>,
+    seg_b: Vector3<f32>,
+    tri: &[Vector3<f32>; 3],
+) -> (Vector3<f32>, Vector3<f32>) {
+    let mut best_dist2 = f32::MAX;
+    let mut best = (seg_a, tri[0]);
+
+    // capsule endpoint A vs triangle
+    let q = closest_point_on_triangle(seg_a, tri);
+    let d2 = (seg_a - q).magnitude2();
+    if d2 < best_dist2 {
+        best_dist2 = d2;
+        best = (seg_a, q);
+    }
+
+    // capsule endpoint B vs triangle
+    let q = closest_point_on_triangle(seg_b, tri);
+    let d2 = (seg_b - q).magnitude2();
+    if d2 < best_dist2 {
+        best_dist2 = d2;
+        best = (seg_b, q);
+    }
+
+    // capsule segment vs each triangle edge
+    let edges = [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])];
+    for (e0, e1) in edges {
+        let (ps, pt) = closest_points_segment_segment(seg_a, seg_b, e0, e1);
+        let d2 = (ps - pt).magnitude2();
+        if d2 < best_dist2 {
+            best_dist2 = d2;
+            best = (ps, pt);
+        }
+    }
+
+    best
+}
+
+fn closest_point_on_segment(a: Vector3<f32>, b: Vector3<f32>, p: Vector3<f32>) -> Vector3<f32> {
+    let ab = b - a;
+    let t = (p - a).dot(ab) / ab.magnitude2().max(1e-10);
+    a + ab * t.clamp(0.0, 1.0)
+}
+
+fn closest_points_segment_segment(
+    p1: Vector3<f32>,
+    p2: Vector3<f32>,
+    p3: Vector3<f32>,
+    p4: Vector3<f32>,
+) -> (Vector3<f32>, Vector3<f32>) {
+    let d1 = p2 - p1;
+    let d2 = p4 - p3;
+    let r = p1 - p3;
+    let a = d1.magnitude2();
+    let e = d2.magnitude2();
+    let f = d2.dot(r);
+
+    let (s, t) = if a <= 1e-10 {
+        (0.0f32, (f / e).clamp(0.0, 1.0))
+    } else {
+        let c = d1.dot(r);
+        if e <= 1e-10 {
+            ((-c / a).clamp(0.0, 1.0), 0.0)
+        } else {
+            let b_dot = d1.dot(d2);
+            let denom = a * e - b_dot * b_dot;
+            let s = if denom > 1e-10 {
+                ((b_dot * f - c * e) / denom).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let t = (b_dot * s + f) / e;
+            if t < 0.0 {
+                ((-c / a).clamp(0.0, 1.0), 0.0)
+            } else if t > 1.0 {
+                (((b_dot - c) / a).clamp(0.0, 1.0), 1.0)
+            } else {
+                (s, t)
+            }
+        }
+    };
+
+    (p1 + d1 * s, p3 + d2 * t)
+}
+
+/// Calculated the AABB of a triangle.
+pub fn triangle_aabb(tris: &[[Vector3<f32>; 3]]) -> (Vector3<f32>, Vector3<f32>) {
+    let mut min = Vector3::new(f32::MAX, f32::MAX, f32::MAX);
+    let mut max = Vector3::new(f32::MIN, f32::MIN, f32::MIN);
+    for tri in tris {
+        for v in tri {
+            min.x = min.x.min(v.x);
+            min.y = min.y.min(v.y);
+            min.z = min.z.min(v.z);
+            max.x = max.x.max(v.x);
+            max.y = max.y.max(v.y);
+            max.z = max.z.max(v.z);
+        }
+    }
+    (min, max)
 }

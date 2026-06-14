@@ -19,7 +19,11 @@ use crate::{
         collider::{Collider, ColliderShape},
         velocity::Velocity,
     },
-    rendering::components::{camera::Camera, lighting::{Light, LightType}, model_renderer::ModelRenderer},
+    rendering::components::{
+        camera::Camera,
+        lighting::{Light, LightType},
+        model_renderer::ModelRenderer,
+    },
 };
 
 fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
@@ -79,6 +83,11 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
                     map.insert("shape".into(), "Cylinder".into());
                     map.insert("radius".into(), (*radius as f64).into());
                     map.insert("height".into(), (*height as f64).into());
+                }
+
+                ColliderShape::Mesh { model_path, .. } => {
+                    map.insert("shape".into(), "Mesh".into());
+                    map.insert("model_path".into(), model_path.clone().into());
                 }
             }
             map.insert("offset".into(), vec3_to_yaml(col.offset));
