@@ -52,7 +52,7 @@ float attenuate(float dist, float radius) {
   return clamp(1.0 - r * r, 0.0, 1.0);
 }
 
-float compute_shadow(vec3 worldPos, vec3 N) {
+float compute_shadow(vec3 worldPos) {
   if (light_buf.shadow_enabled == 0u) return 0.0;
 
   int cascade = 0;
@@ -70,12 +70,7 @@ float compute_shadow(vec3 worldPos, vec3 N) {
   sc.xy = sc.xy * 0.5 + 0.5;
   if (sc.z > 1.0 || sc.z < 0.0 || sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0)
     return 0.0;
-  vec3 L = light_buf.shadow_enabled == 2u
-    ? normalize(-light_buf.camera_world_dir.xyz)
-    : normalize(light_buf.lights[light_buf.shadow_light_index].position.xyz - worldPos);
-  float cosTheta = clamp(dot(N, L), 0.0, 1.0);
-  float bias = mix(0.005, 0.0005, cosTheta);
-  return 1.0 - texture(shadowMap, vec4(sc.xy, float(cascade), sc.z - bias));
+  return 1.0 - texture(shadowMap, vec4(sc.xy, float(cascade), sc.z));
 }
 
 float compute_point_shadow(vec3 worldPos, vec3 N) {
@@ -122,7 +117,7 @@ vec3 compute_lighting(vec3 N) {
     float diff   = max(dot(N, L), 0.0);
     float shadow = 0.0;
     if (i == light_buf.shadow_light_index && light_buf.shadow_enabled != 0u) {
-      shadow = compute_shadow(fragWorldPos, N);
+      shadow = compute_shadow(fragWorldPos);
     } else if (i == light_buf.point_shadow_light_index && light_buf.point_shadow_enabled != 0u) {
       shadow = compute_point_shadow(fragWorldPos, N);
     }

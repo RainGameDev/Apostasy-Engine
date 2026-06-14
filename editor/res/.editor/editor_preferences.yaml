@@ -1,11 +1,11 @@
 theme: GruvboxDarkHard
 font_size: 13
 active_font: firacode
-camera_speed: 170.0
+camera_speed: 21.0
 render_distance: 9
-shadow_distance: 1024.0
+shadow_distance: 8.0
 cascade_count: 4
-bias_constant: 7.3
+bias_constant: 0.0
 bias_slope: 0.0
-shadow_map_size: 4096
+shadow_map_size: 2048
 last_scene: default_4x4
