@@ -1,78 +1,6 @@
 keybinds:
-  Left:
-    key: KeyA
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  GizmoRotate:
-    key: KeyR
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Jump:
-    key: Space
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Paste:
-    key: KeyV
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  FocusObject:
-    key: KeyF
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Duplicate:
-    key: KeyD
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Redo:
-    key: KeyY
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Forwards:
-    key: KeyW
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  ControlModifier:
-    key: ControlLeft
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Downwards:
-    key: KeyQ
+  SnapModifier:
+    key: ShiftLeft
     action: Hold
     modifiers:
       ctrl: false
@@ -87,41 +15,33 @@ keybinds:
       shift: false
       alt: false
     context: null
-  GizmoScale:
-    key: KeyE
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  GizmoTranslate:
-    key: KeyG
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Right:
-    key: KeyD
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
   Copy:
     key: KeyC
     action: Press
     modifiers:
-      ctrl: false
+      ctrl: true
       shift: false
       alt: false
     context: null
-  Undo:
-    key: KeyZ
-    action: Press
+  SaveAs:
+    key: KeyS
+    action: Hold
+    modifiers:
+      ctrl: true
+      shift: true
+      alt: false
+    context: null
+  Save:
+    key: KeyS
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: true
+      alt: false
+    context: null
+  Downwards:
+    key: KeyQ
+    action: Hold
     modifiers:
       ctrl: false
       shift: false
@@ -135,8 +55,96 @@ keybinds:
       shift: false
       alt: false
     context: null
-  SnapModifier:
-    key: ShiftLeft
+  GizmoRotate:
+    key: KeyR
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  Duplicate:
+    key: KeyD
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Undo:
+    key: KeyZ
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  FocusObject:
+    key: KeyF
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  GizmoTranslate:
+    key: KeyG
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  Left:
+    key: KeyA
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Redo:
+    key: KeyY
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  GizmoScale:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  Right:
+    key: KeyD
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Paste:
+    key: KeyV
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Jump:
+    key: Space
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Forwards:
+    key: KeyW
     action: Hold
     modifiers:
       ctrl: false
@@ -146,6 +154,14 @@ keybinds:
 mousebinds:
   RightMousePress:
     key: Right
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  MouseClick:
+    key: Left
     action: Press
     modifiers:
       ctrl: false
@@ -163,14 +179,6 @@ mousebinds:
   RightMouseClick:
     key: Right
     action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  MouseClick:
-    key: Left
-    action: Press
     modifiers:
       ctrl: false
       shift: false

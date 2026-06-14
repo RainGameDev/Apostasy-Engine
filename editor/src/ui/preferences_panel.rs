@@ -690,6 +690,8 @@ const KEYBIND_DISPLAY: &[(&str, &str)] = &[
     ("Copy", "Copy"),
     ("Paste", "Paste"),
     ("Duplicate", "Duplicate"),
+    ("Save", "Save"),
+    ("SaveAs", "Save As"),
 ];
 
 /// Returns the display label of the first other keybind that shares the same

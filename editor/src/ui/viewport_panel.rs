@@ -10,7 +10,10 @@ use apostasy_core::{
     },
     physics::collider::Collider,
     rendering::{
-        components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
+        components::{
+            camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
+            lighting::Light,
+        },
         shared::{UpdateRenderer, anti_alisaing::{AntiAliasing, AntiAliasingAmount}},
     },
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
@@ -202,6 +205,27 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let drag_start_transform = gizmo_state.drag.as_ref().map(|d| d.start_transform.clone());
     let had_drag = gizmo_state.drag.is_some();
 
+    // Collect light data for billboard gizmos (cloned so world isn't borrowed in closure)
+    let light_selected_id = world.get_resource::<CellSearchState>().ok().and_then(|s| s.selected_obj);
+    let light_view_proj: Option<apostasy_core::cgmath::Matrix4<f32>> = (|| {
+        let cam_objs = world.get_objects_with_component::<Camera>();
+        let cam_obj = cam_objs.first()?;
+        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
+        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let aspect = world.get_resource::<ViewportSize>().map(|v| v.logical_width / v.logical_height).unwrap_or(1.0);
+        Some(get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t))
+    })();
+    let light_entries: Vec<(ObjectId, Transform, apostasy_core::rendering::components::lighting::LightType, Vector3<f32>)> =
+        world.get_objects_with_component_with_ids::<Light>()
+            .into_iter()
+            .filter_map(|(id, obj)| {
+                let t = obj.get_component::<Transform>().ok()?.clone();
+                let l = obj.get_component::<Light>().ok()?;
+                Some((id, t, l.light_type, l.color))
+            })
+            .collect();
+    let mut light_clicked: Option<ObjectId> = None;
+
     // Activate the "viewport" context when the viewport is hovered and no text
     // field has keyboard focus. Gizmo keybinds are registered with this context
     // so they automatically suppress themselves in all other situations.
@@ -384,6 +408,22 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 }
             }
 
+            if let Some(vp_mat) = light_view_proj {
+                let consuming = new_gizmo_state_from_fn.as_ref()
+                    .map(|s| s.consuming)
+                    .unwrap_or(gizmo_state.consuming);
+                if let Some(id) = crate::ui::gizmo::light_gizmos(
+                    ui,
+                    &light_entries,
+                    vp_mat,
+                    frame_rect,
+                    light_selected_id,
+                    consuming,
+                ) {
+                    light_clicked = Some(id);
+                }
+            }
+
             if ctx_obj_id.is_some() {
                 frame_resp.context_menu(|ui| {
                     ui.set_min_width(190.0);
@@ -476,6 +516,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
             if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
                 s.visible = true;
             }
+        }
+    }
+
+    if let Some(id) = light_clicked {
+        if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+            s.selected_obj = Some(id);
+        }
+        if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
+            s.visible = true;
         }
     }
 

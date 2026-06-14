@@ -291,8 +291,16 @@ impl InputManager {
                     || (bind.repeat.is_some() && self.keys_repeat.contains(&bind.key))
             }
             KeyAction::Release => self.keys_released.contains(&bind.key),
-            // Hold only checks whether the key is currently down,  no modifier matching
-            KeyAction::Hold => return self.keys_held.contains(&bind.key),
+            KeyAction::Hold => {
+                if !self.keys_held.contains(&bind.key) {
+                    return false;
+                }
+                if is_modifier_key(&bind.key) {
+                    return true;
+                }
+                let requires_modifier = bind.modifiers.ctrl || bind.modifiers.shift || bind.modifiers.alt;
+                return !requires_modifier || self.modifier_state() == bind.modifiers;
+            }
         };
         if !key_active {
             return false;

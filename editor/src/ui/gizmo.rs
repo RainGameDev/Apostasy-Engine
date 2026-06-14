@@ -1,8 +1,9 @@
 use apostasy_core::{
     cgmath::{InnerSpace, Matrix3, Matrix4, Rotation3, Vector3, Vector4},
     egui::{self, Color32, Pos2, Stroke, Vec2},
-    objects::components::transform::Transform,
+    objects::{cell::ObjectId, components::transform::Transform},
     physics::collider::{Collider, ColliderShape},
+    rendering::components::lighting::LightType,
 };
 use apostasy_macros::Resource;
 
@@ -299,15 +300,42 @@ pub fn gizmo(
                     } else {
                         raw_deg
                     };
-                    let q = apostasy_core::cgmath::Quaternion::from_axis_angle(
-                        drag.axis_world_dir,
-                        apostasy_core::cgmath::Deg(angle_deg),
-                    );
-                    let new_q = (q * drag.start_transform.local_rotation).normalize();
-                    t.local_rotation = new_q;
-                    t.local_euler_angles = quat_to_euler_deg(new_q);
+                    if state.local {
+                        // Local: pre-multiply by the captured local axis expressed in world space.
+                        // By the conjugation identity this equals R_start * q_local, so only
+                        // the one local euler component changes - no cross-axis coupling.
+                        let q = apostasy_core::cgmath::Quaternion::from_axis_angle(
+                            drag.axis_world_dir,
+                            apostasy_core::cgmath::Deg(angle_deg),
+                        );
+                        let new_q = (q * drag.start_transform.local_rotation).normalize();
+                        t.local_rotation = new_q;
+                        t.local_euler_angles = quat_to_euler_deg(new_q);
+                    } else {
+                        // Global: increment the single Euler component for this axis and
+                        // recompose with Ry*Rx*Rz.  Only one component ever changes so
+                        // there is no cross-axis coupling (roll) regardless of orientation.
+                        let mut euler = drag.start_transform.local_euler_angles;
+                        match drag.axis {
+                            GizmoAxis::X => euler.x += angle_deg,
+                            GizmoAxis::Y => euler.y += angle_deg,
+                            GizmoAxis::Z => euler.z += angle_deg,
+                        }
+                        t.local_rotation = (apostasy_core::cgmath::Quaternion::from_axis_angle(
+                            Vector3::new(0.0, 1.0, 0.0),
+                            apostasy_core::cgmath::Deg(euler.y),
+                        ) * apostasy_core::cgmath::Quaternion::from_axis_angle(
+                            Vector3::new(1.0, 0.0, 0.0),
+                            apostasy_core::cgmath::Deg(euler.x),
+                        ) * apostasy_core::cgmath::Quaternion::from_axis_angle(
+                            Vector3::new(0.0, 0.0, 1.0),
+                            apostasy_core::cgmath::Deg(euler.z),
+                        ))
+                        .normalize();
+                        t.local_euler_angles = euler;
+                    }
                     // Write global_* immediately so renderer sees the change this frame
-                    t.global_rotation = new_q;
+                    t.global_rotation = t.local_rotation;
                     t.global_euler_angles = t.local_euler_angles;
                 }
                 GizmoMode::Scale => {
@@ -628,4 +656,196 @@ pub fn collider_gizmo(
             }
         }
     }
+}
+
+const ICON_RADIUS: f32 = 12.0;
+const ICON_HIT: f32 = 14.0;
+
+/// Draw billboard icons and wireframes for all lights in the scene.
+/// Returns the ObjectId of whichever icon was clicked this frame, if any.
+pub fn light_gizmos(
+    ui: &mut egui::Ui,
+    lights: &[(ObjectId, Transform, LightType, Vector3<f32>)],
+    view_proj: Matrix4<f32>,
+    frame_rect: egui::Rect,
+    selected_id: Option<ObjectId>,
+    gizmo_consuming: bool,
+) -> Option<ObjectId> {
+    let painter = ui.painter_at(frame_rect);
+    let mouse_pos = ui.input(|i| i.pointer.hover_pos());
+    let just_clicked = ui.input(|i| i.pointer.primary_clicked());
+    let mut clicked: Option<ObjectId> = None;
+
+    for (obj_id, transform, light_type, color) in lights {
+        let pos = transform.global_position;
+        let screen_pos = match project(pos, view_proj, frame_rect) {
+            Some(p) if frame_rect.expand(ICON_RADIUS + 4.0).contains(p) => p,
+            _ => continue,
+        };
+
+        let hovered = mouse_pos
+            .map(|m| (m - screen_pos).length() <= ICON_HIT)
+            .unwrap_or(false);
+
+        if hovered && just_clicked && !gizmo_consuming {
+            clicked = Some(*obj_id);
+        }
+
+        let is_selected = selected_id == Some(*obj_id);
+
+        // Derive a visible icon color from the light's linear color
+        let lc = Color32::from_rgb(
+            ((color.x * 200.0) + 55.0).min(255.0) as u8,
+            ((color.y * 200.0) + 55.0).min(255.0) as u8,
+            ((color.z * 200.0) + 55.0).min(255.0) as u8,
+        );
+
+        // Background circle
+        let bg_alpha: u8 = if is_selected { 210 } else { 150 };
+        painter.circle_filled(
+            screen_pos,
+            ICON_RADIUS,
+            Color32::from_rgba_premultiplied(18, 18, 18, bg_alpha),
+        );
+
+        // Border: white when selected, bright when hovered, dim otherwise
+        let border_col = if is_selected {
+            Color32::WHITE
+        } else if hovered {
+            Color32::from_gray(210)
+        } else {
+            Color32::from_gray(140)
+        };
+        let border_w = if is_selected { 2.0 } else { 1.5 };
+        painter.circle_stroke(screen_pos, ICON_RADIUS, Stroke::new(border_w, border_col));
+
+        // Type-specific icon drawn inside the circle
+        match light_type {
+            LightType::Directional => {
+                // Sun: small circle + 8 rays
+                painter.circle_filled(screen_pos, 3.0, lc);
+                for i in 0..8u8 {
+                    let a = i as f32 * std::f32::consts::TAU / 8.0;
+                    let d = Vec2::new(a.cos(), a.sin());
+                    painter.line_segment(
+                        [screen_pos + d * 5.0, screen_pos + d * 9.5],
+                        Stroke::new(1.5, lc),
+                    );
+                }
+            }
+            LightType::Point { .. } => {
+                // Asterisk: center dot + 6 spokes (omnidirectional feel)
+                painter.circle_filled(screen_pos, 2.0, lc);
+                for i in 0..6u8 {
+                    let a = i as f32 * std::f32::consts::PI / 3.0;
+                    let d = Vec2::new(a.cos(), a.sin());
+                    painter.line_segment(
+                        [screen_pos + d * 3.5, screen_pos + d * 9.5],
+                        Stroke::new(1.5, lc),
+                    );
+                }
+            }
+            LightType::Spot { .. } => {
+                // Cone pointing in the projected forward direction
+                let fwd_world = transform.global_rotation * Vector3::new(0.0, 0.0, -1.0);
+                let icon_dir = project(pos + fwd_world * 0.5, view_proj, frame_rect)
+                    .map(|p| p - screen_pos)
+                    .filter(|d| d.length() > 0.5)
+                    .map(|d| d.normalized())
+                    .unwrap_or(Vec2::new(0.0, 1.0));
+                let perp = Vec2::new(-icon_dir.y, icon_dir.x);
+                // Dot at apex, two diverging lines, closed base
+                painter.circle_filled(screen_pos, 2.5, lc);
+                let tip = screen_pos + icon_dir * 9.5;
+                let base_l = screen_pos - perp * 4.5;
+                let base_r = screen_pos + perp * 4.5;
+                painter.line_segment([screen_pos, tip], Stroke::new(1.5, lc));
+                painter.line_segment([base_l, tip], Stroke::new(1.5, lc));
+                painter.line_segment([base_r, tip], Stroke::new(1.5, lc));
+                painter.line_segment([base_l, base_r], Stroke::new(1.5, lc));
+            }
+        }
+
+        // World-space wireframe: shown when selected or hovered
+        if is_selected || hovered {
+            let wire_alpha: u8 = if is_selected { 220 } else { 160 };
+            let wc = Color32::from_rgba_premultiplied(
+                ((color.x * 180.0) + 75.0).min(255.0) as u8,
+                ((color.y * 180.0) + 75.0).min(255.0) as u8,
+                ((color.z * 180.0) + 75.0).min(255.0) as u8,
+                wire_alpha,
+            );
+            let wstroke = Stroke::new(if is_selected { 1.5 } else { 1.0 }, wc);
+
+            match light_type {
+                LightType::Point { radius } => {
+                    for axis in 0..3u8 {
+                        let pts: Vec<Pos2> = (0..=RING_SEGS)
+                            .filter_map(|j| {
+                                let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
+                                let wp = match axis {
+                                    0 => pos + Vector3::new(0.0, radius * a.cos(), radius * a.sin()),
+                                    1 => pos + Vector3::new(radius * a.cos(), 0.0, radius * a.sin()),
+                                    _ => pos + Vector3::new(radius * a.cos(), radius * a.sin(), 0.0),
+                                };
+                                project(wp, view_proj, frame_rect)
+                            })
+                            .collect();
+                        for pair in pts.windows(2) {
+                            painter.line_segment([pair[0], pair[1]], wstroke);
+                        }
+                    }
+                }
+                LightType::Spot { length, angle } => {
+                    let fwd = (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
+                    let base_r = (angle.to_radians() / 2.0).tan() * length;
+                    let base_c = pos + fwd * *length;
+                    let (p1, p2) = ring_perps_from_dir(fwd);
+
+                    // Base circle
+                    let pts: Vec<Pos2> = (0..=RING_SEGS)
+                        .filter_map(|j| {
+                            let a = j as f32 / RING_SEGS as f32 * std::f32::consts::TAU;
+                            project(
+                                base_c + p1 * (base_r * a.cos()) + p2 * (base_r * a.sin()),
+                                view_proj,
+                                frame_rect,
+                            )
+                        })
+                        .collect();
+                    for pair in pts.windows(2) {
+                        painter.line_segment([pair[0], pair[1]], wstroke);
+                    }
+
+                    // 4 lines from apex to base edge
+                    if let Some(pa) = project(pos, view_proj, frame_rect) {
+                        for i in 0..4 {
+                            let a = i as f32 * std::f32::consts::FRAC_PI_2;
+                            let edge = base_c + p1 * (base_r * a.cos()) + p2 * (base_r * a.sin());
+                            if let Some(pb) = project(edge, view_proj, frame_rect) {
+                                painter.line_segment([pa, pb], wstroke);
+                            }
+                        }
+                    }
+                }
+                LightType::Directional => {
+                    // 3 parallel arrows in the light's forward direction
+                    let fwd = (transform.global_rotation * Vector3::new(0.0, 0.0, -1.0)).normalize();
+                    let (p1, _) = ring_perps_from_dir(fwd);
+                    for offset in [-1.5_f32, 0.0, 1.5] {
+                        let start = pos + p1 * offset;
+                        let end = start + fwd * 3.0;
+                        if let (Some(ps), Some(pe)) = (
+                            project(start, view_proj, frame_rect),
+                            project(end, view_proj, frame_rect),
+                        ) {
+                            painter.arrow(ps, pe - ps, wstroke);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    clicked
 }

@@ -2,13 +2,15 @@ use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::egui::{self};
-use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
+use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
-use apostasy_core::ui::ui_context::EguiContext;
+use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
 use apostasy_core::ui::FontRegistry;
-use apostasy_core::update;
+use apostasy_core::ui::ui_context::EguiContext;
+use apostasy_core::{log, update};
 use apostasy_macros::Resource;
 
+use crate::ui::EditorStyle;
 use crate::ui::asset_editor::AssetEditorState;
 use crate::ui::assets_panel::ObjectWindowState;
 use crate::ui::cell_panel::CellSearchState;
@@ -16,7 +18,6 @@ use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::{EditorPreferences, PreferencesState};
 use crate::ui::shared::{WindowLayout, save_layout};
 use crate::ui::viewport_panel::ViewportInfo;
-use crate::ui::EditorStyle;
 
 #[derive(Resource, Clone, Default)]
 pub struct SaveAsDialog {
@@ -40,8 +41,17 @@ fn do_save(world: &mut World, name: &str) {
 #[update(mode = "editor")]
 pub fn top_bar(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let save_pressed = world
+        .get_resource::<InputManager>()?
+        .is_keybind_active("Save");
+    let save_as_pressed = world
+        .get_resource::<InputManager>()?
+        .is_keybind_active("SaveAs");
 
-    let style = world.get_resource::<EditorStyle>().cloned().unwrap_or_default();
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
     style.apply_to_context(&ctx);
     if let Ok(reg) = world.get_resource_mut::<FontRegistry>() {
         reg.apply_if_needed(&ctx);
@@ -81,6 +91,15 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let mut do_save_current = false;
     let mut open_save_as = false;
     let mut load_scene_name: Option<String> = None;
+
+    if save_as_pressed {
+        open_save_as = true;
+    }
+
+    if save_pressed {
+        log!("Saving Current");
+        do_save_current = true;
+    }
 
     let scene_names: Vec<String> = world
         .get_resource::<AssetManager>()
@@ -123,11 +142,17 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                     } else {
                                         format!("Save  \"{}\"", current_scene)
                                     };
-                                    if ui.add_enabled(!save_as_open, egui::Button::new(save_label)).clicked() {
+                                    if ui
+                                        .add_enabled(!save_as_open, egui::Button::new(save_label))
+                                        .clicked()
+                                    {
                                         do_save_current = true;
                                         ui.close();
                                     }
-                                    if ui.add_enabled(!save_as_open, egui::Button::new("Save As...")).clicked() {
+                                    if ui
+                                        .add_enabled(!save_as_open, egui::Button::new("Save As..."))
+                                        .clicked()
+                                    {
                                         open_save_as = true;
                                         ui.close();
                                     }
@@ -234,7 +259,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     let can_save = !name_buf.trim().is_empty();
-                    if ui.add_enabled(can_save, egui::Button::new("Save")).clicked() {
+                    if ui
+                        .add_enabled(can_save, egui::Button::new("Save"))
+                        .clicked()
+                    {
                         confirm_save_as = Some(name_buf.trim().to_string());
                     }
                     if ui.button("Cancel").clicked() {
@@ -274,18 +302,38 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             s.open = !s.open;
         }
     }
-    if toggle_viewport || toggle_object_window || toggle_cell || toggle_inspector || toggle_asset_editor {
-        let viewport_open      = world.get_resource::<ViewportInfo>().map(|s| s.open).unwrap_or(true);
-        let object_window_open = world.get_resource::<ObjectWindowState>().map(|s| s.open).unwrap_or(true);
-        let cell_open          = world.get_resource::<CellSearchState>().map(|s| s.open).unwrap_or(true);
-        let inspector_visible  = world.get_resource::<InspectorPanelState>().map(|s| s.visible).unwrap_or(false);
-        let asset_editor_open  = world.get_resource::<AssetEditorState>().map(|s| s.open).unwrap_or(false);
+    if toggle_viewport
+        || toggle_object_window
+        || toggle_cell
+        || toggle_inspector
+        || toggle_asset_editor
+    {
+        let viewport_open = world
+            .get_resource::<ViewportInfo>()
+            .map(|s| s.open)
+            .unwrap_or(true);
+        let object_window_open = world
+            .get_resource::<ObjectWindowState>()
+            .map(|s| s.open)
+            .unwrap_or(true);
+        let cell_open = world
+            .get_resource::<CellSearchState>()
+            .map(|s| s.open)
+            .unwrap_or(true);
+        let inspector_visible = world
+            .get_resource::<InspectorPanelState>()
+            .map(|s| s.visible)
+            .unwrap_or(false);
+        let asset_editor_open = world
+            .get_resource::<AssetEditorState>()
+            .map(|s| s.open)
+            .unwrap_or(false);
         if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
-            layout.viewport_open      = viewport_open;
+            layout.viewport_open = viewport_open;
             layout.object_window_open = object_window_open;
-            layout.cell_open          = cell_open;
-            layout.inspector_visible  = inspector_visible;
-            layout.asset_editor_open  = asset_editor_open;
+            layout.cell_open = cell_open;
+            layout.inspector_visible = inspector_visible;
+            layout.asset_editor_open = asset_editor_open;
         }
         if let Ok(layout) = world.get_resource::<WindowLayout>() {
             save_layout(layout);
@@ -317,7 +365,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         } else {
             current_scene.clone()
         };
-        world.insert_resource(SaveAsDialog { open: true, name_buf });
+        world.insert_resource(SaveAsDialog {
+            open: true,
+            name_buf,
+        });
     }
 
     if let Some(name) = confirm_save_as {
