@@ -35,8 +35,7 @@ impl Inspect for ModelRenderer {
             ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Model"));
             ui.add_sized(
                 [ui.available_width(), row_h],
-                egui::TextEdit::singleline(&mut self.model_path)
-                    .hint_text("drag a model here…"),
+                egui::TextEdit::singleline(&mut self.model_path).hint_text("drag a model here…"),
             )
         });
         let te_resp = inner.inner;
@@ -61,11 +60,11 @@ impl Inspect for ModelRenderer {
             ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Material"));
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut override_buf)
-                    .desired_width(ui.available_width() - 28.0)
+                    .desired_width(ui.available_width())
                     .hint_text("none"),
             );
-            let clear = ui.add(egui::Button::new("✕").min_size(egui::vec2(24.0, row_h)));
-            if clear.clicked() {
+            // let clear = ui.add(egui::Button::new("✕").min_size(egui::vec2(24.0, row_h)));
+            if resp.middle_clicked() {
                 self.material_override = None;
             } else if resp.changed() {
                 self.material_override = if override_buf.trim().is_empty() {
@@ -89,7 +88,11 @@ impl ModelRenderer {
             self.model_path = v.to_string();
         }
         if let Some(v) = value.get("material_override").and_then(|v| v.as_str()) {
-            self.material_override = if v.is_empty() { None } else { Some(v.to_string()) };
+            self.material_override = if v.is_empty() {
+                None
+            } else {
+                Some(v.to_string())
+            };
         }
         if let Some(v) = value.get("is_wireframe").and_then(|v| v.as_bool()) {
             self.is_wireframe = v;
