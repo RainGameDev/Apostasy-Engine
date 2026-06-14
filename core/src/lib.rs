@@ -44,7 +44,8 @@ use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::lighting::{Light, LightType};
 use crate::rendering::components::model_renderer::ModelRenderer;
 use crate::rendering::lighting::gpu_light::{
-    GpuLight, ShadowData, compute_csm_matrices, compute_light_space_matrix,
+    GpuLight, PointShadowData, ShadowData, compute_csm_matrices, compute_light_space_matrix,
+    compute_point_shadow_matrices,
 };
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
@@ -53,7 +54,8 @@ use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{
-    PushConstants, ShadowModelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
+    PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
+    ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
 };
 use crate::states::ShouldExit;
 use crate::ui::FontRegistry;
@@ -309,22 +311,21 @@ impl Core {
                         }
                     }
 
-                    // Collect active lights and upload to GPU
+                    // Collect active lights and upload to GPU, preserving order for shadow indexing.
                     let light_objects = world.get_objects_with_component::<Light>();
-                    let gpu_lights: Vec<GpuLight> = light_objects
+                    let emitting_lights: Vec<_> = light_objects
                         .iter()
                         .filter_map(|obj| {
                             let light = obj.get_component::<Light>().ok()?;
                             let transform = obj.get_component::<Transform>().ok()?;
-                            if light.is_emitting {
-                                Some(GpuLight::from_component(light, transform))
-                            } else {
-                                None
-                            }
+                            if light.is_emitting { Some((light, transform)) } else { None }
                         })
                         .collect();
+                    let gpu_lights: Vec<GpuLight> = emitting_lights
+                        .iter()
+                        .map(|(l, t)| GpuLight::from_component(l, t))
+                        .collect();
 
-                    // Find first directional or spot light for shadow casting.
                     let (shadow_dist, csm_cascade_count, shadow_bias_constant, shadow_bias_slope, shadow_map_size) =
                         world
                             .get_resource::<ShadowDistance>()
@@ -334,6 +335,9 @@ impl Core {
                     if let Err(e) = renderer.rebuild_shadow_map(shadow_map_size) {
                         log_error!("Failed to rebuild shadow map: {}", e);
                     }
+                    if let Err(e) = renderer.rebuild_point_shadow_map(shadow_map_size) {
+                        log_error!("Failed to rebuild point shadow map: {}", e);
+                    }
 
                     let camera_forward = camera_transform.calculate_global_forward();
 
@@ -341,19 +345,17 @@ impl Core {
                         Directional {
                             matrices: [cgmath::Matrix4<f32>; 4],
                             splits: [f32; 4],
+                            light_index: u32,
                         },
                         Spot {
                             matrix: [[f32; 4]; 4],
+                            light_index: u32,
                         },
                     }
 
+                    // Find first directional or spot light for shadow casting.
                     let shadow_result: Option<ShadowCastData> =
-                        light_objects.iter().find_map(|obj| {
-                            let light = obj.get_component::<Light>().ok()?;
-                            let transform = obj.get_component::<Transform>().ok()?;
-                            if !light.is_emitting {
-                                return None;
-                            }
+                        emitting_lights.iter().enumerate().find_map(|(idx, (light, transform))| {
                             match light.light_type {
                                 LightType::Directional => {
                                     let (matrices, splits) = compute_csm_matrices(
@@ -368,34 +370,55 @@ impl Core {
                                         csm_cascade_count,
                                         shadow_map_size,
                                     );
-                                    Some(ShadowCastData::Directional { matrices, splits })
+                                    Some(ShadowCastData::Directional { matrices, splits, light_index: idx as u32 })
                                 }
                                 LightType::Spot { .. } => {
-                                    let m = compute_light_space_matrix(
-                                        light, transform, camera_pos, shadow_dist,
-                                    );
-                                    Some(ShadowCastData::Spot { matrix: *m.as_ref() })
+                                    let m = compute_light_space_matrix(light, transform, camera_pos, shadow_dist);
+                                    Some(ShadowCastData::Spot { matrix: *m.as_ref(), light_index: idx as u32 })
                                 }
                                 _ => None,
                             }
                         });
 
                     let shadow_data = shadow_result.as_ref().map(|sr| match sr {
-                        ShadowCastData::Directional { matrices, splits } => ShadowData {
+                        ShadowCastData::Directional { matrices, splits, light_index } => ShadowData {
                             matrices: matrices.iter().map(|m| *m.as_ref()).collect(),
                             splits: *splits,
                             cascade_count: csm_cascade_count as u32,
+                            shadow_light_index: *light_index,
                         },
-                        ShadowCastData::Spot { matrix } => ShadowData {
+                        ShadowCastData::Spot { matrix, light_index } => ShadowData {
                             matrices: vec![*matrix; 4],
                             splits: [shadow_dist; 4],
                             cascade_count: 1,
+                            shadow_light_index: *light_index,
                         },
                     });
+
+                    // Find first point light for omnidirectional shadow casting.
+                    let point_shadow_data: Option<PointShadowData> =
+                        emitting_lights.iter().enumerate().find_map(|(idx, (light, transform))| {
+                            if let LightType::Point { radius } = light.light_type {
+                                let pos = transform.global_position;
+                                let face_mats = compute_point_shadow_matrices(pos, radius);
+                                Some(PointShadowData {
+                                    light_index: idx as u32,
+                                    far: radius,
+                                    face_matrices: face_mats.map(|m| *m.as_ref()),
+                                })
+                            } else {
+                                None
+                            }
+                        });
 
                     renderer.set_lights(
                         &gpu_lights,
                         shadow_data,
+                        point_shadow_data.as_ref().map(|d| PointShadowData {
+                            light_index: d.light_index,
+                            far: d.far,
+                            face_matrices: d.face_matrices,
+                        }),
                         shadow_dist,
                         [camera_pos.x, camera_pos.y, camera_pos.z],
                         [camera_forward.x, camera_forward.y, camera_forward.z],
@@ -408,7 +431,7 @@ impl Core {
                         return;
                     }
 
-                    // Shadow pre-pass — one pass per cascade (csm_cascade_count for directional, 1 for spot).
+                    // Shadow pre-pass - one pass per cascade (csm_cascade_count for directional, 1 for spot).
                     let cascade_count = match &shadow_result {
                         Some(ShadowCastData::Directional { .. }) => csm_cascade_count,
                         Some(ShadowCastData::Spot { .. }) => 1,
@@ -431,7 +454,7 @@ impl Core {
                             Some(ShadowCastData::Directional { matrices, .. }) => {
                                 *matrices[cascade_idx].as_ref()
                             }
-                            Some(ShadowCastData::Spot { matrix }) => *matrix,
+                            Some(ShadowCastData::Spot { matrix, .. }) => *matrix,
                             None => unreachable!(),
                         };
 
@@ -494,6 +517,76 @@ impl Core {
                         if let Err(e) = renderer.end_shadow_pass(cascade_idx) {
                             log_error!("Failed to end shadow pass {}: {}", cascade_idx, e);
                             return;
+                        }
+                    }
+
+                    // Point light shadow pre-pass - 6 faces for the cube shadow map.
+                    if let Some(ref ps) = point_shadow_data {
+                        let point_model_ids: Vec<_> = world
+                            .get_objects_with_component_with_ids::<ModelRenderer>()
+                            .iter()
+                            .map(|o| o.0)
+                            .collect();
+
+                        for face in 0..6usize {
+                            let face_matrix = ps.face_matrices[face];
+
+                            if let Err(e) = renderer.begin_point_shadow_pass(face, shadow_bias_constant, shadow_bias_slope) {
+                                log_error!("Failed to begin point shadow pass {}: {}", face, e);
+                                return;
+                            }
+
+                            for &id in &point_model_ids {
+                                if let Some(object) = world.get_object(id) {
+                                    let model_renderer = object.get_component::<ModelRenderer>().unwrap();
+                                    if let Some(model) = &model_renderer.model {
+                                        let transform = object.get_component::<Transform>().unwrap();
+                                        let pc = ShadowPointModelPushConstants::new(
+                                            [gpu_lights[ps.light_index as usize].position[0],
+                                             gpu_lights[ps.light_index as usize].position[1],
+                                             gpu_lights[ps.light_index as usize].position[2]],
+                                            ps.far,
+                                            face_matrix,
+                                            transform.global_position.into(),
+                                            transform.global_scale.into(),
+                                            [transform.global_rotation.v.x,
+                                             transform.global_rotation.v.y,
+                                             transform.global_rotation.v.z,
+                                             transform.global_rotation.s],
+                                        );
+                                        for mesh in &model.meshes {
+                                            if let Err(e) = renderer.shadow_point_model_render(Box::new(mesh.clone()), &pc) {
+                                                log_error!("Failed point shadow model render: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if self.packages.contains(&Packages::Voxel) {
+                                for object in world.get_objects_with_component::<VoxelChunkMesh>() {
+                                    let transform = object.get_component::<VoxelTransform>().unwrap();
+                                    let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                                    let pc = ShadowPointVoxelPushConstants::new(
+                                        [gpu_lights[ps.light_index as usize].position[0],
+                                         gpu_lights[ps.light_index as usize].position[1],
+                                         gpu_lights[ps.light_index as usize].position[2]],
+                                        ps.far,
+                                        face_matrix,
+                                        [transform.position.x * 32,
+                                         transform.position.y * 32,
+                                         transform.position.z * 32],
+                                    );
+                                    if let Err(e) = renderer.shadow_point_voxel_render(Box::new(voxel_mesh.clone()), &pc) {
+                                        log_error!("Failed point shadow voxel render: {}", e);
+                                    }
+                                }
+                            }
+
+                            if let Err(e) = renderer.end_point_shadow_pass(face) {
+                                log_error!("Failed to end point shadow pass {}: {}", face, e);
+                                return;
+                            }
                         }
                     }
 

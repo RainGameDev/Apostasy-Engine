@@ -361,7 +361,7 @@ impl EditorStyle {
             dark_bg: Color32::from_rgb(251, 241, 199), // bg0   #fbf1c7
             panel_bg: Color32::from_rgb(242, 229, 188), // bg0_s #f2e5bc
             header_bg: Color32::from_rgb(235, 219, 178), // bg1   #ebdbb2
-            row_alt: Color32::from_rgb(249, 245, 215), // bg0_h — lighter alt
+            row_alt: Color32::from_rgb(249, 245, 215), // bg0_h - lighter alt
             div_col: Color32::from_rgb(213, 196, 161), // bg2   #d5c4a1
             text_col: Color32::from_rgb(60, 56, 54),   // fg1   #3c3836
             dim_col: Color32::from_rgb(102, 92, 84),   // fg3   #665c54
@@ -377,7 +377,7 @@ impl EditorStyle {
             dark_bg: Color32::from_rgb(242, 229, 188), // bg0_s #f2e5bc
             panel_bg: Color32::from_rgb(235, 219, 178), // bg1   #ebdbb2
             header_bg: Color32::from_rgb(213, 196, 161), // bg2   #d5c4a1
-            row_alt: Color32::from_rgb(251, 241, 199), // bg0   — lighter alt
+            row_alt: Color32::from_rgb(251, 241, 199), // bg0   - lighter alt
             div_col: Color32::from_rgb(189, 174, 147), // bg3   #bdae93
             text_col: Color32::from_rgb(60, 56, 54),   // fg1   #3c3836
             dim_col: Color32::from_rgb(102, 92, 84),   // fg3   #665c54

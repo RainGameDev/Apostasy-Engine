@@ -151,7 +151,7 @@ pub fn keybind_editor(
         s.push('_');
         s
     } else {
-        current.map(pretty_bind).unwrap_or_else(|| "—".to_string())
+        current.map(pretty_bind).unwrap_or_else(|| "-".to_string())
     };
 
     let row_h = style.row_height();

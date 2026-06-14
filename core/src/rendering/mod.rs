@@ -7,12 +7,12 @@ use egui::{Context, TextureId};
 use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
-use crate::rendering::lighting::gpu_light::{GpuLight, ShadowData};
+use crate::rendering::lighting::gpu_light::{GpuLight, PointShadowData, ShadowData};
 use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
-    ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowVoxelPushConstants,
-    VoxelPushConstants,
+    ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
+    ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
 };
 use crate::rendering::{
     shared::rendering_settings::RenderingSettings,
@@ -126,14 +126,18 @@ pub trait RenderingAPI {
         &mut self,
         lights: &[GpuLight],
         shadow_data: Option<ShadowData>,
+        point_shadow_data: Option<PointShadowData>,
         shadow_distance: f32,
         camera_pos: [f32; 3],
         camera_dir: [f32; 3],
     );
 
-    /// Destroys and recreates the shadow map texture array at the given size. No-op if unchanged.
+    /// Destroys and recreates the directional/spot shadow map texture array at the given size.
     fn rebuild_shadow_map(&mut self, size: u32) -> Result<()>;
-    /// Begins the depth-only shadow pre-pass for the given cascade index.
+    /// Destroys and recreates the point light cubemap shadow texture at the given size.
+    fn rebuild_point_shadow_map(&mut self, size: u32) -> Result<()>;
+
+    /// Begins the depth-only shadow pre-pass for the given cascade index (directional/spot).
     fn begin_shadow_pass(
         &mut self,
         cascade_index: usize,
@@ -142,17 +146,39 @@ pub trait RenderingAPI {
     ) -> Result<()>;
     /// Ends the shadow pre-pass for the given cascade index.
     fn end_shadow_pass(&mut self, cascade_index: usize) -> Result<()>;
-    /// Renders a model mesh into the shadow map.
+    /// Renders a model mesh into the directional/spot shadow map.
     fn shadow_model_render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
         pc: &ShadowModelPushConstants,
     ) -> Result<()>;
-    /// Renders a voxel mesh into the shadow map.
+    /// Renders a voxel mesh into the directional/spot shadow map.
     fn shadow_voxel_render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
         pc: &ShadowVoxelPushConstants,
+    ) -> Result<()>;
+
+    /// Begins the depth-only shadow pre-pass for the given cubemap face (point light).
+    fn begin_point_shadow_pass(
+        &mut self,
+        face: usize,
+        bias_constant: f32,
+        bias_slope: f32,
+    ) -> Result<()>;
+    /// Ends the point light shadow pass for the given face.
+    fn end_point_shadow_pass(&mut self, face: usize) -> Result<()>;
+    /// Renders a model mesh into the point light cubemap shadow map.
+    fn shadow_point_model_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowPointModelPushConstants,
+    ) -> Result<()>;
+    /// Renders a voxel mesh into the point light cubemap shadow map.
+    fn shadow_point_voxel_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        pc: &ShadowPointVoxelPushConstants,
     ) -> Result<()>;
 
     /// Assigns the rendering_info's renderer the the value created via this

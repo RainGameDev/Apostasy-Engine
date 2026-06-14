@@ -181,3 +181,71 @@ impl ShadowVoxelPushConstants {
         }
     }
 }
+
+/// Push constants for the point-light cubemap shadow pass for model geometry (128 bytes).
+/// light_pos/far come first so the fragment shader can use a single shared layout.
+/// Layout must match `shadow_point_model.vert` and `shadow_point.frag`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ShadowPointModelPushConstants {
+    pub light_pos: [f32; 3],
+    pub far: f32,
+    pub light_space: [[f32; 4]; 4],
+    pub pos: [f32; 3],
+    _pad0: f32,
+    pub scale: [f32; 3],
+    _pad1: f32,
+    pub rotation: [f32; 4],
+}
+
+impl ShadowPointModelPushConstants {
+    pub fn new(
+        light_pos: [f32; 3],
+        far: f32,
+        light_space: [[f32; 4]; 4],
+        pos: [f32; 3],
+        scale: [f32; 3],
+        rotation: [f32; 4],
+    ) -> Self {
+        Self { light_pos, far, light_space, pos, _pad0: 0.0, scale, _pad1: 0.0, rotation }
+    }
+
+    #[allow(unnecessary_transmutes)]
+    pub fn return_renderable(&self) -> Vec<u8> {
+        unsafe {
+            let bytes: [u8; 128] = transmute(*self);
+            bytes.to_vec()
+        }
+    }
+}
+
+/// Push constants for the point-light cubemap shadow pass for voxel geometry (96 bytes).
+/// Layout must match `shadow_point_voxel.vert` and `shadow_point.frag`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ShadowPointVoxelPushConstants {
+    pub light_pos: [f32; 3],
+    pub far: f32,
+    pub light_space: [[f32; 4]; 4],
+    pub world_pos: [i32; 3],
+    _pad: i32,
+}
+
+impl ShadowPointVoxelPushConstants {
+    pub fn new(
+        light_pos: [f32; 3],
+        far: f32,
+        light_space: [[f32; 4]; 4],
+        world_pos: [i32; 3],
+    ) -> Self {
+        Self { light_pos, far, light_space, world_pos, _pad: 0 }
+    }
+
+    #[allow(unnecessary_transmutes)]
+    pub fn return_renderable(&self) -> Vec<u8> {
+        unsafe {
+            let bytes: [u8; 96] = transmute(*self);
+            bytes.to_vec()
+        }
+    }
+}

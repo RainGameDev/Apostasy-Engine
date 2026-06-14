@@ -513,7 +513,7 @@ impl GraphicsPage {
 
         draw_setting(ui, dim_col, "Shadow Cascades", query, |ui| {
             let label = match self.cascade_count {
-                1 => "1 — no CSM",
+                1 => "1 - no CSM",
                 2 => "2",
                 3 => "3",
                 _ => "4",
@@ -521,7 +521,7 @@ impl GraphicsPage {
             egui::ComboBox::from_id_salt("cascade_count_combo")
                 .selected_text(egui::RichText::new(label).color(text_col))
                 .show_ui(ui, |ui| {
-                    for (count, lbl) in [(1, "1 — no CSM"), (2, "2"), (3, "3"), (4, "4")] {
+                    for (count, lbl) in [(1, "1 - no CSM"), (2, "2"), (3, "3"), (4, "4")] {
                         ui.selectable_value(&mut self.cascade_count, count, lbl);
                     }
                 });
@@ -530,7 +530,7 @@ impl GraphicsPage {
         draw_setting(ui, dim_col, "Shadow Map Resolution", query, |ui| {
             let mb = |s: u32| s as u64 * s as u64 * 4 / 1_000_000;
             let label = format!(
-                "{} — {} MB/cascade",
+                "{} - {} MB/cascade",
                 self.shadow_map_size,
                 mb(self.shadow_map_size)
             );
@@ -539,7 +539,7 @@ impl GraphicsPage {
                 .width(220.0)
                 .show_ui(ui, |ui| {
                     for size in [512u32, 1024, 2048, 4096, 8192, 16384] {
-                        let lbl = format!("{size} — {} MB/cascade", mb(size));
+                        let lbl = format!("{size} - {} MB/cascade", mb(size));
                         ui.selectable_value(&mut self.shadow_map_size, size, lbl);
                     }
                 });
@@ -693,7 +693,7 @@ const KEYBIND_DISPLAY: &[(&str, &str)] = &[
 ];
 
 /// Returns the display label of the first other keybind that shares the same
-/// key + modifier combo (non-modifier keys only — modifier keys may be shared).
+/// key + modifier combo (non-modifier keys only - modifier keys may be shared).
 fn find_conflict(
     binds: &[(&'static str, &'static str, Option<KeyBind>, Option<KeyBind>)],
     key: &PhysicalKey,

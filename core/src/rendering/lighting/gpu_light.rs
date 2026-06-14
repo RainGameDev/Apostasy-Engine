@@ -12,14 +12,27 @@ pub const LIGHT_TYPE_SPOT: u32 = 2;
 pub const MAX_LIGHTS: usize = 64;
 pub const CSM_CASCADE_COUNT: usize = 4;
 
-/// Shadow data passed to `set_lights`. Contains cascade matrices, split distances, and cascade count.
+/// Shadow data passed to `set_lights` for directional and spot lights.
 pub struct ShadowData {
-    /// One matrix per cascade (4 for directional, 1 for spot — spot replicates into all 4 slots).
+    /// One matrix per cascade (4 for directional, 1 for spot - spot replicates into all 4 slots).
     pub matrices: Vec<[[f32; 4]; 4]>,
     /// View-distance threshold for each cascade (positive, increasing).
     pub splits: [f32; 4],
     /// 4 for directional CSM, 1 for spot.
     pub cascade_count: u32,
+    /// Index of this light in the gpu_lights array - the shader only applies the shadow to this light.
+    pub shadow_light_index: u32,
+}
+
+/// Shadow data for a single point light (omnidirectional cube shadow map).
+#[derive(Clone)]
+pub struct PointShadowData {
+    /// Index of the point light in the gpu_lights array.
+    pub light_index: u32,
+    /// Far plane (matches the light's attenuation radius).
+    pub far: f32,
+    /// View-projection matrices for each of the 6 cubemap faces (+X, -X, +Y, -Y, +Z, -Z).
+    pub face_matrices: [[[f32; 4]; 4]; 6],
 }
 
 /// GPU representation of a light source.
@@ -81,15 +94,22 @@ fn rotate_vec3(q: Quaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {
     (v + t * q.s + q.v.cross(t)).normalize()
 }
 
-/// Vulkan NDC correction: flips Y and remaps depth from [-1,1] to [0,1].
+/// Vulkan NDC correction, flips Y and remaps depth from [-1,1] to [0,1].
 fn vulkan_correction() -> Matrix4<f32> {
     Matrix4::new(
         1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
     )
 }
 
-/// Returns 4 cascade light-space VP matrices and their corresponding split distances (view-space
-/// distances from the camera) for a directional light. Only valid for `LightType::Directional`.
+/// Depth only Vulkan correction, remaps depth from [-1,1] to [0,1] without flipping Y.
+fn vulkan_depth_correction() -> Matrix4<f32> {
+    Matrix4::new(
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+    )
+}
+
+/// Returns 4 cascade light space matrices and their corresponding split distances for a directional light.
+/// Only valid for `LightType::Directional`.
 pub fn compute_csm_matrices(
     light: &Light,
     light_transform: &Transform,
@@ -176,8 +196,7 @@ pub fn compute_csm_matrices(
     (matrices, splits)
 }
 
-/// Returns the light-space view-projection matrix used for shadow map rendering and sampling.
-/// Returns identity for light types that don't support single-map shadows (e.g. Point).
+/// Returns the light space view projection matrix used for shadow map rendering and sampling.
 pub fn compute_light_space_matrix(
     light: &Light,
     light_transform: &Transform,
@@ -213,16 +232,47 @@ pub fn compute_light_space_matrix(
                 Point3::new(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z),
                 up,
             );
-            let mut proj: Matrix4<f32> = PerspectiveFov {
+            let proj: Matrix4<f32> = PerspectiveFov {
                 fovy: Deg(angle * 2.0).into(),
                 aspect: 1.0,
                 near: 0.1,
                 far: length,
             }
             .into();
-            proj[1][1] *= -1.0;
-            proj * view
+            vulkan_correction() * proj * view
         }
         _ => Matrix4::identity(),
     }
+}
+
+/// Computes 6 view-projection matrices for omnidirectional point light shadow mapping.
+/// Each matrix covers one face of the cube.
+pub fn compute_point_shadow_matrices(light_pos: Vector3<f32>, far: f32) -> [Matrix4<f32>; 6] {
+    let near = 0.05_f32;
+    let proj: Matrix4<f32> = PerspectiveFov {
+        fovy: Deg(90.0).into(),
+        aspect: 1.0,
+        near,
+        far,
+    }
+    .into();
+    let dc = vulkan_depth_correction();
+    let lp = Point3::new(light_pos.x, light_pos.y, light_pos.z);
+
+    // Standard cubemap face  pairs.
+    let faces: [(Vector3<f32>, Vector3<f32>); 6] = [
+        (Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, -1.0, 0.0)),
+        (Vector3::new(-1.0, 0.0, 0.0), Vector3::new(0.0, -1.0, 0.0)),
+        (Vector3::new(0.0, 1.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+        (Vector3::new(0.0, -1.0, 0.0), Vector3::new(0.0, 0.0, -1.0)),
+        (Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, -1.0, 0.0)),
+        (Vector3::new(0.0, 0.0, -1.0), Vector3::new(0.0, -1.0, 0.0)),
+    ];
+
+    let mut matrices = [Matrix4::identity(); 6];
+    for (i, (dir, up)) in faces.iter().enumerate() {
+        let view = Matrix4::look_at_rh(lp, lp + dir, *up);
+        matrices[i] = dc * proj * view;
+    }
+    matrices
 }

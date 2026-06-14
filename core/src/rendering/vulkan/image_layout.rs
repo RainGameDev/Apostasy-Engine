@@ -14,7 +14,7 @@ pub struct ImageLayouts {
     pub renderable: ImageLayoutState,
     pub present: ImageLayoutState,
     pub depth: ImageLayoutState,
-    /// For depth images written as a depth attachment — covers EARLY and LATE fragment tests
+    /// For depth images written as a depth attachment - covers EARLY and LATE fragment tests
     /// so barriers correctly wait for depth writes (which complete at LATE_FRAGMENT_TESTS).
     pub depth_write: ImageLayoutState,
     pub shader_read_only: ImageLayoutState,
