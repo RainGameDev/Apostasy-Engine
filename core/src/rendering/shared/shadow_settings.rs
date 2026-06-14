@@ -3,7 +3,7 @@ use apostasy_macros::Resource;
 #[derive(Resource, Clone)]
 pub struct ShadowDistance {
     pub distance: f32,
-    /// Number of shadow cascades to use (1–4). 1 disables CSM (single map).
+    /// Number of shadow cascades to use 1-4. 1 disables CSM.
     pub cascade_count: usize,
     /// Vulkan depth bias constant factor (added to every shadow fragment).
     pub bias_constant: f32,

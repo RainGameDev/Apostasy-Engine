@@ -122,12 +122,24 @@ pub trait RenderingAPI {
     fn get_voxel_descriptor_set_layout(&self) -> vk::DescriptorSetLayout;
 
     /// Uploads the active lights and shadow data. `shadow_data: None` disables shadow sampling.
-    fn set_lights(&mut self, lights: &[GpuLight], shadow_data: Option<ShadowData>, shadow_distance: f32, camera_pos: [f32; 3], camera_dir: [f32; 3]);
+    fn set_lights(
+        &mut self,
+        lights: &[GpuLight],
+        shadow_data: Option<ShadowData>,
+        shadow_distance: f32,
+        camera_pos: [f32; 3],
+        camera_dir: [f32; 3],
+    );
 
     /// Destroys and recreates the shadow map texture array at the given size. No-op if unchanged.
     fn rebuild_shadow_map(&mut self, size: u32) -> Result<()>;
-    /// Begins the depth-only shadow pre-pass for the given cascade index (0–3).
-    fn begin_shadow_pass(&mut self, cascade_index: usize, bias_constant: f32, bias_slope: f32) -> Result<()>;
+    /// Begins the depth-only shadow pre-pass for the given cascade index.
+    fn begin_shadow_pass(
+        &mut self,
+        cascade_index: usize,
+        bias_constant: f32,
+        bias_slope: f32,
+    ) -> Result<()>;
     /// Ends the shadow pre-pass for the given cascade index.
     fn end_shadow_pass(&mut self, cascade_index: usize) -> Result<()>;
     /// Renders a model mesh into the shadow map.

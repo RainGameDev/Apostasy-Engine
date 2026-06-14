@@ -84,10 +84,7 @@ fn rotate_vec3(q: Quaternion<f32>, v: Vector3<f32>) -> Vector3<f32> {
 /// Vulkan NDC correction: flips Y and remaps depth from [-1,1] to [0,1].
 fn vulkan_correction() -> Matrix4<f32> {
     Matrix4::new(
-        1.0, 0.0, 0.0, 0.0,
-        0.0, -1.0, 0.0, 0.0,
-        0.0, 0.0, 0.5, 0.0,
-        0.0, 0.0, 0.5, 1.0,
+        1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
     )
 }
 
@@ -107,15 +104,17 @@ pub fn compute_csm_matrices(
 ) -> ([Matrix4<f32>; CSM_CASCADE_COUNT], [f32; CSM_CASCADE_COUNT]) {
     let count = cascade_count.clamp(1, CSM_CASCADE_COUNT);
 
-    let light_dir = rotate_vec3(light_transform.global_rotation, Vector3::new(0.0, 0.0, -1.0));
+    let light_dir = rotate_vec3(
+        light_transform.global_rotation,
+        Vector3::new(0.0, 0.0, -1.0),
+    );
     let light_up = if light_dir.y.abs() > 0.99 {
         Vector3::unit_z()
     } else {
         Vector3::unit_y()
     };
 
-    // Light-space basis — must match the axes of the look_at used for rendering.
-    // light_s is the x-axis (right), light_u is the y-axis (up), light_dir is -z (forward).
+    // Light bias, matches the axes used for rendering.
     let light_s = light_dir.cross(light_up).normalize();
     let light_u = light_s.cross(light_dir);
 
@@ -139,23 +138,17 @@ pub fn compute_csm_matrices(
         let sub_far = splits[i];
         prev_near = sub_far;
 
-        // Bounding sphere of the cascade sub-frustum, centered at camera_pos.
-        // Centering at camera_pos (not the frustum midpoint along camera_forward) means
-        // this sphere is rotation-invariant — rotating the camera doesn't move the center,
-        // so the shadow map stays fixed while looking around.
+        // frustum from the camera mapped into a sphere
         let far_h = tan_half_fovy * sub_far;
         let far_w = far_h * aspect;
         let radius = (sub_far * sub_far + far_h * far_h + far_w * far_w).sqrt();
 
-        // Snap center (camera_pos) to the shadow map texel grid using the light-space basis
-        // directly (avoids matrix inversion and the precision loss it introduces).
-        // This quantizes camera translation to whole-texel steps.
+        // snaps the cameras position to a texel grid
         let units_per_texel = (2.0 * radius) / shadow_map_size as f32;
         let snapped_s = (camera_pos.dot(light_s) / units_per_texel).floor() * units_per_texel;
         let snapped_u = (camera_pos.dot(light_u) / units_per_texel).floor() * units_per_texel;
-        let center = light_s * snapped_s
-            + light_u * snapped_u
-            + light_dir * camera_pos.dot(light_dir);
+        let center =
+            light_s * snapped_s + light_u * snapped_u + light_dir * camera_pos.dot(light_dir);
 
         let light_pos = center - light_dir * radius;
         let view = Matrix4::look_at_rh(
@@ -164,7 +157,14 @@ pub fn compute_csm_matrices(
             light_up,
         );
         // Extend the depth range to capture shadow casters outside the frustum.
-        let ortho = cgmath::ortho(-radius, radius, -radius, radius, -radius * 3.0, radius * 3.0);
+        let ortho = cgmath::ortho(
+            -radius,
+            radius,
+            -radius,
+            radius,
+            -radius * 3.0,
+            radius * 3.0,
+        );
         matrices[i] = vulkan_correction() * ortho * view;
     }
     // Fill unused cascade slots with the last valid matrix so the shader never samples garbage.
@@ -184,7 +184,10 @@ pub fn compute_light_space_matrix(
     camera_pos: Vector3<f32>,
     shadow_distance: f32,
 ) -> Matrix4<f32> {
-    let dir = rotate_vec3(light_transform.global_rotation, Vector3::new(0.0, 0.0, -1.0));
+    let dir = rotate_vec3(
+        light_transform.global_rotation,
+        Vector3::new(0.0, 0.0, -1.0),
+    );
     let up = if dir.y.abs() > 0.99 {
         Vector3::unit_z()
     } else {

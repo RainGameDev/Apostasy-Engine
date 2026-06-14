@@ -176,7 +176,17 @@ const PAGES: &[PageMeta] = &[
     },
     PageMeta {
         label: "Graphics",
-        terms: &["SSAA", "MSAA", "Render Distance", "Shadow", "Cascades", "Bias", "Resolution"],
+        terms: &[
+            "SSAA",
+            "MSAA",
+            "Render Distance",
+            "Shadow",
+            "Cascades",
+            "Bias",
+            "Resolution",
+            "Rendering",
+            "Anti-Aliasing",
+        ],
     },
     PageMeta {
         label: "Keybinds",
@@ -211,10 +221,48 @@ fn draw_setting(
     if !query.is_empty() && !name.to_lowercase().contains(query) {
         return;
     }
-    ui.label(egui::RichText::new(name).color(dim_col));
+    const LABEL_W: f32 = 160.0;
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            egui::Vec2::new(LABEL_W, ui.spacing().interact_size.y),
+            egui::Label::new(egui::RichText::new(name).color(dim_col)),
+        );
+        draw(ui);
+    });
     ui.add_space(4.0);
-    draw(ui);
-    ui.add_space(8.0);
+}
+
+fn draw_section_header(
+    ui: &mut egui::Ui,
+    dim_col: egui::Color32,
+    div_col: egui::Color32,
+    label: &str,
+    query: &str,
+) {
+    if !query.is_empty() && !label.to_lowercase().contains(query) {
+        return;
+    }
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        let resp = ui.label(
+            egui::RichText::new(label.to_uppercase())
+                .color(dim_col)
+                .small()
+                .strong(),
+        );
+        ui.add_space(4.0);
+        let line_w = (ui.available_width() - 8.0).max(0.0);
+        if line_w > 0.0 {
+            let (rect, _) =
+                ui.allocate_at_least(egui::Vec2::new(line_w, 1.0), egui::Sense::hover());
+            ui.painter().hline(
+                rect.x_range(),
+                resp.rect.center().y,
+                egui::Stroke::new(1.0, div_col),
+            );
+        }
+    });
+    ui.add_space(6.0);
 }
 // Editor tab
 
@@ -438,7 +486,9 @@ impl GraphicsPage {
     }
 
     fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
-        let (text_col, dim_col) = (style.text_col, style.dim_col);
+        let (text_col, dim_col, div_col) = (style.text_col, style.dim_col, style.div_col);
+
+        draw_section_header(ui, dim_col, div_col, "Rendering", query);
 
         draw_setting(ui, dim_col, "Render Distance", query, |ui| {
             ui.add(
@@ -451,15 +501,19 @@ impl GraphicsPage {
             );
         });
 
+        draw_section_header(ui, dim_col, div_col, "Shadows", query);
+
         draw_setting(ui, dim_col, "Shadow Distance", query, |ui| {
             ui.add(
-                egui::Slider::new(&mut self.shadow_distance, 0.0_f32..=16384.0).suffix(" units"),
+                egui::Slider::new(&mut self.shadow_distance, 8.0_f32..=1024.0)
+                    .suffix(" units")
+                    .logarithmic(true),
             );
         });
 
         draw_setting(ui, dim_col, "Shadow Cascades", query, |ui| {
             let label = match self.cascade_count {
-                1 => "1 (no CSM)",
+                1 => "1 — no CSM",
                 2 => "2",
                 3 => "3",
                 _ => "4",
@@ -467,35 +521,39 @@ impl GraphicsPage {
             egui::ComboBox::from_id_salt("cascade_count_combo")
                 .selected_text(egui::RichText::new(label).color(text_col))
                 .show_ui(ui, |ui| {
-                    for (count, lbl) in [(1, "1 (no CSM)"), (2, "2"), (3, "3"), (4, "4")] {
+                    for (count, lbl) in [(1, "1 — no CSM"), (2, "2"), (3, "3"), (4, "4")] {
                         ui.selectable_value(&mut self.cascade_count, count, lbl);
                     }
                 });
         });
 
-        draw_setting(ui, dim_col, "Shadow Bias Constant", query, |ui| {
-            ui.add(egui::Slider::new(&mut self.bias_constant, 0.0_f32..=10.0).step_by(0.1));
-        });
-
-        draw_setting(ui, dim_col, "Shadow Bias Slope", query, |ui| {
-            ui.add(egui::Slider::new(&mut self.bias_slope, 0.0_f32..=10.0).step_by(0.1));
-        });
-
         draw_setting(ui, dim_col, "Shadow Map Resolution", query, |ui| {
-            let label = match self.shadow_map_size {
-                512  => "512 (low)",
-                1024 => "1024",
-                4096 => "4096 (high)",
-                _    => "2048 (default)",
-            };
+            let mb = |s: u32| s as u64 * s as u64 * 4 / 1_000_000;
+            let label = format!(
+                "{} — {} MB/cascade",
+                self.shadow_map_size,
+                mb(self.shadow_map_size)
+            );
             egui::ComboBox::from_id_salt("shadow_map_size_combo")
                 .selected_text(egui::RichText::new(label).color(text_col))
+                .width(220.0)
                 .show_ui(ui, |ui| {
-                    for (size, lbl) in [(512u32, "512 (low)"), (1024, "1024"), (2048, "2048 (default)"), (4096, "4096 (high)")] {
+                    for size in [512u32, 1024, 2048, 4096, 8192, 16384] {
+                        let lbl = format!("{size} — {} MB/cascade", mb(size));
                         ui.selectable_value(&mut self.shadow_map_size, size, lbl);
                     }
                 });
         });
+
+        draw_setting(ui, dim_col, "Depth Bias Constant", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.bias_constant, 0.0_f32..=10.0).step_by(0.1));
+        });
+
+        draw_setting(ui, dim_col, "Depth Bias Slope", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.bias_slope, 0.0_f32..=10.0).step_by(0.1));
+        });
+
+        draw_section_header(ui, dim_col, div_col, "Anti-Aliasing", query);
 
         draw_setting(ui, dim_col, "Supersampling (SSAA)", query, |ui| {
             ui.add(egui::Slider::new(&mut self.supersample, 1.0_f32..=4.0));
@@ -544,48 +602,48 @@ impl GraphicsPage {
             .get_resource::<WorldspaceStreaming>()
             .map(|s| s.render_distance)
             .unwrap_or(self.render_distance);
-        if self.render_distance != rd_cur {
+        let rd_changed = self.render_distance != rd_cur;
+        if rd_changed {
             if let Ok(s) = world.get_resource_mut::<WorldspaceStreaming>() {
                 s.set_render_distance(self.render_distance);
             }
-            EditorPreferences::save_render_distance(self.render_distance);
         }
 
         let (sd_cur, cc_cur, bc_cur, bs_cur, sms_cur) = world
             .get_resource::<ShadowDistance>()
-            .map(|s| (s.distance, s.cascade_count, s.bias_constant, s.bias_slope, s.shadow_map_size))
-            .unwrap_or((self.shadow_distance, self.cascade_count, self.bias_constant, self.bias_slope, self.shadow_map_size));
-        if (self.shadow_distance - sd_cur).abs() > f32::EPSILON {
+            .map(|s| {
+                (
+                    s.distance,
+                    s.cascade_count,
+                    s.bias_constant,
+                    s.bias_slope,
+                    s.shadow_map_size,
+                )
+            })
+            .unwrap_or((
+                self.shadow_distance,
+                self.cascade_count,
+                self.bias_constant,
+                self.bias_slope,
+                self.shadow_map_size,
+            ));
+        let shadow_changed = (self.shadow_distance - sd_cur).abs() > f32::EPSILON
+            || self.cascade_count != cc_cur
+            || (self.bias_constant - bc_cur).abs() > f32::EPSILON
+            || (self.bias_slope - bs_cur).abs() > f32::EPSILON
+            || self.shadow_map_size != sms_cur;
+        if shadow_changed {
             if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
                 s.distance = self.shadow_distance;
-            }
-            EditorPreferences::save_shadow_distance(self.shadow_distance);
-        }
-        if self.cascade_count != cc_cur {
-            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
                 s.cascade_count = self.cascade_count;
-            }
-            EditorPreferences::save_cascade_count(self.cascade_count);
-        }
-        if (self.bias_constant - bc_cur).abs() > f32::EPSILON
-            || (self.bias_slope - bs_cur).abs() > f32::EPSILON
-        {
-            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
                 s.bias_constant = self.bias_constant;
                 s.bias_slope = self.bias_slope;
-            }
-            EditorPreferences::save_bias(self.bias_constant, self.bias_slope);
-        }
-        if self.shadow_map_size != sms_cur {
-            if let Ok(s) = world.get_resource_mut::<ShadowDistance>() {
                 s.shadow_map_size = self.shadow_map_size;
             }
-            EditorPreferences::save_shadow_map_size(self.shadow_map_size);
         }
 
         let aa_changed = self.anti_aliasing != aa_cur;
         let ss_changed = (self.supersample - ss_cur).abs() > f32::EPSILON;
-
         if aa_changed {
             if let Ok(aa) = world.get_resource_mut::<AntiAliasing>() {
                 aa.amount = self.anti_aliasing;
@@ -596,6 +654,17 @@ impl GraphicsPage {
             if let Ok(vs) = world.get_resource_mut::<ViewportSize>() {
                 vs.supersample = self.supersample;
             }
+        }
+
+        if rd_changed || shadow_changed {
+            let mut prefs = EditorPreferences::load();
+            prefs.render_distance = self.render_distance;
+            prefs.shadow_distance = self.shadow_distance;
+            prefs.cascade_count = self.cascade_count;
+            prefs.bias_constant = self.bias_constant;
+            prefs.bias_slope = self.bias_slope;
+            prefs.shadow_map_size = self.shadow_map_size;
+            prefs.save();
         }
         if aa_changed || ss_changed {
             EditorGraphics {
@@ -608,7 +677,7 @@ impl GraphicsPage {
     }
 }
 
-// ─── Keybinds tab ────────────────────────────────────────────────────────────
+// Keybinds tab
 
 /// Ordered list of (bind_name, display_label) shown in the Keybinds tab.
 const KEYBIND_DISPLAY: &[(&str, &str)] = &[
@@ -713,7 +782,7 @@ impl KeybindsPage {
     }
 }
 
-// ─── Preferences window state ─────────────────────────────────────────────────
+// Preferences window state
 
 #[derive(Resource, Clone)]
 pub struct PreferencesState {
@@ -768,7 +837,8 @@ pub fn preferences(world: &mut World) -> Result<()> {
     egui::Window::new("Preferences")
         .id(egui::Id::new("preferences_window"))
         .open(&mut window_open)
-        .default_size([600.0, 400.0])
+        .default_size([680.0, 480.0])
+        .min_size([560.0, 360.0])
         .resizable(true)
         .movable(true)
         .frame(style.window_frame(&ctx))
@@ -832,8 +902,15 @@ pub fn preferences(world: &mut World) -> Result<()> {
                     style.dark_bg
                 };
                 left.painter().rect_filled(row_rect, 0.0, bg);
+                if selected {
+                    let accent = egui::Rect::from_min_size(
+                        row_rect.min,
+                        egui::Vec2::new(3.0, row_rect.height()),
+                    );
+                    left.painter().rect_filled(accent, 0.0, style.text_col);
+                }
                 left.painter().text(
-                    egui::Pos2::new(row_rect.left() + 10.0, row_rect.center().y),
+                    egui::Pos2::new(row_rect.left() + 14.0, row_rect.center().y),
                     egui::Align2::LEFT_CENTER,
                     page.label,
                     style.font_ui(),
@@ -874,24 +951,31 @@ pub fn preferences(world: &mut World) -> Result<()> {
                     .unwrap_or(true);
             let effective_query = if show_all { "" } else { query.as_str() };
 
-            right.add_space(14.0);
-            right.horizontal(|ui| {
-                ui.add_space(14.0);
-                ui.vertical(|ui| match state.selected_tab {
-                    0 => editor.draw(ui, &style, effective_query),
-                    1 => viewport.draw(ui, &style, effective_query),
-                    2 => graphics.draw(ui, &style, effective_query),
-                    3 => keybinds.draw(
-                        ui,
-                        &style,
-                        effective_query,
-                        &capture,
-                        &mut state.rebind_error,
-                        &mut pending,
-                    ),
-                    _ => {}
+            egui::ScrollArea::vertical()
+                .id_salt("prefs_content_scroll")
+                .show(&mut right, |ui| {
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(14.0);
+                        ui.vertical(|ui| {
+                            match state.selected_tab {
+                                0 => editor.draw(ui, &style, effective_query),
+                                1 => viewport.draw(ui, &style, effective_query),
+                                2 => graphics.draw(ui, &style, effective_query),
+                                3 => keybinds.draw(
+                                    ui,
+                                    &style,
+                                    effective_query,
+                                    &capture,
+                                    &mut state.rebind_error,
+                                    &mut pending,
+                                ),
+                                _ => {}
+                            }
+                            ui.add_space(14.0);
+                        });
+                    });
                 });
-            });
         });
 
     {

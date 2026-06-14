@@ -3,9 +3,9 @@ font_size: 13
 active_font: firacode
 camera_speed: 245.0
 render_distance: 9
-shadow_distance: 128.0
+shadow_distance: 1024.0
 cascade_count: 4
-bias_constant: 2.5
+bias_constant: 7.3
 bias_slope: 0.0
 shadow_map_size: 4096
 last_scene: default_4x4
