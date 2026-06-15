@@ -144,7 +144,10 @@ impl VulkanRenderer {
     }
 
     fn get_pipeline(&self, key: &str) -> Pipeline {
-        *self.pipeline_manager.pipeline_cache.get(key)
+        *self
+            .pipeline_manager
+            .pipeline_cache
+            .get(key)
             .unwrap_or_else(|| panic!("Pipeline '{}' not found in cache", key))
     }
 
@@ -160,8 +163,10 @@ impl VulkanRenderer {
         let shadow_model_vert = self.load_shader_module(&self.shadow_model_vertex_shader)?;
         let shadow_voxel_vert = self.load_shader_module(&self.shadow_voxel_vertex_shader)?;
         let shadow_frag = self.load_shader_module(&self.shadow_fragment_shader)?;
-        let shadow_point_model_vert = self.load_shader_module(&self.shadow_point_model_vertex_shader)?;
-        let shadow_point_voxel_vert = self.load_shader_module(&self.shadow_point_voxel_vertex_shader)?;
+        let shadow_point_model_vert =
+            self.load_shader_module(&self.shadow_point_model_vertex_shader)?;
+        let shadow_point_voxel_vert =
+            self.load_shader_module(&self.shadow_point_voxel_vertex_shader)?;
         let shadow_point_frag = self.load_shader_module(&self.shadow_point_fragment_shader)?;
 
         let swapchain = self.swapchain.clone();
@@ -307,8 +312,12 @@ impl VulkanRenderer {
                 AntiAliasingAmount::X0,
             )?;
 
-            context.device.destroy_shader_module(shadow_model_vert, None);
-            context.device.destroy_shader_module(shadow_voxel_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_model_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_voxel_vert, None);
             context.device.destroy_shader_module(shadow_frag, None);
 
             let shadow_point_model_pipeline = context.create_graphics_pipeline(
@@ -349,24 +358,50 @@ impl VulkanRenderer {
                 AntiAliasingAmount::X0,
             )?;
 
-            context.device.destroy_shader_module(shadow_point_model_vert, None);
-            context.device.destroy_shader_module(shadow_point_voxel_vert, None);
-            context.device.destroy_shader_module(shadow_point_frag, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_model_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_voxel_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_frag, None);
 
             // Destroy every cached pipeline (built-ins and any custom shader variants).
             for (_, old_pipeline) in self.pipeline_manager.pipeline_cache.drain() {
                 self.context.device.destroy_pipeline(old_pipeline, None);
             }
 
-            self.pipeline_manager.pipeline_cache.insert("model".to_string(), pipeline);
-            self.pipeline_manager.pipeline_cache.insert("model::wireframe".to_string(), wireframe_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("voxel".to_string(), voxel_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("water".to_string(), water_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("shadow_model".to_string(), shadow_model_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("shadow_point_model".to_string(), shadow_point_model_pipeline);
-            self.pipeline_manager.pipeline_cache.insert("shadow_point_voxel".to_string(), shadow_point_voxel_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("model".to_string(), pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("model::wireframe".to_string(), wireframe_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("voxel".to_string(), voxel_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("water".to_string(), water_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("shadow_model".to_string(), shadow_model_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
+            self.pipeline_manager.pipeline_cache.insert(
+                "shadow_point_model".to_string(),
+                shadow_point_model_pipeline,
+            );
+            self.pipeline_manager.pipeline_cache.insert(
+                "shadow_point_voxel".to_string(),
+                shadow_point_voxel_pipeline,
+            );
 
             self.pipeline_manager.model_pipeline_template = Some(
                 crate::rendering::vulkan::pipeline_manager::ModelPipelineTemplate {
@@ -636,8 +671,11 @@ impl RenderingAPI for VulkanRenderer {
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
             let light_descriptor_set_layout = context.device.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .bindings(&[light_ssbo_binding, shadow_sampler_binding, point_shadow_sampler_binding]),
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
+                    light_ssbo_binding,
+                    shadow_sampler_binding,
+                    point_shadow_sampler_binding,
+                ]),
                 None,
             )?;
 
@@ -943,7 +981,11 @@ impl RenderingAPI for VulkanRenderer {
             // Create the shadow image as a 2D array (one layer per cascade).
             let shadow_image_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
-                .extent(vk::Extent3D { width: SHADOW_MAP_SIZE, height: SHADOW_MAP_SIZE, depth: 1 })
+                .extent(vk::Extent3D {
+                    width: SHADOW_MAP_SIZE,
+                    height: SHADOW_MAP_SIZE,
+                    depth: 1,
+                })
                 .mip_levels(1)
                 .array_layers(CSM_CASCADE_COUNT as u32)
                 .format(vk::Format::D32_SFLOAT)
@@ -964,7 +1006,9 @@ impl RenderingAPI for VulkanRenderer {
                     )?),
                 None,
             )?;
-            context.device.bind_image_memory(shadow_image, shadow_image_memory, 0)?;
+            context
+                .device
+                .bind_image_memory(shadow_image, shadow_image_memory, 0)?;
 
             // Full array view for shader sampling (TYPE_2D_ARRAY, all layers).
             let shadow_image_view = context.device.create_image_view(
@@ -1156,22 +1200,36 @@ impl RenderingAPI for VulkanRenderer {
                 .destroy_shader_module(shadow_frag_module, None);
 
             // --- Point light cubemap shadow resources ---
-            let (point_shadow_image, point_shadow_image_memory, point_shadow_cube_view, point_shadow_face_views) = {
+            let (
+                point_shadow_image,
+                point_shadow_image_memory,
+                point_shadow_cube_view,
+                point_shadow_face_views,
+            ) = {
                 let image_info = vk::ImageCreateInfo::default()
                     .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
                     .image_type(vk::ImageType::TYPE_2D)
-                    .extent(vk::Extent3D { width: SHADOW_MAP_SIZE, height: SHADOW_MAP_SIZE, depth: 1 })
+                    .extent(vk::Extent3D {
+                        width: SHADOW_MAP_SIZE,
+                        height: SHADOW_MAP_SIZE,
+                        depth: 1,
+                    })
                     .mip_levels(1)
                     .array_layers(6)
                     .format(vk::Format::D32_SFLOAT)
                     .tiling(vk::ImageTiling::OPTIMAL)
                     .initial_layout(vk::ImageLayout::UNDEFINED)
-                    .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
+                    .usage(
+                        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                            | vk::ImageUsageFlags::SAMPLED,
+                    )
                     .samples(SampleCountFlags::TYPE_1)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
                 let point_shadow_image = context.device.create_image(&image_info, None)?;
-                let mem_reqs = context.device.get_image_memory_requirements(point_shadow_image);
+                let mem_reqs = context
+                    .device
+                    .get_image_memory_requirements(point_shadow_image);
                 let point_shadow_image_memory = context.device.allocate_memory(
                     &vk::MemoryAllocateInfo::default()
                         .allocation_size(mem_reqs.size)
@@ -1181,7 +1239,11 @@ impl RenderingAPI for VulkanRenderer {
                         )?),
                     None,
                 )?;
-                context.device.bind_image_memory(point_shadow_image, point_shadow_image_memory, 0)?;
+                context.device.bind_image_memory(
+                    point_shadow_image,
+                    point_shadow_image_memory,
+                    0,
+                )?;
 
                 let all_faces = vk::ImageSubresourceRange::default()
                     .aspect_mask(vk::ImageAspectFlags::DEPTH)
@@ -1224,7 +1286,8 @@ impl RenderingAPI for VulkanRenderer {
                     vk::PipelineStageFlags::TOP_OF_PIPE,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
                     vk::DependencyFlags::empty(),
-                    &[], &[],
+                    &[],
+                    &[],
                     &[vk::ImageMemoryBarrier::default()
                         .old_layout(vk::ImageLayout::UNDEFINED)
                         .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
@@ -1239,7 +1302,12 @@ impl RenderingAPI for VulkanRenderer {
                     context.command_pool,
                 );
 
-                (point_shadow_image, point_shadow_image_memory, point_shadow_cube_view, point_shadow_face_views)
+                (
+                    point_shadow_image,
+                    point_shadow_image_memory,
+                    point_shadow_cube_view,
+                    point_shadow_face_views,
+                )
             };
 
             let point_shadow_sampler = context.device.create_sampler(
@@ -1269,12 +1337,18 @@ impl RenderingAPI for VulkanRenderer {
             );
 
             // Point shadow pipelines.
-            let shadow_point_model_vert = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "shadow_point_model.vert")?;
-            let shadow_point_voxel_vert = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "shadow_point_voxel.vert")?;
-            let shadow_point_frag = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "shadow_point.frag")?;
+            let shadow_point_model_vert = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "shadow_point_model.vert",
+            )?;
+            let shadow_point_voxel_vert = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "shadow_point_voxel.vert",
+            )?;
+            let shadow_point_frag = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "shadow_point.frag",
+            )?;
 
             let shadow_point_model_pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
@@ -1340,9 +1414,15 @@ impl RenderingAPI for VulkanRenderer {
                 AntiAliasingAmount::X0,
             )?;
 
-            context.device.destroy_shader_module(shadow_point_model_vert, None);
-            context.device.destroy_shader_module(shadow_point_voxel_vert, None);
-            context.device.destroy_shader_module(shadow_point_frag, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_model_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_voxel_vert, None);
+            context
+                .device
+                .destroy_shader_module(shadow_point_frag, None);
 
             // 1×1 white RGBA pixel — used as the albedo texture when a mesh has no material.
             let white_pixels: [u8; 4] = [255, 255, 255, 255];
@@ -1353,12 +1433,19 @@ impl RenderingAPI for VulkanRenderer {
                     vk::BufferUsageFlags::TRANSFER_SRC,
                     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
                 )?;
-                let ptr = context.device.map_memory(staging_mem, 0, size, vk::MemoryMapFlags::empty())? as *mut u8;
+                let ptr =
+                    context
+                        .device
+                        .map_memory(staging_mem, 0, size, vk::MemoryMapFlags::empty())?
+                        as *mut u8;
                 ptr.copy_from_nonoverlapping(white_pixels.as_ptr(), 4);
                 context.device.unmap_memory(staging_mem);
 
                 let (white_image, white_memory) = context.create_image(
-                    vk::Extent2D { width: 1, height: 1 },
+                    vk::Extent2D {
+                        width: 1,
+                        height: 1,
+                    },
                     vk::Format::R8G8B8A8_SRGB,
                     vk::ImageTiling::OPTIMAL,
                     vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
@@ -1367,24 +1454,88 @@ impl RenderingAPI for VulkanRenderer {
                 )?;
 
                 let init_cmd = context.begin_single_time_commands(context.command_pool);
-                let sub = vk::ImageSubresourceRange { aspect_mask: vk::ImageAspectFlags::COLOR, base_mip_level: 0, level_count: 1, base_array_layer: 0, layer_count: 1 };
-                context.device.cmd_pipeline_barrier(init_cmd, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[],
-                    &[vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::UNDEFINED).new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).image(white_image).subresource_range(sub).src_access_mask(vk::AccessFlags::empty()).dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)]);
-                context.device.cmd_copy_buffer_to_image(init_cmd, staging_buf, white_image, vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers { aspect_mask: vk::ImageAspectFlags::COLOR, mip_level: 0, base_array_layer: 0, layer_count: 1 }).image_extent(vk::Extent3D { width: 1, height: 1, depth: 1 })]);
-                context.device.cmd_pipeline_barrier(init_cmd, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::DependencyFlags::empty(), &[], &[],
-                    &[vk::ImageMemoryBarrier::default().old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL).new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL).image(white_image).subresource_range(sub).src_access_mask(vk::AccessFlags::TRANSFER_WRITE).dst_access_mask(vk::AccessFlags::SHADER_READ)]);
-                context.end_single_time_commands(init_cmd, context.queues[&context.queue_families.transfer], context.command_pool);
+                let sub = vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                };
+                context.device.cmd_pipeline_barrier(
+                    init_cmd,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[vk::ImageMemoryBarrier::default()
+                        .old_layout(vk::ImageLayout::UNDEFINED)
+                        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .image(white_image)
+                        .subresource_range(sub)
+                        .src_access_mask(vk::AccessFlags::empty())
+                        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)],
+                );
+                context.device.cmd_copy_buffer_to_image(
+                    init_cmd,
+                    staging_buf,
+                    white_image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[vk::BufferImageCopy::default()
+                        .image_subresource(vk::ImageSubresourceLayers {
+                            aspect_mask: vk::ImageAspectFlags::COLOR,
+                            mip_level: 0,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        })
+                        .image_extent(vk::Extent3D {
+                            width: 1,
+                            height: 1,
+                            depth: 1,
+                        })],
+                );
+                context.device.cmd_pipeline_barrier(
+                    init_cmd,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[vk::ImageMemoryBarrier::default()
+                        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image(white_image)
+                        .subresource_range(sub)
+                        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                        .dst_access_mask(vk::AccessFlags::SHADER_READ)],
+                );
+                context.end_single_time_commands(
+                    init_cmd,
+                    context.queues[&context.queue_families.transfer],
+                    context.command_pool,
+                );
                 context.device.destroy_buffer(staging_buf, None);
                 context.device.free_memory(staging_mem, None);
 
-                let white_view = context.create_image_view(white_image, vk::Format::R8G8B8A8_SRGB, vk::ImageAspectFlags::COLOR)?;
+                let white_view = context.create_image_view(
+                    white_image,
+                    vk::Format::R8G8B8A8_SRGB,
+                    vk::ImageAspectFlags::COLOR,
+                )?;
                 let white_sampler = context.device.create_sampler(
-                    &vk::SamplerCreateInfo::default().mag_filter(vk::Filter::NEAREST).min_filter(vk::Filter::NEAREST)
-                        .address_mode_u(vk::SamplerAddressMode::REPEAT).address_mode_v(vk::SamplerAddressMode::REPEAT),
+                    &vk::SamplerCreateInfo::default()
+                        .mag_filter(vk::Filter::NEAREST)
+                        .min_filter(vk::Filter::NEAREST)
+                        .address_mode_u(vk::SamplerAddressMode::REPEAT)
+                        .address_mode_v(vk::SamplerAddressMode::REPEAT),
                     None,
                 )?;
-                let white_ds = context.create_texture_descriptor_set(descriptor_pool, descriptor_set_layout, white_view, white_sampler);
+                let white_ds = context.create_texture_descriptor_set(
+                    descriptor_pool,
+                    descriptor_set_layout,
+                    white_view,
+                    white_sampler,
+                );
 
                 GpuMaterial {
                     albedo: Some(crate::rendering::shared::texture::GpuTexture {
@@ -1401,15 +1552,35 @@ impl RenderingAPI for VulkanRenderer {
             };
 
             // Populate the pipeline cache and set the model template before moving pipeline_manager.
-            pipeline_manager.pipeline_cache.insert("model".to_string(), pipeline);
-            pipeline_manager.pipeline_cache.insert("model::wireframe".to_string(), wireframe_pipeline);
-            pipeline_manager.pipeline_cache.insert("voxel".to_string(), voxel_pipeline);
-            pipeline_manager.pipeline_cache.insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
-            pipeline_manager.pipeline_cache.insert("water".to_string(), water_pipeline);
-            pipeline_manager.pipeline_cache.insert("shadow_model".to_string(), shadow_model_pipeline);
-            pipeline_manager.pipeline_cache.insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
-            pipeline_manager.pipeline_cache.insert("shadow_point_model".to_string(), shadow_point_model_pipeline);
-            pipeline_manager.pipeline_cache.insert("shadow_point_voxel".to_string(), shadow_point_voxel_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("model".to_string(), pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("model::wireframe".to_string(), wireframe_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("voxel".to_string(), voxel_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("water".to_string(), water_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("shadow_model".to_string(), shadow_model_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
+            pipeline_manager.pipeline_cache.insert(
+                "shadow_point_model".to_string(),
+                shadow_point_model_pipeline,
+            );
+            pipeline_manager.pipeline_cache.insert(
+                "shadow_point_voxel".to_string(),
+                shadow_point_voxel_pipeline,
+            );
             pipeline_manager.model_pipeline_template = Some(
                 crate::rendering::vulkan::pipeline_manager::ModelPipelineTemplate {
                     layout: pipeline_layout,
@@ -1834,10 +2005,18 @@ impl RenderingAPI for VulkanRenderer {
         let frame = &self.frames[self.current_frame];
         let albedo_ds = albedo_descriptor_set
             .filter(|ds| *ds != vk::DescriptorSet::null())
-            .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
+            .unwrap_or(
+                self.default_white_material
+                    .albedo
+                    .as_ref()
+                    .unwrap()
+                    .descriptor_set,
+            );
 
         let pipeline = match shader_override {
-            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(name, &self.context.clone())?,
+            Some(name) => self
+                .pipeline_manager
+                .get_or_create_model_pipeline(name, &self.context.clone())?,
             None => self.get_pipeline("model"),
         };
 
@@ -1902,10 +2081,18 @@ impl RenderingAPI for VulkanRenderer {
         let frame = &self.frames[self.current_frame];
         let albedo_ds = albedo_descriptor_set
             .filter(|ds| *ds != vk::DescriptorSet::null())
-            .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
+            .unwrap_or(
+                self.default_white_material
+                    .albedo
+                    .as_ref()
+                    .unwrap()
+                    .descriptor_set,
+            );
 
         let pipeline = match shader_override {
-            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(name, &self.context.clone())?,
+            Some(name) => self
+                .pipeline_manager
+                .get_or_create_model_pipeline(name, &self.context.clone())?,
             None => self.get_pipeline("model::wireframe"),
         };
 
@@ -2224,8 +2411,18 @@ impl RenderingAPI for VulkanRenderer {
             (ptr.add(4) as *mut u32).write(shadow_enabled);
             (ptr.add(8) as *mut u32).write(cascade_count);
             (ptr.add(12) as *mut f32).write(shadow_distance);
-            (ptr.add(16) as *mut [f32; 4]).write([camera_pos[0], camera_pos[1], camera_pos[2], 0.0]);
-            (ptr.add(32) as *mut [f32; 4]).write([camera_dir[0], camera_dir[1], camera_dir[2], 0.0]);
+            (ptr.add(16) as *mut [f32; 4]).write([
+                camera_pos[0],
+                camera_pos[1],
+                camera_pos[2],
+                0.0,
+            ]);
+            (ptr.add(32) as *mut [f32; 4]).write([
+                camera_dir[0],
+                camera_dir[1],
+                camera_dir[2],
+                0.0,
+            ]);
 
             if let Some(ref d) = shadow_data {
                 for i in 0..CSM_CASCADE_COUNT {
@@ -2259,13 +2456,21 @@ impl RenderingAPI for VulkanRenderer {
             for view in &self.shadow_cascade_views {
                 self.context.device.destroy_image_view(*view, None);
             }
-            self.context.device.destroy_image_view(self.shadow_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.shadow_image_view, None);
             self.context.device.destroy_image(self.shadow_image, None);
-            self.context.device.free_memory(self.shadow_image_memory, None);
+            self.context
+                .device
+                .free_memory(self.shadow_image_memory, None);
 
             let shadow_image_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
-                .extent(vk::Extent3D { width: size, height: size, depth: 1 })
+                .extent(vk::Extent3D {
+                    width: size,
+                    height: size,
+                    depth: 1,
+                })
                 .mip_levels(1)
                 .array_layers(CSM_CASCADE_COUNT as u32)
                 .format(vk::Format::D32_SFLOAT)
@@ -2276,7 +2481,10 @@ impl RenderingAPI for VulkanRenderer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
             let shadow_image = self.context.device.create_image(&shadow_image_info, None)?;
-            let mem_reqs = self.context.device.get_image_memory_requirements(shadow_image);
+            let mem_reqs = self
+                .context
+                .device
+                .get_image_memory_requirements(shadow_image);
             let shadow_image_memory = self.context.device.allocate_memory(
                 &vk::MemoryAllocateInfo::default()
                     .allocation_size(mem_reqs.size)
@@ -2286,7 +2494,9 @@ impl RenderingAPI for VulkanRenderer {
                     )?),
                 None,
             )?;
-            self.context.device.bind_image_memory(shadow_image, shadow_image_memory, 0)?;
+            self.context
+                .device
+                .bind_image_memory(shadow_image, shadow_image_memory, 0)?;
 
             let subresource_all = vk::ImageSubresourceRange::default()
                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
@@ -2323,13 +2533,16 @@ impl RenderingAPI for VulkanRenderer {
                 )?;
             }
 
-            let cmd = self.context.begin_single_time_commands(self.context.command_pool);
+            let cmd = self
+                .context
+                .begin_single_time_commands(self.context.command_pool);
             self.context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::TOP_OF_PIPE,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
                 vk::DependencyFlags::empty(),
-                &[], &[],
+                &[],
+                &[],
                 &[vk::ImageMemoryBarrier::default()
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
@@ -2366,10 +2579,18 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
-    fn begin_shadow_pass(&mut self, cascade_index: usize, bias_constant: f32, bias_slope: f32) -> Result<()> {
+    fn begin_shadow_pass(
+        &mut self,
+        cascade_index: usize,
+        bias_constant: f32,
+        bias_slope: f32,
+    ) -> Result<()> {
         let frame = &self.frames[self.current_frame];
         let s = self.shadow_map_size;
-        let shadow_extent = vk::Extent2D { width: s, height: s };
+        let shadow_extent = vk::Extent2D {
+            width: s,
+            height: s,
+        };
 
         // On the first cascade, transition all layers from read-only to depth-write at once.
         if cascade_index == 0 {
@@ -2377,7 +2598,8 @@ impl RenderingAPI for VulkanRenderer {
                 self.context.device.cmd_pipeline_barrier(
                     frame.command_buffer,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                        | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                     vk::DependencyFlags::empty(),
                     &[],
                     &[],
@@ -2455,7 +2677,8 @@ impl RenderingAPI for VulkanRenderer {
             // forward barrier; for spot lights (single pass) this restores the layout correctly.
             self.context.device.cmd_pipeline_barrier(
                 frame.command_buffer,
-                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
                 vk::DependencyFlags::empty(),
                 &[],
@@ -2581,14 +2804,24 @@ impl RenderingAPI for VulkanRenderer {
             for view in &self.point_shadow_face_views {
                 self.context.device.destroy_image_view(*view, None);
             }
-            self.context.device.destroy_image_view(self.point_shadow_cube_view, None);
-            self.context.device.destroy_image(self.point_shadow_image, None);
-            self.context.device.free_memory(self.point_shadow_image_memory, None);
+            self.context
+                .device
+                .destroy_image_view(self.point_shadow_cube_view, None);
+            self.context
+                .device
+                .destroy_image(self.point_shadow_image, None);
+            self.context
+                .device
+                .free_memory(self.point_shadow_image_memory, None);
 
             let image_info = vk::ImageCreateInfo::default()
                 .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
                 .image_type(vk::ImageType::TYPE_2D)
-                .extent(vk::Extent3D { width: size, height: size, depth: 1 })
+                .extent(vk::Extent3D {
+                    width: size,
+                    height: size,
+                    depth: 1,
+                })
                 .mip_levels(1)
                 .array_layers(6)
                 .format(vk::Format::D32_SFLOAT)
@@ -2599,7 +2832,10 @@ impl RenderingAPI for VulkanRenderer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
             let point_shadow_image = self.context.device.create_image(&image_info, None)?;
-            let mem_reqs = self.context.device.get_image_memory_requirements(point_shadow_image);
+            let mem_reqs = self
+                .context
+                .device
+                .get_image_memory_requirements(point_shadow_image);
             let point_shadow_image_memory = self.context.device.allocate_memory(
                 &vk::MemoryAllocateInfo::default()
                     .allocation_size(mem_reqs.size)
@@ -2609,12 +2845,18 @@ impl RenderingAPI for VulkanRenderer {
                     )?),
                 None,
             )?;
-            self.context.device.bind_image_memory(point_shadow_image, point_shadow_image_memory, 0)?;
+            self.context.device.bind_image_memory(
+                point_shadow_image,
+                point_shadow_image_memory,
+                0,
+            )?;
 
             let all_faces = vk::ImageSubresourceRange::default()
                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                .base_mip_level(0).level_count(1)
-                .base_array_layer(0).layer_count(6);
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(6);
 
             let point_shadow_cube_view = self.context.device.create_image_view(
                 &vk::ImageViewCreateInfo::default()
@@ -2635,19 +2877,25 @@ impl RenderingAPI for VulkanRenderer {
                         .subresource_range(
                             vk::ImageSubresourceRange::default()
                                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                                .base_mip_level(0).level_count(1)
-                                .base_array_layer(i as u32).layer_count(1),
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(i as u32)
+                                .layer_count(1),
                         ),
                     None,
                 )?;
             }
 
-            let cmd = self.context.begin_single_time_commands(self.context.command_pool);
+            let cmd = self
+                .context
+                .begin_single_time_commands(self.context.command_pool);
             self.context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::TOP_OF_PIPE,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(), &[], &[],
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
                 &[vk::ImageMemoryBarrier::default()
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
@@ -2684,7 +2932,12 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
-    fn begin_point_shadow_pass(&mut self, face: usize, bias_constant: f32, bias_slope: f32) -> Result<()> {
+    fn begin_point_shadow_pass(
+        &mut self,
+        face: usize,
+        bias_constant: f32,
+        bias_slope: f32,
+    ) -> Result<()> {
         let frame = &self.frames[self.current_frame];
         let s = self.point_shadow_map_size;
 
@@ -2694,8 +2947,11 @@ impl RenderingAPI for VulkanRenderer {
                 self.context.device.cmd_pipeline_barrier(
                     frame.command_buffer,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                    vk::DependencyFlags::empty(), &[], &[],
+                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                        | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
                     &[vk::ImageMemoryBarrier::default()
                         .old_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
                         .new_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
@@ -2708,8 +2964,10 @@ impl RenderingAPI for VulkanRenderer {
                         .subresource_range(
                             vk::ImageSubresourceRange::default()
                                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                                .base_mip_level(0).level_count(1)
-                                .base_array_layer(0).layer_count(6),
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(6),
                         )],
                 );
             }
@@ -2718,18 +2976,41 @@ impl RenderingAPI for VulkanRenderer {
         self.context.begin_depth_only_rendering(
             frame.command_buffer,
             self.point_shadow_face_views[face],
-            vk::Rect2D::default().extent(vk::Extent2D { width: s, height: s }),
+            vk::Rect2D::default().extent(vk::Extent2D {
+                width: s,
+                height: s,
+            }),
         );
 
         unsafe {
-            self.context.device.cmd_set_depth_bias(frame.command_buffer, bias_constant, 0.0, bias_slope);
+            self.context.device.cmd_set_depth_bias(
+                frame.command_buffer,
+                bias_constant,
+                0.0,
+                bias_slope,
+            );
             self.context.device.cmd_set_viewport(
-                frame.command_buffer, 0,
-                &[vk::Viewport { x: 0.0, y: 0.0, width: s as f32, height: s as f32, min_depth: 0.0, max_depth: 1.0 }],
+                frame.command_buffer,
+                0,
+                &[vk::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: s as f32,
+                    height: s as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }],
             );
             self.context.device.cmd_set_scissor(
-                frame.command_buffer, 0,
-                &[vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: s, height: s } }],
+                frame.command_buffer,
+                0,
+                &[vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: vk::Extent2D {
+                        width: s,
+                        height: s,
+                    },
+                }],
             );
         }
         Ok(())
@@ -2744,9 +3025,12 @@ impl RenderingAPI for VulkanRenderer {
             if face == 5 {
                 self.context.device.cmd_pipeline_barrier(
                     frame.command_buffer,
-                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                        | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(), &[], &[],
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
                     &[vk::ImageMemoryBarrier::default()
                         .old_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
                         .new_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
@@ -2759,8 +3043,10 @@ impl RenderingAPI for VulkanRenderer {
                         .subresource_range(
                             vk::ImageSubresourceRange::default()
                                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                                .base_mip_level(0).level_count(1)
-                                .base_array_layer(0).layer_count(6),
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(6),
                         )],
                 );
             }
@@ -2788,9 +3074,26 @@ impl RenderingAPI for VulkanRenderer {
                 0,
                 &data,
             );
-            self.context.device.cmd_bind_vertex_buffers(frame.command_buffer, 0, &[mesh.get_vertex_buffer()], &[0]);
-            self.context.device.cmd_bind_index_buffer(frame.command_buffer, mesh.get_index_buffer(), 0, vk::IndexType::UINT32);
-            self.context.device.cmd_draw_indexed(frame.command_buffer, mesh.get_index_count(), 1, 0, 0, 0);
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
         }
         Ok(())
     }
@@ -2815,9 +3118,26 @@ impl RenderingAPI for VulkanRenderer {
                 0,
                 &data,
             );
-            self.context.device.cmd_bind_vertex_buffers(frame.command_buffer, 0, &[mesh.get_vertex_buffer()], &[0]);
-            self.context.device.cmd_bind_index_buffer(frame.command_buffer, mesh.get_index_buffer(), 0, vk::IndexType::UINT32);
-            self.context.device.cmd_draw_indexed(frame.command_buffer, mesh.get_index_count(), 1, 0, 0, 0);
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
         }
         Ok(())
     }
