@@ -70,6 +70,8 @@ use crate::voxels::meshes::{dispatch_remesh_jobs, receive_meshes};
 use crate::voxels::texture_atlas::PendingAtlas;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use crate::voxels::texture_atlas::upload_atlas;
+use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainMesh};
+use crate::terrain::rebuild::rebuild_dirty_terrain;
 use crate::{
     objects::world::World,
     rendering::{RenderingBackend, RenderingInfo},
@@ -83,6 +85,7 @@ pub mod packages;
 pub mod physics;
 pub mod rendering;
 pub mod states;
+pub mod terrain;
 pub mod ui;
 pub mod utils;
 pub mod voxels;
@@ -300,6 +303,21 @@ impl Core {
                         }
                     }
 
+                    if !world
+                        .get_objects_with_tag_with_ids::<NeedsTerrainRebuild>()
+                        .is_empty()
+                    {
+                        if let Ok(command_pool) = renderer.get_command_pool() {
+                            rebuild_dirty_terrain(
+                                &mut world,
+                                &context,
+                                command_pool,
+                                renderer.get_buffer_graveyard(),
+                            )
+                            .expect("Failed to rebuild terrain meshes");
+                        }
+                    }
+
                     if world.has_resource::<UpdateRenderer>() {
                         world.remove_resource::<UpdateRenderer>();
 
@@ -495,6 +513,32 @@ impl Core {
                                         {
                                             log_error!("Failed shadow model render: {}", e);
                                         }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Shadow terrain
+                        if self.packages.contains(&Packages::Terrain) {
+                            let terrain_ids: Vec<_> = world
+                                .get_objects_with_component_with_ids::<TerrainMesh>()
+                                .iter()
+                                .map(|(id, _)| *id)
+                                .collect();
+                            for id in terrain_ids {
+                                if let Some(object) = world.get_object(id) {
+                                    let terrain_mesh = object.get_component::<TerrainMesh>().unwrap();
+                                    if terrain_mesh.index_count == 0 {
+                                        continue;
+                                    }
+                                    let pc = ShadowModelPushConstants::new(
+                                        cascade_matrix,
+                                        [0.0, 0.0, 0.0],
+                                        [1.0, 1.0, 1.0],
+                                        [0.0, 0.0, 0.0, 1.0],
+                                    );
+                                    if let Err(e) = renderer.shadow_model_render(Box::new(terrain_mesh.clone()), &pc) {
+                                        log_error!("Failed shadow terrain render: {}", e);
                                     }
                                 }
                             }
@@ -737,6 +781,35 @@ impl Core {
                                 ) {
                                     log_error!("Failed to render model: {}", e);
                                 }
+                            }
+                        }
+                    }
+
+                    // Render terrain chunks
+                    if self.packages.contains(&Packages::Terrain) {
+                        let terrain_ids: Vec<_> = world
+                            .get_objects_with_component_with_ids::<TerrainMesh>()
+                            .iter()
+                            .map(|(id, _)| *id)
+                            .collect();
+                        for id in terrain_ids {
+                            let object = world.get_object(id).unwrap();
+                            let terrain_mesh = object.get_component::<TerrainMesh>().unwrap();
+                            if terrain_mesh.index_count == 0 {
+                                continue;
+                            }
+                            let mut terrain_push = model_push_constants.clone();
+                            terrain_push.world_position = Vector3::new(0.0, 0.0, 0.0);
+                            terrain_push.world_scale = Vector3::new(1.0, 1.0, 1.0);
+                            terrain_push.world_rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
+                            if let Err(e) = renderer.render(
+                                Box::new(terrain_mesh.clone()),
+                                push_constants.clone(),
+                                &terrain_push,
+                                None,
+                                Some("terrain"),
+                            ) {
+                                log_error!("Failed to render terrain: {}", e);
                             }
                         }
                     }

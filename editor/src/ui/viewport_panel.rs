@@ -319,6 +319,23 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         ui.add_space(4.0);
                         ui.separator();
                         ui.add_space(4.0);
+                        {
+                            let terrain_active = world
+                                .get_resource::<crate::terrain::TerrainToolState>()
+                                .map(|s| s.active)
+                                .unwrap_or(false);
+                            if ui.selectable_label(terrain_active, "Terrain").clicked() {
+                                if !world.has_resource::<crate::terrain::TerrainToolState>() {
+                                    world.insert_resource(crate::terrain::TerrainToolState::default());
+                                }
+                                if let Ok(s) = world.get_resource_mut::<crate::terrain::TerrainToolState>() {
+                                    s.active = !terrain_active;
+                                }
+                            }
+                        }
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
                         if ui.selectable_label(!gizmo_state.local, "Global").clicked() {
                             gizmo_state.local = false;
                             gizmo_state.drag = None;
@@ -398,31 +415,38 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 ui.put(frame_rect, label);
             }
 
-            if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
-                let (new_t, gs) = crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
-                gizmo_transform_out = new_t;
-                new_gizmo_state_from_fn = Some(gs);
-                if let Some(collider) = maybe_collider {
-                    let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
-                    crate::ui::gizmo::collider_gizmo(ui, display_t, collider, view_proj, frame_rect);
-                }
-            }
+            let terrain_tool_active = world
+                .get_resource::<crate::terrain::TerrainToolState>()
+                .map(|s| s.active)
+                .unwrap_or(false);
 
-            if let Some(vp_mat) = light_view_proj {
-                let consuming = new_gizmo_state_from_fn.as_ref()
-                    .map(|s| s.consuming)
-                    .unwrap_or(gizmo_state.consuming);
-                if let Some(id) = crate::ui::gizmo::light_gizmos(
-                    ui,
-                    &light_entries,
-                    vp_mat,
-                    frame_rect,
-                    light_selected_id,
-                    consuming,
-                ) {
-                    light_clicked = Some(id);
+            if !terrain_tool_active {
+                if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
+                    let (new_t, gs) = crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
+                    gizmo_transform_out = new_t;
+                    new_gizmo_state_from_fn = Some(gs);
+                    if let Some(collider) = maybe_collider {
+                        let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
+                        crate::ui::gizmo::collider_gizmo(ui, display_t, collider, view_proj, frame_rect);
+                    }
                 }
-            }
+
+                if let Some(vp_mat) = light_view_proj {
+                    let consuming = new_gizmo_state_from_fn.as_ref()
+                        .map(|s| s.consuming)
+                        .unwrap_or(gizmo_state.consuming);
+                    if let Some(id) = crate::ui::gizmo::light_gizmos(
+                        ui,
+                        &light_entries,
+                        vp_mat,
+                        frame_rect,
+                        light_selected_id,
+                        consuming,
+                    ) {
+                        light_clicked = Some(id);
+                    }
+                }
+            } // end !terrain_tool_active
 
             if ctx_obj_id.is_some() {
                 frame_resp.context_menu(|ui| {

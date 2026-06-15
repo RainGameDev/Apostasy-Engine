@@ -1,0 +1,41 @@
+use apostasy_macros::Resource;
+
+pub mod terrain_input;
+pub mod terrain_panel;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TerrainTool {
+    Raise,
+    Lower,
+    Smooth,
+    Flatten,
+    Paint,
+}
+
+#[derive(Resource, Clone)]
+pub struct TerrainToolState {
+    pub active: bool,
+    pub tool: TerrainTool,
+    pub brush_radius: f32,
+    pub brush_strength: f32,
+    /// Target height used by the Flatten tool. Set on first drag click.
+    pub flatten_height: Option<f32>,
+    /// Which texture layer (0-3) to paint when using the Paint tool.
+    pub paint_layer: usize,
+    /// Whether the user is currently dragging (mouse held).
+    pub dragging: bool,
+}
+
+impl Default for TerrainToolState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            tool: TerrainTool::Raise,
+            brush_radius: 10.0,
+            brush_strength: 0.3,
+            flatten_height: None,
+            paint_layer: 0,
+            dragging: false,
+        }
+    }
+}
