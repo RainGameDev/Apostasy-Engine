@@ -16,8 +16,8 @@ pub struct TerrainChunk {
     pub resolution: u32,
     /// Flattened (resolution+1)^2 heightmap.
     pub heights: Vec<f32>,
-    /// Per-vertex RGBA blend weights for up to 4 texture layers.
-    pub texture_weights: Vec<[u8; 4]>,
+    /// Per-vertex texture layer index (sampled as float for GPU-interpolated blending).
+    pub texture_index: Vec<f32>,
 }
 
 impl Default for TerrainChunk {
@@ -34,7 +34,7 @@ impl TerrainChunk {
             cell_coord,
             resolution,
             heights: vec![0.0; count],
-            texture_weights: vec![[255, 0, 0, 0]; count],
+            texture_index: vec![0.0; count],
         }
     }
 
@@ -71,8 +71,6 @@ pub struct TerrainMesh {
     pub index_buffer: vk::Buffer,
     pub index_buffer_memory: vk::DeviceMemory,
     pub index_count: u32,
-    /// True when the vertex buffer is HOST_VISIBLE | HOST_COHERENT and can be updated
-    /// in-place via a direct CPU write instead of a staging-buffer round-trip.
     pub host_visible: bool,
 }
 

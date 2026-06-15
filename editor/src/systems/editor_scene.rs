@@ -5,9 +5,9 @@ use apostasy_core::{
         loaders::{
             biome_loader::BiomeLoader,
             material_loader::MaterialLoader,
-            worldspace_loader::{WorldspaceLoader, WorldspaceRegistry},
             structure_loader::StructureLoader,
             voxel_loader::VoxelLoader,
+            worldspace_loader::{WorldspaceLoader, WorldspaceRegistry},
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
@@ -15,12 +15,11 @@ use apostasy_core::{
         Object,
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
-        worldspace_serializer::load_worldspace,
-        worldspace_streaming::WorldspaceStreaming,
         tags::Player,
         world::World,
+        worldspace_serializer::load_worldspace,
+        worldspace_streaming::WorldspaceStreaming,
     },
-    terrain::persistence::load_terrain_cells,
     physics::{
         Gravity,
         collider::{Collider, ColliderShape},
@@ -32,6 +31,7 @@ use apostasy_core::{
         model_renderer::ModelRenderer,
     },
     start,
+    terrain::persistence::load_terrain_cells,
     ui::ui_context::ViewportSize,
     update,
     voxels::{
@@ -82,17 +82,18 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
         });
         asset_manager.register_loader(MaterialLoader::new());
 
-        let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
-        if game_res.exists() {
-            let _ = asset_manager.load_directory(&game_res);
-        }
+        // let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
+        // if game_res.exists() {
+        //     let _ = asset_manager.load_directory(&game_res);
+        // }
 
         let core_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/res");
         if core_res.exists() {
             let _ = asset_manager.load_directory(&core_res);
         }
 
-        let editor_scenes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
+        let editor_scenes =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
         if editor_scenes.exists() {
             let _ = asset_manager.load_directory(&editor_scenes);
         }
@@ -136,7 +137,9 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
                     return Some((last_scene_name.clone(), v));
                 }
             }
-            reg.worldspaces.get("default").map(|v| ("default".to_string(), v.clone()))
+            reg.worldspaces
+                .get("default")
+                .map(|v| ("default".to_string(), v.clone()))
         });
 
     let terrain_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/terrain");
@@ -343,7 +346,8 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
                 if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
                     if let Some(hit) = hit {
                         cell_search_state.selected_obj = Some(hit.object_id);
-                        if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>() {
+                        if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>()
+                        {
                             inspector_state.visible = true;
                         }
                     } else {
@@ -376,7 +380,12 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
 
         let (vp_x, vp_y, vp_w, vp_h) = {
             let vp = world.get_resource::<ViewportSize>().unwrap();
-            (vp.logical_x, vp.logical_y, vp.logical_width, vp.logical_height)
+            (
+                vp.logical_x,
+                vp.logical_y,
+                vp.logical_width,
+                vp.logical_height,
+            )
         };
         let mouse_position = world.get_resource::<InputManager>().unwrap().mouse_position;
 

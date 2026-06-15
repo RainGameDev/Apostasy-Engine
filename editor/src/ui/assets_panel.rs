@@ -11,6 +11,7 @@ use apostasy_core::{
     update,
 };
 use apostasy_macros::Resource;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::ui::asset_editor::AssetEditorState;
@@ -155,7 +156,7 @@ impl ObjectWindowState {
             for name in &models {
                 entries.push(ObjectEntry {
                     editor_id: format!("model:{}", name),
-                    name: name.clone(),
+                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
                     count: 0,
                     category_path: models_path.clone(),
                 });
@@ -168,7 +169,7 @@ impl ObjectWindowState {
             for name in &shaders {
                 entries.push(ObjectEntry {
                     editor_id: format!("shader:{}", name),
-                    name: name.clone(),
+                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
                     count: 0,
                     category_path: shaders_path.clone(),
                 });
@@ -181,7 +182,7 @@ impl ObjectWindowState {
             for name in &textures {
                 entries.push(ObjectEntry {
                     editor_id: format!("texture:{}", name),
-                    name: name.clone(),
+                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
                     count: 0,
                     category_path: textures_path.clone(),
                 });

@@ -3,8 +3,9 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
+layout(location = 3) in float fragTextureIndex;
 
-layout(set = 1, binding = 0) uniform sampler2D albedoMap;
+layout(set = 1, binding = 0) uniform sampler2DArray terrainTex;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -129,9 +130,27 @@ vec3 compute_lighting(vec3 N) {
 }
 
 void main() {
-    vec3 N      = normalize(fragNormal);
-    vec3 light  = compute_lighting(N);
-    // Terrain base color: green-grey tinted by height
-    vec3 baseColor = mix(vec3(0.25, 0.35, 0.18), vec3(0.55, 0.55, 0.50), clamp(fragWorldPos.y / 64.0, 0.0, 1.0));
-    outColor = vec4(baseColor * max(light, vec3(0.05)), 1.0);
+    vec3 N = normalize(fragNormal);
+    vec3 lighting = compute_lighting(N);
+
+    vec4 baseColor;
+
+    // Interpolated texture index: blend between floor and ceil layers
+    float idx = max(fragTextureIndex, 0.0);
+    float layer_a = floor(idx);
+    float layer_b = ceil(idx);
+    float blend = fract(idx);
+
+    // If index is near an integer, avoid extra texture sample
+    if (blend < 0.001) {
+        baseColor = texture(terrainTex, vec3(fragTexCoord, layer_a));
+    } else if (blend > 0.999) {
+        baseColor = texture(terrainTex, vec3(fragTexCoord, layer_b));
+    } else {
+        vec4 ca = texture(terrainTex, vec3(fragTexCoord, layer_a));
+        vec4 cb = texture(terrainTex, vec3(fragTexCoord, layer_b));
+        baseColor = mix(ca, cb, blend);
+    }
+
+    outColor = vec4(baseColor.rgb * max(lighting, vec3(0.05)), 1.0);
 }

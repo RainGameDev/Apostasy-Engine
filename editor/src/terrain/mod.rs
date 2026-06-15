@@ -21,7 +21,7 @@ pub struct TerrainToolState {
     pub brush_strength: f32,
     /// Target height used by the Flatten tool. Set on first drag click.
     pub flatten_height: Option<f32>,
-    /// Which texture layer (0-3) to paint when using the Paint tool.
+    /// Which texture layer index (into TerrainSettings.texture_layers) to paint.
     pub paint_layer: usize,
     /// Whether the user is currently dragging (mouse held).
     pub dragging: bool,

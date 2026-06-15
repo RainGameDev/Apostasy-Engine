@@ -57,6 +57,7 @@ pub(crate) fn add_voxel_package(world: &mut World) {
             registry: Arc::clone(&structure_registry),
         });
 
+        log!("{}", format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "res/"));
         asset_manager
             .load_directory(Path::new(&format!(
                 "{}/{}",

@@ -72,6 +72,8 @@ use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use crate::voxels::texture_atlas::upload_atlas;
 use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainMesh};
 use crate::terrain::rebuild::rebuild_dirty_terrain;
+use crate::terrain::texture_atlas::TerrainTextureAtlas;
+use crate::terrain::{TerrainAtlasNeedsRebuild, TerrainSettings};
 use crate::{
     objects::world::World,
     rendering::{RenderingBackend, RenderingInfo},
@@ -787,6 +789,40 @@ impl Core {
 
                     // Render terrain chunks
                     if self.packages.contains(&Packages::Terrain) {
+                        // Rebuild atlas if textures changed
+                        if world.has_resource::<TerrainAtlasNeedsRebuild>() {
+                            world.remove_resource::<TerrainTextureAtlas>();
+                            world.remove_resource::<TerrainAtlasNeedsRebuild>();
+                        }
+
+                        // Lazily upload the terrain texture atlas
+                        if !world.has_resource::<TerrainTextureAtlas>() {
+                            let tex_settings = world
+                                .get_resource::<TerrainSettings>()
+                                .ok()
+                                .map(|s| s.texture_layers.clone())
+                                .unwrap_or_default();
+                            if let Ok(cmd_pool) = renderer.get_command_pool() {
+                                let dp = renderer.get_descriptor_pool();
+                                let dsl = renderer.get_voxel_descriptor_set_layout();
+                                if let Ok(atlas) = crate::terrain::texture_atlas::upload_terrain_textures(
+                                    &context,
+                                    cmd_pool,
+                                    dp,
+                                    dsl,
+                                    &tex_settings,
+                                    256,
+                                ) {
+                                    world.insert_resource(atlas);
+                                }
+                            }
+                        }
+
+                        let terrain_atlas_ds = world
+                            .get_resource::<TerrainTextureAtlas>()
+                            .ok()
+                            .map(|a| a.descriptor_set);
+
                         let terrain_ids: Vec<_> = world
                             .get_objects_with_component_with_ids::<TerrainMesh>()
                             .iter()
@@ -806,7 +842,7 @@ impl Core {
                                 Box::new(terrain_mesh.clone()),
                                 push_constants.clone(),
                                 &terrain_push,
-                                None,
+                                terrain_atlas_ds,
                                 Some("terrain"),
                             ) {
                                 log_error!("Failed to render terrain: {}", e);

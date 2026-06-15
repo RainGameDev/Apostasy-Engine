@@ -11,6 +11,7 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub tex_coord: [f32; 2],
+    pub texture_index: f32,
 }
 
 impl VertexDefinition for Vertex {
@@ -41,6 +42,12 @@ impl VertexDefinition for Vertex {
                 .location(2)
                 .format(vk::Format::R32G32_SFLOAT)
                 .offset(24),
+            // Texture layer index (float for GPU-interpolated blending between layers)
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(3)
+                .format(vk::Format::R32_SFLOAT)
+                .offset(32),
         ]
     }
 }

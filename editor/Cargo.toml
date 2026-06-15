@@ -8,5 +8,6 @@ apostasy-core = {path = "../core"}
 apostasy-macros = {path = "../macros/"}
 inventory = "0.3.24"
 anyhow = "1.0.100"
+image = "0.25"
 serde = { version = "1.0.228", features = ["derive"]}
 serde_yaml = "0.9.34"

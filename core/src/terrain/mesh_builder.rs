@@ -18,36 +18,29 @@ pub struct ExistingMesh {
 }
 
 /// Border heights from neighboring chunks, used to compute seamless normals at chunk edges.
-///
-/// Each field holds the heights needed for a true central-difference gradient at that border:
-/// one full step *inside* the neighbor (not the shared border vertex itself), so both chunks
-/// compute the same gradient at their shared edge vertices.
 pub struct NeighborBorders {
-    /// x = (r-1) column of (cx-1, cz) — hx_neg sample for vertices at this chunk's x=0 border.
+    /// x = (r-1) column of (cx-1, cz) hx_neg sample for vertices at this chunk's x=0 border.
     pub left_col: Option<Vec<f32>>,
-    /// x = 1 column of (cx+1, cz) — hx_pos sample for vertices at this chunk's x=r border.
+    /// x = 1 column of (cx+1, cz) hx_pos sample for vertices at this chunk's x=r border.
     pub right_col: Option<Vec<f32>>,
-    /// z = (r-1) row of (cx, cz-1) — hz_neg sample for vertices at this chunk's z=0 border.
+    /// z = (r-1) row of (cx, cz-1) hz_neg sample for vertices at this chunk's z=0 border.
     pub top_row: Option<Vec<f32>>,
-    /// z = 1 row of (cx, cz+1) — hz_pos sample for vertices at this chunk's z=r border.
+    /// z = 1 row of (cx, cz+1) hz_pos sample for vertices at this chunk's z=r border.
     pub bottom_row: Option<Vec<f32>>,
 }
 
 impl Default for NeighborBorders {
     fn default() -> Self {
-        Self { left_col: None, right_col: None, top_row: None, bottom_row: None }
+        Self {
+            left_col: None,
+            right_col: None,
+            top_row: None,
+            bottom_row: None,
+        }
     }
 }
 
 /// Builds or updates a terrain mesh.
-///
-/// If `existing` is `Some` and the mesh is host-visible, the vertex data is written directly
-/// into the mapped buffer (no allocation, no staging, no GPU sync) and the index buffer is
-/// reused unchanged. This is the fast path hit on every paint stroke after the first.
-///
-/// If `existing` is `None` or the old mesh was DEVICE_LOCAL, new buffers are allocated:
-/// a HOST_VISIBLE | HOST_COHERENT vertex buffer for future in-place updates, and a
-/// DEVICE_LOCAL index buffer (indices never change, so it only needs one upload).
 pub fn build_terrain_mesh(
     chunk: &TerrainChunk,
     neighbors: &NeighborBorders,
@@ -72,14 +65,19 @@ pub fn build_terrain_mesh(
 
             let normal = compute_normal(chunk, x, z, step, neighbors);
 
-            // UV: tile once per cell
-            let u = x as f32 / r as f32;
-            let v = z as f32 / r as f32;
+            let u = x as f32 / r as f32 * 16.0;
+            let v = z as f32 / r as f32 * 16.0;
 
+            let ti = chunk
+                .texture_index
+                .get(x + z * side)
+                .copied()
+                .unwrap_or(0.0);
             vertices.push(Vertex {
                 position: [wx, h, wz],
                 normal: [normal.x, normal.y, normal.z],
                 tex_coord: [u, v],
+                texture_index: ti,
             });
         }
     }
@@ -127,7 +125,13 @@ pub fn build_terrain_mesh(
 }
 
 /// Smooth vertex normal using central differences, sampling into neighbor chunks at borders.
-fn compute_normal(chunk: &TerrainChunk, x: usize, z: usize, step: f32, neighbors: &NeighborBorders) -> Vector3<f32> {
+fn compute_normal(
+    chunk: &TerrainChunk,
+    x: usize,
+    z: usize,
+    step: f32,
+    neighbors: &NeighborBorders,
+) -> Vector3<f32> {
     let r = chunk.resolution as usize;
 
     let hx_pos = if x < r {
@@ -162,7 +166,11 @@ fn compute_normal(chunk: &TerrainChunk, x: usize, z: usize, step: f32, neighbors
         chunk.height_at(x, z)
     };
 
-    let n = Vector3::new(-(hx_pos - hx_neg) / (step * 2.0), 1.0, -(hz_pos - hz_neg) / (step * 2.0));
+    let n = Vector3::new(
+        -(hx_pos - hx_neg) / (step * 2.0),
+        1.0,
+        -(hz_pos - hz_neg) / (step * 2.0),
+    );
     let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
     if len > 0.0 {
         Vector3::new(n.x / len, n.y / len, n.z / len)

@@ -7,13 +7,16 @@ pub mod chunk;
 pub mod mesh_builder;
 pub mod persistence;
 pub mod rebuild;
+pub mod texture_atlas;
+
+pub use texture_atlas::{TerrainAtlasNeedsRebuild, TerrainTextureAtlas, discover_terrain_textures, load_terrain_texture};
 
 /// Global terrain configuration.
 #[derive(Resource, Clone)]
 pub struct TerrainSettings {
     /// Vertex grid resolution per cell side (default 128). Must be >= 2.
     pub resolution: u32,
-    /// Up to 4 texture layer paths for the terrain shader.
+    /// Texture layer paths for the terrain shader (up to 64).
     pub texture_layers: Vec<String>,
 }
 

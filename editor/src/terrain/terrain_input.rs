@@ -633,10 +633,12 @@ fn apply_brush(
                 TerrainTool::Paint => {
                     let side = r + 1;
                     let idx = x + z * side;
-                    if idx < chunk.texture_weights.len() {
-                        let layer = state.paint_layer.min(3);
-                        let w = (weight * 255.0) as u8;
-                        blend_paint_weight(&mut chunk.texture_weights[idx], layer, w);
+                    if idx < chunk.texture_index.len() && weight > 0.01 {
+                        let layer = state.paint_layer as f32;
+                        let cur = chunk.texture_index[idx];
+                        // Smoothly blend toward the target index
+                        let blend = (weight * 0.5).min(0.5);
+                        chunk.texture_index[idx] = cur * (1.0 - blend) + layer * blend;
                     }
                 }
             }
@@ -697,27 +699,4 @@ fn neighbor_avg(heights: &[f32], x: usize, z: usize, side: usize) -> f32 {
     }
 }
 
-/// Blends a paint weight into the RGBA weight array for the given layer, renormalizing.
-fn blend_paint_weight(weights: &mut [u8; 4], layer: usize, amount: u8) {
-    let add = amount as u16;
-    let old = weights[layer] as u16;
-    let new_val = (old + add).min(255) as u8;
-    let diff = new_val - weights[layer];
-    weights[layer] = new_val;
-    // Reduce other channels proportionally
-    let total_other: u16 = weights
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != layer)
-        .map(|(_, &w)| w as u16)
-        .sum();
-    if total_other > 0 && diff > 0 {
-        let reduce = diff as u16;
-        for i in 0..4 {
-            if i != layer && weights[i] > 0 {
-                let take = (weights[i] as u16 * reduce / total_other) as u8;
-                weights[i] = weights[i].saturating_sub(take);
-            }
-        }
-    }
-}
+
