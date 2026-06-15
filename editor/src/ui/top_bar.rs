@@ -5,6 +5,7 @@ use apostasy_core::egui::{self};
 use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
+use apostasy_core::terrain::persistence::{load_terrain_cells, save_terrain_cells};
 use apostasy_core::ui::FontRegistry;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{log, update};
@@ -26,6 +27,10 @@ pub struct SaveAsDialog {
     pub name_buf: String,
 }
 
+fn terrain_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/terrain")
+}
+
 fn do_save(world: &mut World, name: &str) {
     let scenes_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
     let path = scenes_dir.join(format!("{}.yaml", name));
@@ -36,6 +41,9 @@ fn do_save(world: &mut World, name: &str) {
             let _ = am.load_file(&path);
         }
         EditorPreferences::save_last_scene(name);
+    }
+    if let Err(e) = save_terrain_cells(world, &terrain_dir()) {
+        apostasy_core::log_warn!("Failed to save terrain: {}", e);
     }
 }
 
@@ -415,6 +423,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         if let Some(value) = scene_value {
             EditorPreferences::save_last_scene(scene_name);
             let _ = load_worldspace(world, &value, &["EditorCamera"]);
+            let _ = load_terrain_cells(world, &terrain_dir());
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                 s.selected_obj = None;
             }

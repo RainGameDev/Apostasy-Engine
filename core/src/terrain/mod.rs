@@ -5,6 +5,7 @@ use crate::objects::cell::{CellCoord, ObjectId};
 
 pub mod chunk;
 pub mod mesh_builder;
+pub mod persistence;
 pub mod rebuild;
 
 /// Global terrain configuration.

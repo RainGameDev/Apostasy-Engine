@@ -4,6 +4,7 @@ use apostasy_core::{
     objects::{
         cell::{CellCoord, CELL_SIZE, world_to_cell},
         components::transform::Transform,
+        tags::skips_serilization::SkipsSerilization,
         world::World,
     },
     rendering::components::camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
@@ -266,6 +267,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
     let chunk = TerrainChunk::new(cell, resolution);
     obj.add_component(chunk);
     obj.add_tag(NeedsTerrainRebuild);
+    obj.add_tag(SkipsSerilization);
 
     let id = world.add_object(obj);
     if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {

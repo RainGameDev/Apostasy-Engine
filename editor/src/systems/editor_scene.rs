@@ -20,6 +20,7 @@ use apostasy_core::{
         tags::Player,
         world::World,
     },
+    terrain::persistence::load_terrain_cells,
     physics::{
         Gravity,
         collider::{Collider, ColliderShape},
@@ -138,8 +139,11 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             reg.worldspaces.get("default").map(|v| ("default".to_string(), v.clone()))
         });
 
+    let terrain_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/terrain");
+
     if let Some((scene_name, scene_value)) = startup_scene {
         load_worldspace(world, &scene_value, &["EditorCamera"])?;
+        let _ = load_terrain_cells(world, &terrain_dir);
         EditorPreferences::save_last_scene(&scene_name);
     } else {
         let floor = Object::new()
@@ -213,6 +217,8 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             ))
             .add_tag(Player);
         world.add_object(sphere);
+
+        let _ = load_terrain_cells(world, &terrain_dir);
     }
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();

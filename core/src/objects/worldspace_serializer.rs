@@ -24,10 +24,6 @@ use crate::{
         lighting::{Light, LightType},
         model_renderer::ModelRenderer,
     },
-    terrain::{
-        TerrainChunkMap,
-        chunk::{NeedsTerrainRebuild, TerrainChunk, f32s_to_hex, weights_to_hex},
-    },
 };
 
 fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
@@ -145,15 +141,6 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
             map.insert("radius_min".into(), (l.radius_min as f64).into());
             map.insert("radius_max".into(), (l.radius_max as f64).into());
         }
-        "TerrainChunk" => {
-            let tc = component.as_any().downcast_ref::<TerrainChunk>()?;
-            map.insert("cell_x".into(), (tc.cell_coord.x as i64).into());
-            map.insert("cell_y".into(), (tc.cell_coord.y as i64).into());
-            map.insert("cell_z".into(), (tc.cell_coord.z as i64).into());
-            map.insert("resolution".into(), (tc.resolution as u64).into());
-            map.insert("heights".into(), f32s_to_hex(&tc.heights).into());
-            map.insert("texture_weights".into(), weights_to_hex(&tc.texture_weights).into());
-        }
         _ => return None,
     }
 
@@ -186,7 +173,7 @@ fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
             .iter()
             .filter_map(|t| {
                 let n = t.type_name().rsplit("::").next()?.to_string();
-                if matches!(n.as_str(), "EditorCamera" | "ActiveCamera" | "NeedsTerrainRebuild") {
+                if matches!(n.as_str(), "EditorCamera" | "ActiveCamera") {
                     return None;
                 }
                 Some(serde_yaml::Value::String(n))
@@ -260,7 +247,6 @@ pub fn load_cell(world: &mut World, coord: CellCoord, value: &serde_yaml::Value)
             load_object(world, obj_value, None, coord)?;
         }
     }
-    rebuild_terrain_chunk_map(world);
     Ok(())
 }
 
@@ -468,8 +454,6 @@ pub fn load_worldspace(
     streaming.source = source;
     world.insert_resource(streaming);
 
-    rebuild_terrain_chunk_map(world);
-
     Ok(())
 }
 
@@ -496,32 +480,3 @@ fn load_legacy_object(
     Ok(())
 }
 
-/// Scans all TerrainChunk objects in the world and rebuilds the `TerrainChunkMap` resource.
-/// Also tags every terrain object with `NeedsTerrainRebuild` so GPU meshes are uploaded.
-fn rebuild_terrain_chunk_map(world: &mut World) {
-    let terrain_ids: Vec<ObjectId> = world
-        .get_objects_with_component_with_ids::<TerrainChunk>()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
-
-    if terrain_ids.is_empty() {
-        return;
-    }
-
-    let mut new_map = TerrainChunkMap::default();
-    for &id in &terrain_ids {
-        if let Some(obj) = world.get_object(id) {
-            if let Ok(chunk) = obj.get_component::<TerrainChunk>() {
-                new_map.0.insert(chunk.cell_coord, id);
-            }
-        }
-    }
-    world.insert_resource(new_map);
-
-    for id in terrain_ids {
-        if let Some(obj) = world.get_object_mut(id) {
-            obj.add_tag(NeedsTerrainRebuild);
-        }
-    }
-}

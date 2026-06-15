@@ -58,79 +58,9 @@ impl TerrainChunk {
         )
     }
 
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        let x = value.get("cell_x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let y = value.get("cell_y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let z = value.get("cell_z").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        self.cell_coord = Vector3::new(x, y, z);
-
-        if let Some(res) = value.get("resolution").and_then(|v| v.as_u64()) {
-            let res = res as u32;
-            let side = (res + 1) as usize;
-            let count = side * side;
-            self.resolution = res;
-            self.heights = vec![0.0; count];
-            self.texture_weights = vec![[255, 0, 0, 0]; count];
-        }
-
-        if let Some(hex) = value.get("heights").and_then(|v| v.as_str()) {
-            let decoded = hex_to_f32s(hex);
-            if !decoded.is_empty() {
-                self.heights = decoded;
-            }
-        }
-
-        if let Some(hex) = value.get("texture_weights").and_then(|v| v.as_str()) {
-            let decoded = hex_to_weights(hex);
-            if !decoded.is_empty() {
-                self.texture_weights = decoded;
-            }
-        }
-
+    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
         Ok(())
     }
-}
-
-pub fn f32s_to_hex(values: &[f32]) -> String {
-    let mut s = String::with_capacity(values.len() * 8);
-    for &v in values {
-        let [a, b, c, d] = v.to_le_bytes();
-        s.push_str(&format!("{:02x}{:02x}{:02x}{:02x}", a, b, c, d));
-    }
-    s
-}
-
-fn hex_to_f32s(hex: &str) -> Vec<f32> {
-    hex.as_bytes()
-        .chunks_exact(8)
-        .filter_map(|c| {
-            let s = std::str::from_utf8(c).ok()?;
-            let n = u32::from_str_radix(s, 16).ok()?;
-            Some(f32::from_bits(n))
-        })
-        .collect()
-}
-
-pub fn weights_to_hex(weights: &[[u8; 4]]) -> String {
-    let mut s = String::with_capacity(weights.len() * 8);
-    for w in weights {
-        s.push_str(&format!("{:02x}{:02x}{:02x}{:02x}", w[0], w[1], w[2], w[3]));
-    }
-    s
-}
-
-fn hex_to_weights(hex: &str) -> Vec<[u8; 4]> {
-    hex.as_bytes()
-        .chunks_exact(8)
-        .filter_map(|c| {
-            let s = std::str::from_utf8(c).ok()?;
-            let b0 = u8::from_str_radix(&s[0..2], 16).ok()?;
-            let b1 = u8::from_str_radix(&s[2..4], 16).ok()?;
-            let b2 = u8::from_str_radix(&s[4..6], 16).ok()?;
-            let b3 = u8::from_str_radix(&s[6..8], 16).ok()?;
-            Some([b0, b1, b2, b3])
-        })
-        .collect()
 }
 
 /// GPU mesh buffers for a terrain chunk.
