@@ -3,7 +3,7 @@ use ash::vk;
 use cgmath::Vector3;
 
 use crate::{
-    objects::cell::{CellCoord, CELL_SIZE},
+    objects::cell::{CELL_SIZE, CellCoord},
     rendering::shared::model::GpuMesh,
 };
 
@@ -12,9 +12,9 @@ use crate::{
 pub struct TerrainChunk {
     /// Cell coordinate this terrain piece occupies.
     pub cell_coord: CellCoord,
-    /// Vertices per side (default 128). Vertex count is (resolution+1)².
+    /// Vertices per side. Vertex count is (resolution+1)^2.
     pub resolution: u32,
-    /// Flattened (resolution+1)² heightmap, row-major (x + z*(resolution+1)).
+    /// Flattened (resolution+1)^2 heightmap.
     pub heights: Vec<f32>,
     /// Per-vertex RGBA blend weights for up to 4 texture layers.
     pub texture_weights: Vec<[u8; 4]>,
@@ -22,7 +22,7 @@ pub struct TerrainChunk {
 
 impl Default for TerrainChunk {
     fn default() -> Self {
-        Self::new(Vector3::new(0, 0, 0), 128)
+        Self::new(Vector3::new(0, 0, 0), 32)
     }
 }
 
@@ -50,7 +50,7 @@ impl TerrainChunk {
         &mut self.heights[x + z * side]
     }
 
-    /// World-space origin of this cell (top-left corner, Y=0).
+    /// World space origin of this cell (top-left corner, Y=0).
     pub fn world_origin(&self) -> (f32, f32) {
         (
             self.cell_coord.x as f32 * CELL_SIZE as f32,

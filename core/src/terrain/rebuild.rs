@@ -1,10 +1,7 @@
 use anyhow::Result;
 use ash::vk;
 
-use crate::{
-    objects::world::World,
-    rendering::vulkan::rendering_context::VulkanRenderingContext,
-};
+use crate::{objects::world::World, rendering::vulkan::rendering_context::VulkanRenderingContext};
 
 use super::{
     chunk::{NeedsTerrainRebuild, TerrainChunk, TerrainMesh},
@@ -26,7 +23,10 @@ pub fn rebuild_dirty_terrain(
         .collect();
 
     for id in ids {
-        let chunk = match world.get_object(id).and_then(|o| o.get_component::<TerrainChunk>().ok().cloned()) {
+        let chunk = match world
+            .get_object(id)
+            .and_then(|o| o.get_component::<TerrainChunk>().ok().cloned())
+        {
             Some(c) => c,
             None => continue,
         };
