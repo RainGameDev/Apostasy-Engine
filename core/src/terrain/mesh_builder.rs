@@ -9,7 +9,7 @@ use crate::{
 
 use super::chunk::{TerrainChunk, TerrainMesh};
 
-/// Builds a CPU-side vertex/index list from a TerrainChunk and uploads it to GPU.
+/// Builds a vertex/index list from a TerrainChunk and uploads it to GPU.
 pub fn build_terrain_mesh(
     chunk: &TerrainChunk,
     context: &VulkanRenderingContext,
@@ -68,24 +68,48 @@ pub fn build_terrain_mesh(
     })
 }
 
-/// Computes a smooth vertex normal using central differences of neighboring heights.
+/// Smooth vertex normal using central differences of neighboring heights.
 fn compute_normal(chunk: &TerrainChunk, x: usize, z: usize, step: f32) -> Vector3<f32> {
     let r = chunk.resolution as usize;
 
-    let hx_pos = if x < r { chunk.height_at(x + 1, z) } else { chunk.height_at(x, z) };
-    let hx_neg = if x > 0 { chunk.height_at(x - 1, z) } else { chunk.height_at(x, z) };
-    let hz_pos = if z < r { chunk.height_at(x, z + 1) } else { chunk.height_at(x, z) };
-    let hz_neg = if z > 0 { chunk.height_at(x, z - 1) } else { chunk.height_at(x, z) };
+    let hx_pos = if x < r {
+        chunk.height_at(x + 1, z)
+    } else {
+        chunk.height_at(x, z)
+    };
+    let hx_neg = if x > 0 {
+        chunk.height_at(x - 1, z)
+    } else {
+        chunk.height_at(x, z)
+    };
+    let hz_pos = if z < r {
+        chunk.height_at(x, z + 1)
+    } else {
+        chunk.height_at(x, z)
+    };
+    let hz_neg = if z > 0 {
+        chunk.height_at(x, z - 1)
+    } else {
+        chunk.height_at(x, z)
+    };
 
-    let dx = if x == 0 || x == r { step * 2.0 } else { step * 2.0 };
-    let dz = if z == 0 || z == r { step * 2.0 } else { step * 2.0 };
+    let dx = if x == 0 || x == r {
+        step * 2.0
+    } else {
+        step * 2.0
+    };
+    let dz = if z == 0 || z == r {
+        step * 2.0
+    } else {
+        step * 2.0
+    };
 
-    let n = Vector3::new(
-        -(hx_pos - hx_neg) / dx,
-        1.0,
-        -(hz_pos - hz_neg) / dz,
-    );
+    let n = Vector3::new(-(hx_pos - hx_neg) / dx, 1.0, -(hz_pos - hz_neg) / dz);
 
     let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
-    if len > 0.0 { Vector3::new(n.x / len, n.y / len, n.z / len) } else { Vector3::new(0.0, 1.0, 0.0) }
+    if len > 0.0 {
+        Vector3::new(n.x / len, n.y / len, n.z / len)
+    } else {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
 }

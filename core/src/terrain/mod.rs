@@ -19,7 +19,7 @@ pub struct TerrainSettings {
 impl Default for TerrainSettings {
     fn default() -> Self {
         Self {
-            resolution: 128,
+            resolution: 32,
             texture_layers: Vec::new(),
         }
     }
