@@ -68,7 +68,8 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
         let existing_id = world
             .get_resource::<TerrainChunkMap>()
             .ok()
-            .and_then(|m| m.0.get(&coord).copied());
+            .and_then(|m| m.0.get(&coord).copied())
+            .filter(|&id| world.get_object(id).is_some());
 
         if let Some(obj_id) = existing_id {
             if let Some(obj) = world.get_object_mut(obj_id) {
