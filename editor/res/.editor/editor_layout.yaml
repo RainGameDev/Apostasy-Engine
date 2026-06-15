@@ -1,24 +1,24 @@
 cell_search:
   pos:
-  - 0.0
-  - 929.0
+  - 118.0
+  - 629.0
   size:
-  - 946.0
-  - 458.65625
+  - 1311.0
+  - 378.65625
 object_window:
   pos:
   - 0.0
-  - 27.0
+  - 41.0
   size:
-  - 810.0
-  - 1028.0
+  - 603.0
+  - 967.0
 viewport:
   pos:
-  - 980.0
-  - 130.0
+  - 113.0
+  - 41.0
   size:
-  - 1548.0
-  - 1028.0
+  - 1316.0
+  - 592.0
 viewport_open: true
 object_window_open: true
 cell_open: true
@@ -38,4 +38,4 @@ asset_editor:
   size:
   - 380.0
   - 560.0
-asset_editor_open: true
+asset_editor_open: false

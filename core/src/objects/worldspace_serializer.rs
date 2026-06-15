@@ -138,6 +138,8 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
             map.insert("is_flickering".into(), l.is_flickering.into());
             map.insert("intensity_min".into(), (l.intensity_min as f64).into());
             map.insert("intensity_max".into(), (l.intensity_max as f64).into());
+            map.insert("radius_min".into(), (l.radius_min as f64).into());
+            map.insert("radius_max".into(), (l.radius_max as f64).into());
         }
         _ => return None,
     }

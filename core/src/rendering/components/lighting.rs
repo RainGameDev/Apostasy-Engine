@@ -4,10 +4,11 @@ use anyhow::Result;
 use apostasy_macros::{Component, update};
 use cgmath::Vector3;
 use egui::ComboBox;
-use rand::random_range;
+use rand::{RngExt, random_range, rng};
 use serde_yaml::Value;
 
 use crate::{
+    log,
     objects::{
         component::Inspect,
         systems::DeltaTime,
@@ -58,6 +59,12 @@ pub struct Light {
     /// The max amount of intensity.
     pub intensity_max: f32,
     pub current_intensity_target: f32,
+
+    /// The min amount of intensity.
+    pub radius_min: f32,
+    /// The max amount of intensity.
+    pub radius_max: f32,
+    pub current_radius_target: f32,
 }
 
 impl Default for Light {
@@ -68,9 +75,12 @@ impl Default for Light {
             intensity: 1.0,
             is_emitting: true,
             is_flickering: false,
-            intensity_min: 0.0,
-            intensity_max: 0.0,
+            intensity_min: 1.0,
+            intensity_max: 2.0,
             current_intensity_target: 0.0,
+            radius_min: 1.0,
+            radius_max: 21.0,
+            current_radius_target: 1.0,
         }
     }
 }
@@ -120,6 +130,13 @@ impl Light {
         }
         if let Some(v) = value.get("intensity_max").and_then(|v| v.as_f64()) {
             self.intensity_max = v as f32;
+        }
+
+        if let Some(v) = value.get("radisu_min").and_then(|v| v.as_f64()) {
+            self.radius_min = v as f32;
+        }
+        if let Some(v) = value.get("radius_max").and_then(|v| v.as_f64()) {
+            self.radius_max = v as f32;
         }
 
         Ok(())
@@ -245,27 +262,74 @@ impl Inspect for Light {
                             .range(0.0..=f32::MAX),
                     );
                 });
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Min Radius"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.radius_min)
+                            .speed(0.05)
+                            .range(0.0..=f32::MAX),
+                    );
+                });
+
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Max Radius"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.radius_max)
+                            .speed(0.05)
+                            .range(0.0..=f32::MAX),
+                    );
+                });
+
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Target"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.current_intensity_target)
+                            .speed(0.05)
+                            .range(0.0..=f32::MAX),
+                    );
+                });
             }
         });
     }
 }
 
-#[update]
+#[update(mode = "all")]
 pub fn light_flicker(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>().unwrap().0.clone();
     let lights = world.get_objects_with_component_mut::<Light>();
+
     for light in lights {
         let light = light.get_component_mut::<Light>()?;
 
         if light.is_flickering {
-            if light.intensity <= light.current_intensity_target - 0.1 {
+            if (light.intensity - light.current_intensity_target).abs() < 0.1 {
                 light.current_intensity_target =
-                    random_range(light.intensity_min..=light.intensity_max);
+                    rng().random_range(light.intensity_min..light.intensity_max);
             }
 
-            light.intensity += delta;
-            println!("Flickering");
+            light.intensity = lerp(light.intensity, light.current_intensity_target, delta * 3.0);
+            light.intensity = light
+                .intensity
+                .clamp(light.intensity_min, light.intensity_max);
+
+            match &mut light.light_type {
+                LightType::Point { radius } => {
+                    if (*radius - light.current_radius_target).abs() < 0.1 {
+                        light.current_radius_target =
+                            rng().random_range(light.radius_min..light.radius_max);
+                    }
+
+                    *radius = lerp(*radius, light.current_radius_target, delta * 3.0);
+                }
+
+                _ => {}
+            }
         }
     }
     Ok(())
+}
+
+fn lerp(start: f32, end: f32, t: f32) -> f32 {
+    let t_clamped = t.clamp(0.0, 1.0);
+    start + (end - start) * t_clamped
 }
