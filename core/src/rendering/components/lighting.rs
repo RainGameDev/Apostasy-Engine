@@ -1,12 +1,20 @@
 use std::fmt::{self, Display};
 
 use anyhow::Result;
-use apostasy_macros::Component;
+use apostasy_macros::{Component, update};
 use cgmath::Vector3;
 use egui::ComboBox;
+use rand::random_range;
 use serde_yaml::Value;
 
-use crate::{objects::component::Inspect, ui::LABEL_WIDTH};
+use crate::{
+    objects::{
+        component::Inspect,
+        systems::DeltaTime,
+        world::{self, World},
+    },
+    ui::LABEL_WIDTH,
+};
 
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
 pub enum LightType {
@@ -42,6 +50,14 @@ pub struct Light {
     pub intensity: f32,
     /// Whether the light is currently active.
     pub is_emitting: bool,
+
+    /// Is this light flickering?
+    pub is_flickering: bool,
+    /// The min amount of intensity.
+    pub intensity_min: f32,
+    /// The max amount of intensity.
+    pub intensity_max: f32,
+    pub current_intensity_target: f32,
 }
 
 impl Default for Light {
@@ -51,6 +67,10 @@ impl Default for Light {
             color: Vector3::new(1.0, 1.0, 1.0),
             intensity: 1.0,
             is_emitting: true,
+            is_flickering: false,
+            intensity_min: 0.0,
+            intensity_max: 0.0,
+            current_intensity_target: 0.0,
         }
     }
 }
@@ -90,6 +110,16 @@ impl Light {
 
         if let Some(v) = value.get("is_emitting").and_then(|v| v.as_bool()) {
             self.is_emitting = v;
+        }
+
+        if let Some(v) = value.get("is_flickering").and_then(|v| v.as_bool()) {
+            self.is_flickering = v;
+        }
+        if let Some(v) = value.get("intensity_min").and_then(|v| v.as_f64()) {
+            self.intensity_min = v as f32;
+        }
+        if let Some(v) = value.get("intensity_max").and_then(|v| v.as_f64()) {
+            self.intensity_max = v as f32;
         }
 
         Ok(())
@@ -191,6 +221,50 @@ impl Inspect for Light {
                 ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Emitting"));
                 ui.checkbox(&mut self.is_emitting, "");
             });
+
+            ui.horizontal(|ui| {
+                ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Flickering"));
+                ui.checkbox(&mut self.is_flickering, "");
+            });
+
+            if self.is_flickering {
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Min Intensity"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.intensity_min)
+                            .speed(0.05)
+                            .range(0.0..=f32::MAX),
+                    );
+                });
+
+                ui.horizontal(|ui| {
+                    ui.add_sized([LABEL_WIDTH, 20.0], egui::Label::new("Max Intensity"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.intensity_max)
+                            .speed(0.05)
+                            .range(0.0..=f32::MAX),
+                    );
+                });
+            }
         });
     }
+}
+
+#[update]
+pub fn light_flicker(world: &mut World) -> Result<()> {
+    let delta = world.get_resource::<DeltaTime>().unwrap().0.clone();
+    let lights = world.get_objects_with_component_mut::<Light>();
+    for light in lights {
+        let light = light.get_component_mut::<Light>()?;
+
+        if light.is_flickering {
+            if light.intensity <= light.current_intensity_target - 0.1 {
+                light.current_intensity_target =
+                    random_range(light.intensity_min..=light.intensity_max);
+            }
+
+            light.intensity += delta;
+        }
+    }
+    Ok(())
 }

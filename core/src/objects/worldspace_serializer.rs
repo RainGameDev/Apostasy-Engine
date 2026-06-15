@@ -135,6 +135,9 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
             map.insert("color".into(), serde_yaml::Value::Mapping(color));
             map.insert("intensity".into(), (l.intensity as f64).into());
             map.insert("is_emitting".into(), l.is_emitting.into());
+            map.insert("is_flickering".into(), l.is_flickering.into());
+            map.insert("intensity_min".into(), (l.intensity_min as f64).into());
+            map.insert("intensity_max".into(), (l.intensity_max as f64).into());
         }
         _ => return None,
     }
