@@ -4,7 +4,12 @@ use std::path::Path;
 use cgmath::Vector3;
 
 use crate::{
-    objects::{Object, cell::CellCoord, world::World},
+    objects::{
+        Object,
+        cell::CellCoord,
+        tags::skips_serilization::SkipsSerilization,
+        world::World,
+    },
     terrain::{
         TerrainChunkMap,
         chunk::{NeedsTerrainRebuild, TerrainChunk},
@@ -83,8 +88,11 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
             obj.name = format!("Terrain ({},{})", coord.x, coord.z);
             obj.add_component(chunk);
             obj.add_tag(NeedsTerrainRebuild);
+            obj.add_tag(SkipsSerilization);
 
-            let obj_id = world.add_object(obj);
+            // Place the object in its actual cell so the streaming system
+            // doesn't unload it because the camera is far from (0,0,0).
+            let obj_id = world.add_object_to_cell(coord, obj);
             if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
                 map.0.insert(coord, obj_id);
             }
