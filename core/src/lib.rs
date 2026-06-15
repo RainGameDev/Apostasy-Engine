@@ -415,6 +415,16 @@ impl Core {
                             }
                         });
 
+                    let prerender_start = std::time::Instant::now();
+                    world.prerender();
+                    let prerender_ns = prerender_start.elapsed().as_nanos() as u64;
+
+                    let render_start = std::time::Instant::now();
+                    if let Err(e) = renderer.begin_frame() {
+                        log_error!("Failed to begin frame: {}", e);
+                        return;
+                    }
+
                     renderer.set_lights(
                         &gpu_lights,
                         shadow_data,
@@ -427,16 +437,6 @@ impl Core {
                         [camera_pos.x, camera_pos.y, camera_pos.z],
                         [camera_forward.x, camera_forward.y, camera_forward.z],
                     );
-
-                    let prerender_start = std::time::Instant::now();
-                    world.prerender();
-                    let prerender_ns = prerender_start.elapsed().as_nanos() as u64;
-
-                    let render_start = std::time::Instant::now();
-                    if let Err(e) = renderer.begin_frame() {
-                        log_error!("Failed to begin frame: {}", e);
-                        return;
-                    }
 
                     let shadow_start = std::time::Instant::now();
                     // Shadow pre-pass - one pass per cascade (csm_cascade_count for directional, 1 for spot).
