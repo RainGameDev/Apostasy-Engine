@@ -264,6 +264,7 @@ pub fn light_flicker(world: &mut World) -> Result<()> {
             }
 
             light.intensity += delta;
+            log!("Flickering");
         }
     }
     Ok(())
