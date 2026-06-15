@@ -18,6 +18,8 @@ pub struct Material {
     pub albedo_path: Option<String>,
     /// RGBA base color multiplier (default white)
     pub color: [f32; 4],
+    /// Path relative to res/ for the custom shader, e.g. "shaders/brick"
+    pub shader_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Resource)]
@@ -50,10 +52,7 @@ impl YamlAssetLoader for MaterialLoader {
             .ok_or_else(|| anyhow::anyhow!("Material missing 'name'"))?
             .to_string();
 
-        let namespace = raw["namespace"]
-            .as_str()
-            .unwrap_or("default")
-            .to_string();
+        let namespace = raw["namespace"].as_str().unwrap_or("default").to_string();
 
         let albedo_path = raw["albedo"].as_str().map(|s| s.to_string());
 
@@ -73,7 +72,15 @@ impl YamlAssetLoader for MaterialLoader {
             [1.0, 1.0, 1.0, 1.0]
         };
 
-        let mat = Material { name: name.clone(), namespace, albedo_path, color };
+        let shader = raw["shader"].as_str().map(|s| s.to_string());
+
+        let mat = Material {
+            name: name.clone(),
+            namespace,
+            albedo_path,
+            color,
+            shader_path: shader,
+        };
         self.registry.write().unwrap().materials.insert(name, mat);
         Ok(())
     }

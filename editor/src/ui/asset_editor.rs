@@ -38,6 +38,7 @@ fn default_template_for_class(class: &str) -> serde_yaml::Value {
         }
         "material" => {
             map.insert("albedo".into(), serde_yaml::Value::String(String::new()));
+            map.insert("shader".into(), serde_yaml::Value::String(String::new()));
             map.insert(
                 "color".into(),
                 serde_yaml::Value::Sequence(vec![
@@ -416,6 +417,14 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     if let Some(ref mut yaml) = state.yaml {
                         let dirty = &mut state.is_dirty;
                         if let serde_yaml::Value::Mapping(map) = yaml {
+                            // Ensure material maps always expose the shader field even if
+                            // the YAML file predates the shader field.
+                            if asset_class == "material" {
+                                let shader_key = serde_yaml::Value::String("shader".to_string());
+                                if !map.contains_key(&shader_key) {
+                                    map.insert(shader_key, serde_yaml::Value::String(String::new()));
+                                }
+                            }
                             let keys: Vec<serde_yaml::Value> = map.keys().cloned().collect();
                             for k in &keys {
                                 let key_str = yaml_key_str(k);
@@ -427,6 +436,8 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 if let Some(v) = map.get_mut(k) {
                                     if asset_class == "material" && key_str == "albedo" {
                                         render_albedo_field(ui, v, dirty, &style);
+                                    } else if asset_class == "material" && key_str == "shader" {
+                                        render_shader_field(ui, v, dirty, &style);
                                     } else if asset_class == "material" && key_str == "color" {
                                         render_color_field(ui, key_str.as_str(), v, dirty);
                                     } else {
@@ -799,6 +810,12 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                     .show(ui, |ui| {
                         let mut tmpl_modified = false;
                         if let serde_yaml::Value::Mapping(map) = &mut state.new_template {
+                            if template_class == "material" {
+                                let shader_key = serde_yaml::Value::String("shader".to_string());
+                                if !map.contains_key(&shader_key) {
+                                    map.insert(shader_key, serde_yaml::Value::String(String::new()));
+                                }
+                            }
                             let keys: Vec<serde_yaml::Value> = map.keys().cloned().collect();
                             for k in &keys {
                                 let key_str = yaml_key_str(k);
@@ -809,6 +826,8 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 if let Some(v) = map.get_mut(k) {
                                     if template_class == "material" && key_str == "albedo" {
                                         render_albedo_field(ui, v, &mut tmpl_modified, &style);
+                                    } else if template_class == "material" && key_str == "shader" {
+                                        render_shader_field(ui, v, &mut tmpl_modified, &style);
                                     } else if template_class == "material" && key_str == "color" {
                                         render_color_field(ui, key_str.as_str(), v, &mut tmpl_modified);
                                     } else {
@@ -1203,6 +1222,56 @@ fn render_albedo_field(
             let id_str = (*payload).clone();
             let path = id_str.strip_prefix("texture:").unwrap_or(&id_str);
             *value = serde_yaml::Value::String(path.to_string());
+            *modified = true;
+        }
+    }
+}
+
+/// Shader field with drag-and-drop support for shader files from the assets panel.
+/// Accepts `shader:water.vert` or `shader:water.frag` and stores the base name (e.g. `"water"`).
+fn render_shader_field(
+    ui: &mut egui::Ui,
+    value: &mut serde_yaml::Value,
+    modified: &mut bool,
+    style: &EditorStyle,
+) {
+    let mut buf = value.as_str().unwrap_or("").to_string();
+    let has_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
+
+    let inner = ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("shader").strong());
+        ui.add(
+            egui::TextEdit::singleline(&mut buf)
+                .desired_width(f32::INFINITY)
+                .hint_text("drag a shader or type base name…")
+                .font(style.font_ui()),
+        )
+    });
+
+    if inner.inner.changed() {
+        *value = serde_yaml::Value::String(buf);
+        *modified = true;
+    }
+
+    let field_rect = inner.inner.rect;
+    let is_hovering = has_drag && ui.rect_contains_pointer(field_rect);
+
+    if is_hovering {
+        ui.painter().rect_stroke(
+            field_rect.expand(2.0),
+            3.0,
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(140, 100, 255)),
+            egui::StrokeKind::Outside,
+        );
+        if let Some(payload) = inner.inner.dnd_release_payload::<String>() {
+            let id_str = (*payload).clone();
+            let name = id_str.strip_prefix("shader:").unwrap_or(&id_str);
+            // Strip .vert / .frag extension so the base name is stored (e.g. "water").
+            let base = name
+                .strip_suffix(".vert")
+                .or_else(|| name.strip_suffix(".frag"))
+                .unwrap_or(name);
+            *value = serde_yaml::Value::String(base.to_string());
             *modified = true;
         }
     }

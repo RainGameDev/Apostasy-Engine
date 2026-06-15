@@ -64,14 +64,8 @@ pub struct VulkanRenderer {
     pub current_frame: usize,
     pub image_layouts: ImageLayouts,
 
-    pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
-    pub wireframe_pipeline: Pipeline,
-
-    pub voxel_pipeline: Pipeline,
-    pub voxel_wireframe_pipeline: Pipeline,
     pub voxel_pipeline_layout: PipelineLayout,
-    pub water_pipeline: Pipeline,
     pub water_pipeline_layout: PipelineLayout,
     pub voxel_descriptor_pool: vk::DescriptorPool,
     pub voxel_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -112,9 +106,7 @@ pub struct VulkanRenderer {
     pub shadow_cascade_views: [vk::ImageView; CSM_CASCADE_COUNT],
     pub shadow_sampler: vk::Sampler,
     pub shadow_map_size: u32,
-    pub shadow_model_pipeline: Pipeline,
     pub shadow_model_pipeline_layout: PipelineLayout,
-    pub shadow_voxel_pipeline: Pipeline,
     pub shadow_voxel_pipeline_layout: PipelineLayout,
     pub shadow_model_vertex_shader: String,
     pub shadow_voxel_vertex_shader: String,
@@ -126,9 +118,7 @@ pub struct VulkanRenderer {
     pub point_shadow_face_views: [vk::ImageView; 6],
     pub point_shadow_sampler: vk::Sampler,
     pub point_shadow_map_size: u32,
-    pub shadow_point_model_pipeline: Pipeline,
     pub shadow_point_model_pipeline_layout: PipelineLayout,
-    pub shadow_point_voxel_pipeline: Pipeline,
     pub shadow_point_voxel_pipeline_layout: PipelineLayout,
     pub shadow_point_model_vertex_shader: String,
     pub shadow_point_voxel_vertex_shader: String,
@@ -151,6 +141,11 @@ impl VulkanRenderer {
     fn load_shader_module(&self, path: &str) -> Result<ash::vk::ShaderModule> {
         self.pipeline_manager
             .create_shader_module(&self.context, path)
+    }
+
+    fn get_pipeline(&self, key: &str) -> Pipeline {
+        *self.pipeline_manager.pipeline_cache.get(key)
+            .unwrap_or_else(|| panic!("Pipeline '{}' not found in cache", key))
     }
 
     fn rebuild_pipelines(&mut self, aa_amount: AntiAliasingAmount) -> Result<()> {
@@ -358,25 +353,30 @@ impl VulkanRenderer {
             context.device.destroy_shader_module(shadow_point_voxel_vert, None);
             context.device.destroy_shader_module(shadow_point_frag, None);
 
-            self.context.device.destroy_pipeline(self.pipeline, None);
-            self.context.device.destroy_pipeline(self.wireframe_pipeline, None);
-            self.context.device.destroy_pipeline(self.voxel_pipeline, None);
-            self.context.device.destroy_pipeline(self.voxel_wireframe_pipeline, None);
-            self.context.device.destroy_pipeline(self.water_pipeline, None);
-            self.context.device.destroy_pipeline(self.shadow_model_pipeline, None);
-            self.context.device.destroy_pipeline(self.shadow_voxel_pipeline, None);
-            self.context.device.destroy_pipeline(self.shadow_point_model_pipeline, None);
-            self.context.device.destroy_pipeline(self.shadow_point_voxel_pipeline, None);
+            // Destroy every cached pipeline (built-ins and any custom shader variants).
+            for (_, old_pipeline) in self.pipeline_manager.pipeline_cache.drain() {
+                self.context.device.destroy_pipeline(old_pipeline, None);
+            }
 
-            self.pipeline = pipeline;
-            self.wireframe_pipeline = wireframe_pipeline;
-            self.voxel_pipeline = voxel_pipeline;
-            self.voxel_wireframe_pipeline = voxel_wireframe_pipeline;
-            self.water_pipeline = water_pipeline;
-            self.shadow_model_pipeline = shadow_model_pipeline;
-            self.shadow_voxel_pipeline = shadow_voxel_pipeline;
-            self.shadow_point_model_pipeline = shadow_point_model_pipeline;
-            self.shadow_point_voxel_pipeline = shadow_point_voxel_pipeline;
+            self.pipeline_manager.pipeline_cache.insert("model".to_string(), pipeline);
+            self.pipeline_manager.pipeline_cache.insert("model::wireframe".to_string(), wireframe_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("voxel".to_string(), voxel_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("water".to_string(), water_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("shadow_model".to_string(), shadow_model_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("shadow_point_model".to_string(), shadow_point_model_pipeline);
+            self.pipeline_manager.pipeline_cache.insert("shadow_point_voxel".to_string(), shadow_point_voxel_pipeline);
+
+            self.pipeline_manager.model_pipeline_template = Some(
+                crate::rendering::vulkan::pipeline_manager::ModelPipelineTemplate {
+                    layout: pipeline_layout,
+                    image_format: Some(swapchain.format),
+                    depth_format: Some(swapchain.depth_format),
+                    image_extent: swapchain.extent,
+                    aa_amount,
+                },
+            );
         }
 
         Ok(())
@@ -575,7 +575,7 @@ impl RenderingAPI for VulkanRenderer {
             AntiAliasingAmount::X8 => SampleCountFlags::TYPE_8,
         };
 
-        let pipeline_manager = PipelineManager::new();
+        let mut pipeline_manager = PipelineManager::new();
 
         let default_vertex_shader = rendering_info.settings.default_vertex_shader.clone();
         let default_fragment_shader = rendering_info.settings.default_fragment_shader.clone();
@@ -1396,8 +1396,29 @@ impl RenderingAPI for VulkanRenderer {
                         descriptor_set: white_ds,
                     }),
                     color: [1.0, 1.0, 1.0, 1.0],
+                    shader: None,
                 }
             };
+
+            // Populate the pipeline cache and set the model template before moving pipeline_manager.
+            pipeline_manager.pipeline_cache.insert("model".to_string(), pipeline);
+            pipeline_manager.pipeline_cache.insert("model::wireframe".to_string(), wireframe_pipeline);
+            pipeline_manager.pipeline_cache.insert("voxel".to_string(), voxel_pipeline);
+            pipeline_manager.pipeline_cache.insert("voxel::wireframe".to_string(), voxel_wireframe_pipeline);
+            pipeline_manager.pipeline_cache.insert("water".to_string(), water_pipeline);
+            pipeline_manager.pipeline_cache.insert("shadow_model".to_string(), shadow_model_pipeline);
+            pipeline_manager.pipeline_cache.insert("shadow_voxel".to_string(), shadow_voxel_pipeline);
+            pipeline_manager.pipeline_cache.insert("shadow_point_model".to_string(), shadow_point_model_pipeline);
+            pipeline_manager.pipeline_cache.insert("shadow_point_voxel".to_string(), shadow_point_voxel_pipeline);
+            pipeline_manager.model_pipeline_template = Some(
+                crate::rendering::vulkan::pipeline_manager::ModelPipelineTemplate {
+                    layout: pipeline_layout,
+                    image_format: Some(swapchain.format),
+                    depth_format: Some(swapchain.depth_format),
+                    image_extent: swapchain.extent,
+                    aa_amount,
+                },
+            );
 
             let renderer = VulkanRenderer {
                 current_image_index: 0,
@@ -1406,19 +1427,14 @@ impl RenderingAPI for VulkanRenderer {
                 frames,
                 image_layouts: ImageLayouts::default(),
 
-                pipeline,
-                wireframe_pipeline,
                 pipeline_layout,
                 voxel_pipeline_layout,
 
                 ui_renderer,
 
-                voxel_pipeline,
-                voxel_wireframe_pipeline,
                 voxel_descriptor_pool: descriptor_pool,
                 voxel_descriptor_set_layout: descriptor_set_layout,
                 default_white_material,
-                water_pipeline,
                 water_pipeline_layout,
                 buffer_graveyard: Vec::new(),
 
@@ -1450,9 +1466,7 @@ impl RenderingAPI for VulkanRenderer {
                 shadow_cascade_views,
                 shadow_sampler,
                 shadow_map_size: SHADOW_MAP_SIZE,
-                shadow_model_pipeline,
                 shadow_model_pipeline_layout,
-                shadow_voxel_pipeline,
                 shadow_voxel_pipeline_layout,
                 shadow_model_vertex_shader: "shadow_model.vert".to_string(),
                 shadow_voxel_vertex_shader: "shadow_voxel.vert".to_string(),
@@ -1464,9 +1478,7 @@ impl RenderingAPI for VulkanRenderer {
                 point_shadow_face_views,
                 point_shadow_sampler,
                 point_shadow_map_size: SHADOW_MAP_SIZE,
-                shadow_point_model_pipeline,
                 shadow_point_model_pipeline_layout,
-                shadow_point_voxel_pipeline,
                 shadow_point_voxel_pipeline_layout,
                 shadow_point_model_vertex_shader: "shadow_point_model.vert".to_string(),
                 shadow_point_voxel_vertex_shader: "shadow_point_voxel.vert".to_string(),
@@ -1817,17 +1829,23 @@ impl RenderingAPI for VulkanRenderer {
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
         albedo_descriptor_set: Option<vk::DescriptorSet>,
+        shader_override: Option<&str>,
     ) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
         let albedo_ds = albedo_descriptor_set
             .filter(|ds| *ds != vk::DescriptorSet::null())
             .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
 
+        let pipeline = match shader_override {
+            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(name, &self.context.clone())?,
+            None => self.get_pipeline("model"),
+        };
+
         unsafe {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
+                pipeline,
             );
             self.context.device.cmd_bind_descriptor_sets(
                 frame.command_buffer,
@@ -1879,11 +1897,17 @@ impl RenderingAPI for VulkanRenderer {
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
         albedo_descriptor_set: Option<vk::DescriptorSet>,
+        shader_override: Option<&str>,
     ) -> anyhow::Result<()> {
         let frame = &self.frames[self.current_frame];
         let albedo_ds = albedo_descriptor_set
             .filter(|ds| *ds != vk::DescriptorSet::null())
             .unwrap_or(self.default_white_material.albedo.as_ref().unwrap().descriptor_set);
+
+        let pipeline = match shader_override {
+            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(name, &self.context.clone())?,
+            None => self.get_pipeline("model::wireframe"),
+        };
 
         let mut data = push_constants.return_renderable();
         data.extend(model_push_constants.return_renderable());
@@ -1892,7 +1916,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.wireframe_pipeline,
+                pipeline,
             );
             self.context.device.cmd_bind_descriptor_sets(
                 frame.command_buffer,
@@ -1948,7 +1972,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.voxel_pipeline,
+                self.get_pipeline("voxel"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2011,7 +2035,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.water_pipeline,
+                self.get_pipeline("water"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2470,7 +2494,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_model_pipeline,
+                self.get_pipeline("shadow_model"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2514,7 +2538,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_voxel_pipeline,
+                self.get_pipeline("shadow_voxel"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2755,7 +2779,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_point_model_pipeline,
+                self.get_pipeline("shadow_point_model"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2782,7 +2806,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.shadow_point_voxel_pipeline,
+                self.get_pipeline("shadow_point_voxel"),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,

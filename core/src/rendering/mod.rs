@@ -65,14 +65,15 @@ pub trait RenderingAPI {
     fn end_frame(&mut self) -> Result<()>;
 
     /// Draws a model mesh with the given push constants.
-    /// `albedo_descriptor_set`: the material's albedo texture descriptor set, or `None` to use
-    /// the renderer's built-in 1×1 white default.
+    /// `shader_override`: name of a custom shader pair (e.g. `"water"` -> `water.vert`/`water.frag`),
+    /// or `None` to use the default model shader.
     fn render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
         albedo_descriptor_set: Option<vk::DescriptorSet>,
+        shader_override: Option<&str>,
     ) -> Result<()>;
     /// Draws a model mesh in wireframe mode.
     fn wireframe_render(
@@ -81,6 +82,7 @@ pub trait RenderingAPI {
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
         albedo_descriptor_set: Option<vk::DescriptorSet>,
+        shader_override: Option<&str>,
     ) -> Result<()>;
 
     /// Draws a voxel mesh using the provided texture atlas.

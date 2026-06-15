@@ -4,4 +4,5 @@ use crate::rendering::shared::texture::GpuTexture;
 pub struct GpuMaterial {
     pub albedo: Option<GpuTexture>,
     pub color: [f32; 4],
+    pub shader: Option<String>,
 }

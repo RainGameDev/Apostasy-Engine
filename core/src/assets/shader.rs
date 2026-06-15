@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use crate::log;
 
-const SHADER_DIRECTORIES: &[&str] = &["res/shaders", "../core/res/shaders", "core/res/shaders"];
+pub const SHADER_DIRECTORIES: &[&str] = &["res/shaders", "../core/res/shaders", "core/res/shaders"];
 
 pub fn load_shader_bytes(name: &str) -> Result<Vec<u8>> {
     let requested = Path::new(name);

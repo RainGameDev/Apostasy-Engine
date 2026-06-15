@@ -56,24 +56,42 @@ impl Inspect for ModelRenderer {
         }
 
         let mut override_buf = self.material_override.clone().unwrap_or_default();
-        ui.horizontal(|ui| {
+        let has_mat_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
+        let mat_inner = ui.horizontal(|ui| {
             ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Material"));
-            let resp = ui.add(
+            ui.add(
                 egui::TextEdit::singleline(&mut override_buf)
                     .desired_width(ui.available_width())
-                    .hint_text("none"),
-            );
-            // let clear = ui.add(egui::Button::new("✕").min_size(egui::vec2(24.0, row_h)));
-            if resp.middle_clicked() {
-                self.material_override = None;
-            } else if resp.changed() {
-                self.material_override = if override_buf.trim().is_empty() {
-                    None
-                } else {
-                    Some(override_buf.trim().to_string())
-                };
-            }
+                    .hint_text("drag a material or type name…"),
+            )
         });
+        let mat_resp = mat_inner.inner;
+        let mat_hovering = has_mat_drag && ui.rect_contains_pointer(mat_resp.rect);
+        if mat_hovering {
+            ui.painter().rect_stroke(
+                mat_resp.rect.expand(2.0),
+                3.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(200, 140, 80)),
+                StrokeKind::Outside,
+            );
+        }
+        if let Some(payload) = mat_resp.dnd_release_payload::<String>() {
+            // Payload is "namespace:Material:name" — extract just the name.
+            let name = (*payload)
+                .splitn(3, ':')
+                .nth(2)
+                .unwrap_or(&*payload)
+                .to_string();
+            self.material_override = if name.is_empty() { None } else { Some(name) };
+        } else if mat_resp.middle_clicked() {
+            self.material_override = None;
+        } else if mat_resp.changed() {
+            self.material_override = if override_buf.trim().is_empty() {
+                None
+            } else {
+                Some(override_buf.trim().to_string())
+            };
+        }
 
         ui.horizontal(|ui| {
             ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Wireframe"));
@@ -94,6 +112,7 @@ impl ModelRenderer {
                 Some(v.to_string())
             };
         }
+
         if let Some(v) = value.get("is_wireframe").and_then(|v| v.as_bool()) {
             self.is_wireframe = v;
         }

@@ -209,6 +209,7 @@ fn resolve_material(
         return Some(GpuMaterial {
             albedo: texture,
             color: yaml_mat.color,
+            shader: yaml_mat.shader_path.clone(),
         });
     }
 
@@ -253,7 +254,7 @@ fn from_gltf_material(
     });
 
     if albedo.is_some() || color != [1.0, 1.0, 1.0, 1.0] {
-        Some(GpuMaterial { albedo, color })
+        Some(GpuMaterial { albedo, color, shader: None })
     } else {
         None
     }

@@ -47,7 +47,8 @@
     - [ ] Ambient lighting
     - [ ] Fog
   - [ ] Particle system
-  - [ ] GLTF loading textures
+  - [x] GLTF loading textures
+  - [ ] Custom material shadrs
 
 - [-] Systems
   - [x] Prerender systems

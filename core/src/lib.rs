@@ -638,6 +638,23 @@ impl Core {
                         map
                     };
 
+                    // Snapshot shader_path values from YAML materials so overrides on
+                    // standalone materials (not embedded in any glTF mesh) can apply shaders.
+                    let yaml_shader_by_name: std::collections::HashMap<String, String> = world
+                        .get_resource::<AssetManager>()
+                        .ok()
+                        .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
+                        .map(|loader| {
+                            loader.registry.read().unwrap()
+                                .materials
+                                .iter()
+                                .filter_map(|(k, mat)| {
+                                    mat.shader_path.as_ref().map(|s| (k.clone(), s.clone()))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     let object_ids: Vec<_> = world
                         .get_objects_with_component_with_ids::<ModelRenderer>()
                         .iter()
@@ -689,6 +706,13 @@ impl Core {
                             let albedo_ds = effective_mat
                                 .and_then(|m| m.albedo.as_ref())
                                 .map(|t| t.descriptor_set);
+                            let shader_override: Option<&str> = effective_mat
+                                .and_then(|m| m.shader.as_deref())
+                                .or_else(|| {
+                                    model_renderer.material_override.as_deref()
+                                        .and_then(|name| yaml_shader_by_name.get(name))
+                                        .map(|s| s.as_str())
+                                });
                             let mut mesh_push = model_push.clone();
                             if let Some(mat) = effective_mat {
                                 mesh_push.color_modifier = mat.color;
@@ -699,6 +723,7 @@ impl Core {
                                     push_constants.clone(),
                                     &mesh_push,
                                     albedo_ds,
+                                    shader_override,
                                 ) {
                                     log_error!("Failed to render wireframe: {}", e);
                                 }
@@ -708,6 +733,7 @@ impl Core {
                                     push_constants.clone(),
                                     &mesh_push,
                                     albedo_ds,
+                                    shader_override,
                                 ) {
                                     log_error!("Failed to render model: {}", e);
                                 }

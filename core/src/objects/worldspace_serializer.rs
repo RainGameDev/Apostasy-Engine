@@ -54,6 +54,10 @@ fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> 
         "ModelRenderer" => {
             let mr = component.as_any().downcast_ref::<ModelRenderer>()?;
             map.insert("model_path".into(), mr.model_path.clone().into());
+            map.insert(
+                "material_override".into(),
+                mr.material_override.clone().unwrap_or("".into()).into(),
+            );
             map.insert("is_wireframe".into(), mr.is_wireframe.into());
         }
         "Camera" => {

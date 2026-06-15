@@ -7,3 +7,4 @@ color:
 name: GrassMod
 namespace: game
 class: Material
+shader: shader_2

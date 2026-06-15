@@ -543,6 +543,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
                         let is_texture = entry.editor_id.starts_with("texture:");
                         let is_model = entry.editor_id.starts_with("model:");
+                        let is_shader = entry.editor_id.starts_with("shader:");
+                        let is_material = entry.editor_id.contains(":Material:");
                         let (row_rect, row_resp) =
                             ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click_and_drag());
 
@@ -555,8 +557,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             object_window_resource.selected_entry = Some(entry.editor_id.clone());
                         }
 
-                        // Texture and model rows are drag sources for DnD fields
-                        if is_texture || is_model {
+                        // Texture, model, shader, and material rows are drag sources for DnD fields
+                        if is_texture || is_model || is_shader || is_material {
                             row_resp.dnd_set_drag_payload(entry.editor_id.clone());
                             if row_resp.hovered() {
                                 ui.ctx().set_cursor_icon(CursorIcon::Grab);

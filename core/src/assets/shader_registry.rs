@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::assets::shader::{
-    ShaderKind, load_shader_bytes, resolve_shader_path, shader_kind_from_path,
+    SHADER_DIRECTORIES, ShaderKind, load_shader_bytes, resolve_shader_path, shader_kind_from_path,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,18 +97,42 @@ impl ShaderRegistry {
         }
     }
 
+    /// Returns a cached shader, compiling it from source if it isn't loaded yet.
     pub fn load_shader(&self, name: &str) -> Result<Arc<RwLock<ShaderAsset>>> {
-        let asset = ShaderAsset::load(name)?;
-        let asset = Arc::new(RwLock::new(asset));
-        self.shaders
-            .write()
-            .unwrap()
-            .insert(name.to_string(), asset.clone());
+        if let Some(existing) = self.shaders.read().unwrap().get(name).cloned() {
+            return Ok(existing);
+        }
+        let asset = Arc::new(RwLock::new(ShaderAsset::load(name)?));
+        self.shaders.write().unwrap().insert(name.to_string(), asset.clone());
         Ok(asset)
     }
 
     pub fn get_shader(&self, name: &str) -> Option<Arc<RwLock<ShaderAsset>>> {
         self.shaders.read().unwrap().get(name).cloned()
+    }
+
+    /// Scans all known shader directories and compiles every `.vert` / `.frag` file found.
+    /// Errors for individual shaders are logged but do not abort the scan.
+    pub fn preload_all(&self) {
+        for dir in SHADER_DIRECTORIES {
+            let path = std::path::Path::new(dir);
+            if !path.exists() {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(path) else { continue };
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if ext != "vert" && ext != "frag" {
+                    continue;
+                }
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    if let Err(e) = self.load_shader(name) {
+                        crate::log!("Shader compile error ({}): {}", name, e);
+                    }
+                }
+            }
+        }
     }
 
     pub fn reload_shader(&self, name: &str) -> Result<bool> {
