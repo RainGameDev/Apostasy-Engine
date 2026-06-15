@@ -69,7 +69,7 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
         .clone();
 
     for id in unresolved {
-        let (model_path, position, rotation, scale) = {
+        let (model_path, scale) = {
             let obj = world.get_object(id).unwrap();
             let col = obj.get_component::<Collider>().unwrap();
             let t = obj.get_component::<Transform>().unwrap();
@@ -77,30 +77,24 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
                 ColliderShape::Mesh { model_path, .. } => model_path.clone(),
                 _ => continue,
             };
-            (path, t.global_position, t.global_rotation, t.global_scale)
+            (path, t.global_scale)
         };
 
         if let Some(gpu_model) = registry.get(&model_path) {
             if let Some(local_bvh) = &gpu_model.collision_bvh {
-                // Bake local-space triangles into world space for this instance
-                let world_triangles: Vec<[cgmath::Vector3<f32>; 3]> = local_bvh
+                // Bake only scale into the BVH — position/rotation are applied at query time
+                let scaled_triangles: Vec<[cgmath::Vector3<f32>; 3]> = local_bvh
                     .triangles
                     .iter()
                     .map(|tri| {
                         tri.map(|v| {
-                            position
-                                + rotation
-                                    * cgmath::Vector3::new(
-                                        v.x * scale.x,
-                                        v.y * scale.y,
-                                        v.z * scale.z,
-                                    )
+                            cgmath::Vector3::new(v.x * scale.x, v.y * scale.y, v.z * scale.z)
                         })
                     })
                     .collect();
 
-                let world_bvh = Arc::new(Bvh::build(world_triangles.clone()));
-                let triangles = Arc::new(world_triangles);
+                let world_bvh = Arc::new(Bvh::build(scaled_triangles.clone()));
+                let triangles = Arc::new(scaled_triangles);
 
                 if let Some(obj) = world.get_object_mut(id) {
                     if let Ok(col) = obj.get_component_mut::<Collider>() {

@@ -660,12 +660,15 @@ pub fn collider_gizmo(
                 return; // not yet resolved from model registry
             }
 
-            // triangles are already baked to world space at resolve time
+            let pos = transform.global_position;
+            let rot = transform.global_rotation;
             for tri in &bvh.triangles {
                 for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                    let wa = pos + rot * tri[a];
+                    let wb = pos + rot * tri[b];
                     if let (Some(pa), Some(pb)) = (
-                        project(tri[a], view_proj, frame_rect),
-                        project(tri[b], view_proj, frame_rect),
+                        project(wa, view_proj, frame_rect),
+                        project(wb, view_proj, frame_rect),
                     ) {
                         painter.line_segment([pa, pb], stroke);
                     }

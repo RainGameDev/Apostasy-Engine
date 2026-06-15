@@ -4,7 +4,7 @@ use crate::objects::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;
 use crate::rendering::shared::model::Bvh;
-use cgmath::{InnerSpace, Matrix4, Vector3, Vector4};
+use cgmath::{InnerSpace, Matrix4, Quaternion, Vector3, Vector4};
 
 // Definition of a ray in a raycast, direction and start point
 pub struct Ray {
@@ -86,6 +86,8 @@ pub struct ColliderSnapshot {
     half_extents: Vector3<f32>,
     shape: ColliderShape,
     collider: Collider,
+    position: Vector3<f32>,
+    rotation: Quaternion<f32>,
 }
 
 /// Takes a snapshot of every object in the world that has a Collider component
@@ -131,6 +133,8 @@ pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
                 half_extents,
                 shape: collider.shape.clone(),
                 collider,
+                position,
+                rotation,
             })
         })
         .collect()
@@ -277,7 +281,7 @@ fn test_snapshot(
         }
 
         ColliderShape::Mesh { bvh, .. } => {
-            let (t, normal) = ray_vs_mesh(ray, bvh, max_distance)?;
+            let (t, normal) = ray_vs_mesh(ray, bvh, max_distance, snap.position, snap.rotation)?;
             if t > max_distance {
                 return None;
             }
@@ -371,10 +375,22 @@ pub fn unproject(
     (world - camera_position).normalize()
 }
 
-fn ray_vs_mesh(ray: &Ray, bvh: &Bvh, max_distance: f32) -> Option<(f32, Vector3<f32>)> {
+fn ray_vs_mesh(
+    ray: &Ray,
+    bvh: &Bvh,
+    max_distance: f32,
+    mesh_pos: Vector3<f32>,
+    mesh_rot: Quaternion<f32>,
+) -> Option<(f32, Vector3<f32>)> {
     if bvh.nodes.is_empty() {
         return None;
     }
+
+    let inv_rot = mesh_rot.conjugate();
+    let local_ray = Ray {
+        origin: inv_rot * (ray.origin - mesh_pos),
+        direction: inv_rot * ray.direction,
+    };
 
     let identity = [
         Vector3::new(1.0f32, 0.0, 0.0),
@@ -391,7 +407,7 @@ fn ray_vs_mesh(ray: &Ray, bvh: &Bvh, max_distance: f32) -> Option<(f32, Vector3<
         let center = (node.aabb_min + node.aabb_max) * 0.5;
         let half = (node.aabb_max - node.aabb_min) * 0.5;
 
-        match ray_vs_obb(ray, center, &identity, half) {
+        match ray_vs_obb(&local_ray, center, &identity, half) {
             None => continue,
             Some((t_enter, _, _)) if t_enter > nearest_t => continue,
             _ => {}
@@ -399,10 +415,10 @@ fn ray_vs_mesh(ray: &Ray, bvh: &Bvh, max_distance: f32) -> Option<(f32, Vector3<
 
         if node.left == 0 {
             for i in node.tri_start..node.tri_start + node.tri_count {
-                if let Some((t, normal)) = ray_vs_triangle(ray, &bvh.triangles[i as usize]) {
+                if let Some((t, local_normal)) = ray_vs_triangle(&local_ray, &bvh.triangles[i as usize]) {
                     if t < nearest_t {
                         nearest_t = t;
-                        nearest_normal = Some(normal);
+                        nearest_normal = Some(mesh_rot * local_normal);
                     }
                 }
             }

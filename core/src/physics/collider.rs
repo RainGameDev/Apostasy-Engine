@@ -381,7 +381,7 @@ impl Collider {
             }
 
             (ColliderShape::Sphere { radius }, ColliderShape::Mesh { bvh, .. }) => {
-                return sphere_vs_mesh(center_a, *radius, bvh);
+                return sphere_vs_mesh(center_a, *radius, bvh, pos_b, rotation_b);
             }
             (ColliderShape::Capsule { radius, height }, ColliderShape::Mesh { bvh, .. }) => {
                 let half_h = *height * 0.5;
@@ -391,10 +391,12 @@ impl Collider {
                     center_a - up * half_h,
                     *radius,
                     bvh,
+                    pos_b,
+                    rotation_b,
                 );
             }
             (ColliderShape::Mesh { bvh, .. }, ColliderShape::Sphere { radius }) => {
-                return sphere_vs_mesh(center_b, *radius, bvh).map(|v| -v);
+                return sphere_vs_mesh(center_b, *radius, bvh, pos_a, rotation_a).map(|v| -v);
             }
             (ColliderShape::Mesh { bvh, .. }, ColliderShape::Capsule { radius, height }) => {
                 let half_h = *height * 0.5;
@@ -404,6 +406,8 @@ impl Collider {
                     center_b - up * half_h,
                     *radius,
                     bvh,
+                    pos_a,
+                    rotation_a,
                 )
                 .map(|v| -v);
             }
@@ -1002,20 +1006,26 @@ fn capsule_vs_mesh(
     seg_b: Vector3<f32>,
     radius: f32,
     bvh: &Bvh,
+    mesh_pos: Vector3<f32>,
+    mesh_rot: Quaternion<f32>,
 ) -> Option<Vector3<f32>> {
     if bvh.nodes.is_empty() {
         return None;
     }
+    let inv_rot = mesh_rot.conjugate();
+    let local_a = inv_rot * (seg_a - mesh_pos);
+    let local_b = inv_rot * (seg_b - mesh_pos);
+
     // AABB of the full capsule for BVH pruning
     let cap_min = Vector3::new(
-        seg_a.x.min(seg_b.x) - radius,
-        seg_a.y.min(seg_b.y) - radius,
-        seg_a.z.min(seg_b.z) - radius,
+        local_a.x.min(local_b.x) - radius,
+        local_a.y.min(local_b.y) - radius,
+        local_a.z.min(local_b.z) - radius,
     );
     let cap_max = Vector3::new(
-        seg_a.x.max(seg_b.x) + radius,
-        seg_a.y.max(seg_b.y) + radius,
-        seg_a.z.max(seg_b.z) + radius,
+        local_a.x.max(local_b.x) + radius,
+        local_a.y.max(local_b.y) + radius,
+        local_a.z.max(local_b.z) + radius,
     );
 
     let mut stack = vec![0u32];
@@ -1032,7 +1042,7 @@ fn capsule_vs_mesh(
         if node.left == 0 {
             for i in node.tri_start..node.tri_start + node.tri_count {
                 let tri = &bvh.triangles[i as usize];
-                let (closest_seg, closest_tri) = closest_points_segment_triangle(seg_a, seg_b, tri);
+                let (closest_seg, closest_tri) = closest_points_segment_triangle(local_a, local_b, tri);
                 let diff = closest_seg - closest_tri;
                 let dist2 = diff.magnitude2();
                 if dist2 < radius * radius {
@@ -1040,12 +1050,12 @@ fn capsule_vs_mesh(
                     let depth = radius - dist;
                     if depth > max_depth {
                         max_depth = depth;
-                        let normal = if dist > 1e-10 {
+                        let local_normal = if dist > 1e-10 {
                             diff / dist
                         } else {
                             triangle_normal(tri)
                         };
-                        deepest = Some(normal * depth);
+                        deepest = Some(mesh_rot * local_normal * depth);
                     }
                 }
             }
@@ -1058,10 +1068,19 @@ fn capsule_vs_mesh(
     deepest
 }
 
-fn sphere_vs_mesh(center: Vector3<f32>, radius: f32, bvh: &Bvh) -> Option<Vector3<f32>> {
+fn sphere_vs_mesh(
+    center: Vector3<f32>,
+    radius: f32,
+    bvh: &Bvh,
+    mesh_pos: Vector3<f32>,
+    mesh_rot: Quaternion<f32>,
+) -> Option<Vector3<f32>> {
     if bvh.nodes.is_empty() {
         return None;
     }
+    let inv_rot = mesh_rot.conjugate();
+    let local_center = inv_rot * (center - mesh_pos);
+
     let mut stack = vec![0u32];
     let mut deepest: Option<Vector3<f32>> = None;
     let mut max_depth = 0.0f32;
@@ -1069,29 +1088,27 @@ fn sphere_vs_mesh(center: Vector3<f32>, radius: f32, bvh: &Bvh) -> Option<Vector
     while let Some(idx) = stack.pop() {
         let node = &bvh.nodes[idx as usize];
 
-        // prune: sphere AABB vs node AABB
-        if !aabb_overlaps_sphere(node.aabb_min, node.aabb_max, center, radius) {
+        if !aabb_overlaps_sphere(node.aabb_min, node.aabb_max, local_center, radius) {
             continue;
         }
 
         if node.left == 0 {
-            // leaf — test each triangle
             for i in node.tri_start..node.tri_start + node.tri_count {
                 let tri = &bvh.triangles[i as usize];
-                let closest = closest_point_on_triangle(center, tri);
-                let diff = center - closest;
+                let closest = closest_point_on_triangle(local_center, tri);
+                let diff = local_center - closest;
                 let dist2 = diff.magnitude2();
                 if dist2 < radius * radius {
                     let dist = dist2.sqrt();
                     let depth = radius - dist;
                     if depth > max_depth {
                         max_depth = depth;
-                        let normal = if dist > 1e-10 {
+                        let local_normal = if dist > 1e-10 {
                             diff / dist
                         } else {
                             triangle_normal(tri)
                         };
-                        deepest = Some(normal * depth);
+                        deepest = Some(mesh_rot * local_normal * depth);
                     }
                 }
             }

@@ -2,23 +2,23 @@ name: default_4x4
 namespace: game
 class: worldspace
 cells:
-  3,0,0:
-    name: Cell 3,0
+  0,0,0:
+    name: Cell 0,0
     objects:
     - name: Floor
       components:
       - type: Transform
         local_position:
-        - 448.0
-        - 0.0
         - 64.0
+        - 0.0
+        - 61.0
         local_euler_angles:
         - 0.0
         - 0.0
         - 0.0
         local_scale:
         - 64.0
-        - 1.0
+        - 0.8999999761581421
         - 64.0
       - type: ModelRenderer
         model_path: cube
@@ -36,7 +36,7 @@ cells:
         shape: Cuboid
         size:
         - 1.0
-        - 2.0
+        - 1.0
         - 1.0
         offset:
         - 0.0
@@ -46,31 +46,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Marker
+    - name: Bed
       components:
       - type: Transform
         local_position:
-        - 448.0
-        - 4.0
-        - 64.0
+        - 101.27838897705078
+        - 1.1713711023330688
+        - 34.520469665527344
         local_euler_angles:
-        - 0.0
-        - 0.0
+        - -0.0
+        - -77.03822326660156
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Floor_Bed
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
+        shape: Mesh
+        model_path: M_Floor_Bed
         offset:
         - 0.0
         - 0.0
@@ -79,42 +76,36 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar --
+    - name: Sun
       components:
       - type: Transform
         local_position:
-        - 400.0
-        - 6.0
-        - 16.0
+        - 16.096759796142578
+        - 45.77587127685547
+        - 15.820547103881836
         local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
+        - -129.24072265625
+        - 228.88555908203125
+        - -3.908318042755127
         local_scale:
         - 1.5
         - 6.0
         - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
+      - type: Light
+        light_type: Directional
+        color:
+          r: 1.0
+          g: 1.0
+          b: 1.0
+        intensity: 1.0
+        is_emitting: true
       tags: []
       children: []
     - name: Pillar -+
       components:
       - type: Transform
         local_position:
-        - 400.0
+        - 16.0
         - 6.0
         - 112.0
         local_euler_angles:
@@ -141,42 +132,37 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar +-
+    - name: Campfire Light
       components:
       - type: Transform
         local_position:
-        - 496.0
-        - 6.0
-        - 16.0
+        - 90.59357452392578
+        - 2.1483287811279297
+        - 42.30487060546875
         local_euler_angles:
         - 0.0
-        - 0.0
+        - -437.0264892578125
         - 0.0
         local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: Light
+        light_type: Point
+        radius: 15.699999809265137
+        color:
+          r: 0.4557954668998718
+          g: 0.14479973912239075
+          b: 0.05801033228635788
+        intensity: 6.400000095367432
+        is_emitting: true
       tags: []
       children: []
     - name: Pillar ++
       components:
       - type: Transform
         local_position:
-        - 496.0
+        - 112.0
         - 6.0
         - 112.0
         local_euler_angles:
@@ -203,28 +189,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Showpiece
+    - name: Cover
       components:
       - type: Transform
         local_position:
-        - 448.0
+        - 93.06394958496094
         - 6.0
-        - 64.0
+        - 51.32073211669922
         local_euler_angles:
         - 0.0
-        - 0.0
+        - -228.13345336914062
         - 0.0
         local_scale:
-        - 6.0
-        - 6.0
-        - 6.0
+        - 1.0
+        - 1.0
+        - 1.0
       - type: ModelRenderer
-        model_path: sphere
+        model_path: M_Human_Cover
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Sphere
-        radius: 1.0
+        shape: Mesh
+        model_path: M_Human_Cover
         offset:
         - 0.0
         - 0.0
@@ -233,42 +219,28 @@ cells:
         is_area: false
       tags: []
       children: []
-  1,0,0:
-    name: Cell 1,0
-    objects:
-    - name: Floor
+    - name: Cover
       components:
       - type: Transform
         local_position:
-        - 192.0
-        - 0.8225663304328918
-        - 64.0
+        - 99.33329772949219
+        - 6.0
+        - 39.477943420410156
         local_euler_angles:
         - 0.0
-        - 0.0
+        - -134.24203491210938
         - 0.0
         local_scale:
-        - 64.0
         - 1.0
-        - 64.0
+        - 1.0
+        - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Human_Cover
         material_override: ''
         is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
       - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
+        shape: Mesh
+        model_path: M_Human_Cover
         offset:
         - 0.0
         - 0.0
@@ -277,31 +249,31 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Marker
+    - name: Campfire
       components:
       - type: Transform
         local_position:
-        - 192.0
-        - 4.0
-        - 64.0
+        - 90.59357452392578
+        - 1.3385109901428223
+        - 42.30487060546875
         local_euler_angles:
         - 0.0
-        - 0.0
+        - -437.0264892578125
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Campfire
         material_override: ''
         is_wireframe: false
       - type: Collider
         shape: Cuboid
         size:
-        - 2.0
-        - 2.0
-        - 2.0
+        - 2.5
+        - 2.200000047683716
+        - 2.5
         offset:
         - 0.0
         - 0.0
@@ -310,229 +282,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar --
+    - name: Cover
       components:
       - type: Transform
         local_position:
-        - 144.0
+        - 88.02549743652344
         - 6.0
-        - 16.0
+        - 34.296470642089844
         local_euler_angles:
         - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 144.0
-        - 6.0
-        - 112.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 16.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 112.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 4.0
-        - 64.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 4.0
-        - 4.0
-        - 4.0
-      - type: ModelRenderer
-        model_path: sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Sphere
-        radius: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  2,0,2:
-    name: Cell 2,2
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 0.0
-        - 320.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 4.0
-        - 320.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
+        - -437.0264892578125
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Human_Cover
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
+        shape: Mesh
+        model_path: M_Human_Cover
         offset:
         - 0.0
         - 0.0
@@ -541,230 +312,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar --
+    - name: Bed
       components:
       - type: Transform
         local_position:
-        - 272.0
-        - 6.0
-        - 272.0
+        - 81.9521713256836
+        - 1.1713711023330688
+        - 30.79279136657715
         local_euler_angles:
         - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 272.0
-        - 6.0
-        - 368.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 368.0
-        - 6.0
-        - 272.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 368.0
-        - 6.0
-        - 368.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 7.0
-        - 320.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 3.5
-        - 7.0
-        - 3.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  1,0,1:
-    name: Cell 1,1
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 0.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 4.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
+        - -318.28033447265625
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Floor_Bed
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
+        shape: Mesh
+        model_path: M_Floor_Bed
         offset:
         - 0.0
         - 0.0
@@ -773,230 +342,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar --
+    - name: Bed
       components:
       - type: Transform
         local_position:
-        - 144.0
-        - 6.0
-        - 144.0
+        - 98.78376007080078
+        - 1.1713711023330688
+        - 50.569183349609375
         local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 144.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 6.400000095367432
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 2.799999952316284
-        - 6.400000095367432
-        - 2.799999952316284
-      - type: ModelRenderer
-        model_path: cone
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  3,0,1:
-    name: Cell 3,1
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 0.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 4.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
+        - -0.0
+        - -77.03822326660156
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Floor_Bed
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
+        shape: Mesh
+        model_path: M_Floor_Bed
         offset:
         - 0.0
         - 0.0
@@ -1005,29 +372,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar --
+    - name: Cover
       components:
       - type: Transform
         local_position:
-        - 400.0
+        - 88.02549743652344
         - 6.0
-        - 144.0
+        - 34.296470642089844
         local_euler_angles:
         - 0.0
-        - 0.0
+        - -437.0264892578125
         - 0.0
         local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
+        - 1.0
+        - 1.0
+        - 1.0
       - type: ModelRenderer
-        model_path: cylinder
+        model_path: M_Human_Cover
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
+        shape: Mesh
+        model_path: M_Human_Cover
         offset:
         - 0.0
         - 0.0
@@ -1036,654 +402,28 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Pillar -+
+    - name: Cover
       components:
       - type: Transform
         local_position:
-        - 400.0
+        - 88.02549743652344
         - 6.0
-        - 240.0
+        - 34.296470642089844
         local_euler_angles:
         - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 496.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 496.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 9.600000381469727
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 4.199999809265137
-        - 9.600000381469727
-        - 4.199999809265137
-      - type: ModelRenderer
-        model_path: cone
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  1,0,2:
-    name: Cell 1,2
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 0.020727727562189102
-        - 320.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 4.0
-        - 333.30853271484375
-        local_euler_angles:
-        - 0.0
-        - 0.0
+        - -437.0264892578125
         - 0.0
         local_scale:
         - 1.0
         - 1.0
         - 1.0
       - type: ModelRenderer
-        model_path: cube
+        model_path: M_Human_Cover
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar --
-      components:
-      - type: Transform
-        local_position:
-        - 144.0
-        - 6.0
-        - 272.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 144.0
-        - 6.0
-        - 368.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 272.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 240.0
-        - 6.0
-        - 368.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 192.0
-        - 5.599999904632568
-        - 320.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 2.799999952316284
-        - 5.599999904632568
-        - 2.799999952316284
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  3,0,3:
-    name: Cell 3,3
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 0.0
-        - 448.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 4.0
-        - 448.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar --
-      components:
-      - type: Transform
-        local_position:
-        - 400.0
-        - 6.0
-        - 400.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 400.0
-        - 6.0
-        - 496.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 496.0
-        - 6.0
-        - 400.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 496.0
-        - 6.0
-        - 496.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Stack 0
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 6.0
-        - 448.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 6.0
-        - 6.0
-        - 6.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Stack 1
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 15.960000038146973
-        - 448.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 3.9600000381469727
-        - 3.9600000381469727
-        - 3.9600000381469727
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Stack 2
-      components:
-      - type: Transform
-        local_position:
-        - 448.0
-        - 21.899999618530273
-        - 448.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.9800000190734863
-        - 1.9800000190734863
-        - 1.9800000190734863
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
+        shape: Mesh
+        model_path: M_Human_Cover
         offset:
         - 0.0
         - 0.0
@@ -1992,8 +732,8 @@ cells:
         is_area: false
       tags: []
       children: []
-  0,0,0:
-    name: Cell 0,0
+  0,0,3:
+    name: Cell 0,3
     objects:
     - name: Floor
       components:
@@ -2001,287 +741,7 @@ cells:
         local_position:
         - 64.0
         - 0.0
-        - 61.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 88.9154281616211
-        - 6.0
-        - 34.587013244628906
-        local_euler_angles:
-        - 0.0
-        - -437.0264892578125
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: M_Human_Cover
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Mesh
-        model_path: M_Human_Cover
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Sun
-      components:
-      - type: Transform
-        local_position:
-        - 16.096759796142578
-        - 45.77587127685547
-        - 15.820547103881836
-        local_euler_angles:
-        - -129.24072265625
-        - 228.88555908203125
-        - -3.908318042755127
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: Light
-        light_type: Directional
-        color:
-          r: 1.0
-          g: 1.0
-          b: 1.0
-        intensity: 1.0
-        is_emitting: true
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 16.0
-        - 6.0
-        - 112.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Campfire Light
-      components:
-      - type: Transform
-        local_position:
-        - 90.59357452392578
-        - 2.1483287811279297
-        - 42.30487060546875
-        local_euler_angles:
-        - 0.0
-        - -437.0264892578125
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: Light
-        light_type: Point
-        radius: 15.699999809265137
-        color:
-          r: 0.4557954668998718
-          g: 0.14479973912239075
-          b: 0.05801033228635788
-        intensity: 6.400000095367432
-        is_emitting: true
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 112.0
-        - 6.0
-        - 112.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 93.06394958496094
-        - 6.0
-        - 51.32073211669922
-        local_euler_angles:
-        - 0.0
-        - -228.13345336914062
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: M_Human_Cover
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Mesh
-        model_path: M_Human_Cover
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 99.33329772949219
-        - 6.0
-        - 39.477943420410156
-        local_euler_angles:
-        - 0.0
-        - -134.24203491210938
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: M_Human_Cover
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Mesh
-        model_path: M_Human_Cover
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 90.59357452392578
-        - 1.3385109901428223
-        - 42.30487060546875
-        local_euler_angles:
-        - 0.0
-        - -437.0264892578125
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: M_Campfire
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 2.5
-        - 2.200000047683716
-        - 2.5
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  2,0,0:
-    name: Cell 2,0
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 0.0
-        - 64.0
+        - 448.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2320,9 +780,9 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 320.0
-        - 4.0
         - 64.0
+        - 4.0
+        - 448.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2353,9 +813,9 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 272.0
-        - 6.0
         - 16.0
+        - 6.0
+        - 400.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2384,9 +844,9 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 272.0
+        - 16.0
         - 6.0
-        - 112.0
+        - 496.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2415,9 +875,9 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 368.0
+        - 112.0
         - 6.0
-        - 16.0
+        - 400.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2446,9 +906,309 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 368.0
-        - 6.0
         - 112.0
+        - 6.0
+        - 496.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Stack 0
+      components:
+      - type: Transform
+        local_position:
+        - 64.0
+        - 3.0
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 3.0
+        - 3.0
+        - 3.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Stack 1
+      components:
+      - type: Transform
+        local_position:
+        - 64.0
+        - 7.980000019073486
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.9800000190734863
+        - 1.9800000190734863
+        - 1.9800000190734863
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Stack 2
+      components:
+      - type: Transform
+        local_position:
+        - 64.0
+        - 10.949999809265137
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 0.9900000095367432
+        - 0.9900000095367432
+        - 0.9900000095367432
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  3,0,1:
+    name: Cell 3,1
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 0.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 4.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
+        - 240.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -2477,24 +1237,25 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 320.0
-        - 5.0
-        - 64.0
+        - 448.0
+        - 9.600000381469727
+        - 192.0
         local_euler_angles:
         - 0.0
         - 0.0
         - 0.0
         local_scale:
-        - 5.0
-        - 5.0
-        - 5.0
+        - 4.199999809265137
+        - 9.600000381469727
+        - 4.199999809265137
       - type: ModelRenderer
-        model_path: sphere
+        model_path: cone
         material_override: ''
         is_wireframe: false
       - type: Collider
-        shape: Sphere
+        shape: Cylinder
         radius: 1.0
+        height: 1.0
         offset:
         - 0.0
         - 0.0
@@ -2721,470 +1482,6 @@ cells:
         - 4.199999809265137
       - type: ModelRenderer
         model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  0,0,1:
-    name: Cell 0,1
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 64.0
-        - 0.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 64.0
-        - 4.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar --
-      components:
-      - type: Transform
-        local_position:
-        - 16.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 16.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 112.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 112.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 64.0
-        - 4.800000190734863
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 2.0999999046325684
-        - 4.800000190734863
-        - 2.0999999046325684
-      - type: ModelRenderer
-        model_path: cone
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-  2,0,1:
-    name: Cell 2,1
-    objects:
-    - name: Floor
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 0.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 64.0
-        - 1.0
-        - 64.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 2.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Marker
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 4.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      - type: ModelRenderer
-        model_path: cube
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 2.0
-        - 2.0
-        - 2.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar --
-      components:
-      - type: Transform
-        local_position:
-        - 272.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar -+
-      components:
-      - type: Transform
-        local_position:
-        - 272.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar +-
-      components:
-      - type: Transform
-        local_position:
-        - 368.0
-        - 6.0
-        - 144.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Pillar ++
-      components:
-      - type: Transform
-        local_position:
-        - 368.0
-        - 6.0
-        - 240.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.5
-        - 6.0
-        - 1.5
-      - type: ModelRenderer
-        model_path: cylinder
-        material_override: ''
-        is_wireframe: false
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      tags: []
-      children: []
-    - name: Showpiece
-      components:
-      - type: Transform
-        local_position:
-        - 320.0
-        - 8.0
-        - 192.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 3.5
-        - 8.0
-        - 3.5
-      - type: ModelRenderer
-        model_path: cone
         material_override: ''
         is_wireframe: false
       - type: Collider
@@ -3731,8 +2028,935 @@ cells:
         is_area: false
       tags: []
       children: []
-  0,0,3:
-    name: Cell 0,3
+  1,0,2:
+    name: Cell 1,2
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 0.020727727562189102
+        - 320.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 4.0
+        - 333.30853271484375
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 272.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 368.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 272.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 368.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 5.599999904632568
+        - 320.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 2.799999952316284
+        - 5.599999904632568
+        - 2.799999952316284
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  2,0,1:
+    name: Cell 2,1
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 0.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 4.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 8.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 3.5
+        - 8.0
+        - 3.5
+      - type: ModelRenderer
+        model_path: cone
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  1,0,1:
+    name: Cell 1,1
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 0.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 4.0
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 144.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 6.400000095367432
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 2.799999952316284
+        - 6.400000095367432
+        - 2.799999952316284
+      - type: ModelRenderer
+        model_path: cone
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  3,0,0:
+    name: Cell 3,0
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 0.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 4.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 6.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 6.0
+        - 6.0
+        - 6.0
+      - type: ModelRenderer
+        model_path: sphere
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Sphere
+        radius: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  0,0,1:
+    name: Cell 0,1
     objects:
     - name: Floor
       components:
@@ -3740,7 +2964,7 @@ cells:
         local_position:
         - 64.0
         - 0.0
-        - 448.0
+        - 192.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -3781,7 +3005,7 @@ cells:
         local_position:
         - 64.0
         - 4.0
-        - 448.0
+        - 192.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -3814,7 +3038,7 @@ cells:
         local_position:
         - 16.0
         - 6.0
-        - 400.0
+        - 144.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -3845,7 +3069,7 @@ cells:
         local_position:
         - 16.0
         - 6.0
-        - 496.0
+        - 240.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -3876,7 +3100,7 @@ cells:
         local_position:
         - 112.0
         - 6.0
-        - 400.0
+        - 144.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -3907,6 +3131,469 @@ cells:
         local_position:
         - 112.0
         - 6.0
+        - 240.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 64.0
+        - 4.800000190734863
+        - 192.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 2.0999999046325684
+        - 4.800000190734863
+        - 2.0999999046325684
+      - type: ModelRenderer
+        model_path: cone
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  2,0,0:
+    name: Cell 2,0
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 0.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 4.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 5.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 5.0
+        - 5.0
+        - 5.0
+      - type: ModelRenderer
+        model_path: sphere
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Sphere
+        radius: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  3,0,3:
+    name: Cell 3,3
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 0.0
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 4.0
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 400.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 400.0
+        - 6.0
+        - 496.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
+        - 400.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 496.0
+        - 6.0
         - 496.0
         local_euler_angles:
         - 0.0
@@ -3936,17 +3623,17 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 64.0
-        - 3.0
+        - 448.0
+        - 6.0
         - 448.0
         local_euler_angles:
         - 0.0
         - 0.0
         - 0.0
         local_scale:
-        - 3.0
-        - 3.0
-        - 3.0
+        - 6.0
+        - 6.0
+        - 6.0
       - type: ModelRenderer
         model_path: cube
         material_override: ''
@@ -3969,8 +3656,41 @@ cells:
       components:
       - type: Transform
         local_position:
-        - 64.0
-        - 7.980000019073486
+        - 448.0
+        - 15.960000038146973
+        - 448.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 3.9600000381469727
+        - 3.9600000381469727
+        - 3.9600000381469727
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Stack 2
+      components:
+      - type: Transform
+        local_position:
+        - 448.0
+        - 21.899999618530273
         - 448.0
         local_euler_angles:
         - 0.0
@@ -3998,21 +3718,65 @@ cells:
         is_area: false
       tags: []
       children: []
-    - name: Stack 2
+  2,0,2:
+    name: Cell 2,2
+    objects:
+    - name: Floor
       components:
       - type: Transform
         local_position:
-        - 64.0
-        - 10.949999809265137
-        - 448.0
+        - 320.0
+        - 0.0
+        - 320.0
         local_euler_angles:
         - 0.0
         - 0.0
         - 0.0
         local_scale:
-        - 0.9900000095367432
-        - 0.9900000095367432
-        - 0.9900000095367432
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 4.0
+        - 320.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
       - type: ModelRenderer
         model_path: cube
         material_override: ''
@@ -4020,9 +3784,395 @@ cells:
       - type: Collider
         shape: Cuboid
         size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 272.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 272.0
+        - 6.0
+        - 368.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 272.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 368.0
+        - 6.0
+        - 368.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 320.0
+        - 7.0
+        - 320.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 3.5
+        - 7.0
+        - 3.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+  1,0,0:
+    name: Cell 1,0
+    objects:
+    - name: Floor
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 0.8225663304328918
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 64.0
+        - 1.0
+        - 64.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 0.0
+        process: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.4000000059604645
+        linear_damping: 0.0
+        angular_damping: 0.0
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 2.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Marker
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 4.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
         - 1.0
         - 1.0
         - 1.0
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 2.0
+        - 2.0
+        - 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar --
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar -+
+      components:
+      - type: Transform
+        local_position:
+        - 144.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar +-
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 16.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Pillar ++
+      components:
+      - type: Transform
+        local_position:
+        - 240.0
+        - 6.0
+        - 112.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.5
+        - 6.0
+        - 1.5
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: true
+        is_area: false
+      tags: []
+      children: []
+    - name: Showpiece
+      components:
+      - type: Transform
+        local_position:
+        - 192.0
+        - 4.0
+        - 64.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 4.0
+        - 4.0
+        - 4.0
+      - type: ModelRenderer
+        model_path: sphere
+        material_override: ''
+        is_wireframe: false
+      - type: Collider
+        shape: Sphere
+        radius: 1.0
         offset:
         - 0.0
         - 0.0
