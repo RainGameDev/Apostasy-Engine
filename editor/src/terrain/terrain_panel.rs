@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use apostasy_core::{
-    egui::{self, DragAndDrop, Margin, RichText, Slider, TextEdit, Vec2, Window, Color32},
+    egui::{self, Color32, DragAndDrop, Margin, RichText, Slider, TextEdit, Vec2, Window},
     objects::world::World,
     terrain::{TerrainAtlasNeedsRebuild, TerrainSettings, load_terrain_texture},
     update,
@@ -93,6 +93,7 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         .open(&mut true)
         .resizable(true)
         .collapsible(true)
+        .order(egui::Order::Foreground)
         .default_width(280.0)
         .frame(style.window_frame(&ctx).inner_margin(Margin {
             left: 8,
@@ -181,22 +182,9 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
                                 .show(ui, |ui| {
                                     ui.set_min_size(thumb_size);
 
-                                    // Selection highlight border
-                                    if selected {
-                                        let r = ui.max_rect();
-                                        ui.painter().rect_stroke(
-                                            r.shrink(1.0),
-                                            2.0,
-                                            egui::Stroke::new(2.0, Color32::from_rgb(60, 120, 220)),
-                                            egui::StrokeKind::Inside,
-                                        );
-                                    }
-
                                     // Thumbnail
-                                    let (thumb_rect, thumb_resp) = ui.allocate_exact_size(
-                                        thumb_size,
-                                        egui::Sense::click(),
-                                    );
+                                    let (thumb_rect, thumb_resp) =
+                                        ui.allocate_exact_size(thumb_size, egui::Sense::click());
                                     let cache = world.get_resource::<ThumbnailCache>().ok();
                                     if let Some(ref cache) = cache {
                                         if let Some(handle) = cache.handles.get(path) {
@@ -276,6 +264,16 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
                                 })
                                 .response;
 
+                            // Selection highlight border
+                            if selected {
+                                ui.painter().rect_stroke(
+                                    frame_resp.rect.shrink(1.0),
+                                    2.0,
+                                    egui::Stroke::new(2.0, Color32::from_rgb(60, 120, 220)),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+
                             // DnD hover: overlay green highlight
                             if has_drag && ui.rect_contains_pointer(frame_resp.rect) {
                                 ui.painter().rect_filled(
@@ -283,12 +281,12 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
                                     2.0,
                                     Color32::from_rgba_premultiplied(60, 180, 60, 120),
                                 );
-                                if let Some(payload) =
-                                    frame_resp.dnd_release_payload::<String>()
-                                {
+                                if let Some(payload) = frame_resp.dnd_release_payload::<String>() {
                                     let id_str = (*payload).clone();
-                                    let new_path =
-                                        id_str.strip_prefix("texture:").unwrap_or(&id_str).to_string();
+                                    let new_path = id_str
+                                        .strip_prefix("texture:")
+                                        .unwrap_or(&id_str)
+                                        .to_string();
                                     if !new_path.is_empty() {
                                         if let Ok(settings) =
                                             world.get_resource_mut::<TerrainSettings>()
@@ -384,7 +382,6 @@ fn load_thumbnail(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle
     let img = load_terrain_texture(path);
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
-    let color_image =
-        egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+    let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
     Some(ctx.load_texture(path, color_image, egui::TextureOptions::LINEAR))
 }

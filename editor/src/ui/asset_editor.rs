@@ -1228,7 +1228,7 @@ fn render_albedo_field(
 }
 
 /// Shader field with drag-and-drop support for shader files from the assets panel.
-/// Accepts `shader:water.vert` or `shader:water.frag` and stores the base name (e.g. `"water"`).
+/// Accepts `shader:sdr_default_water.vert` or `shader:sdr_default_water.frag` and stores the base name (e.g. `"sdr_default_water"`).
 fn render_shader_field(
     ui: &mut egui::Ui,
     value: &mut serde_yaml::Value,

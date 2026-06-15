@@ -41,8 +41,8 @@ impl Default for RenderingSettings {
             dynamic_state_settings: DynamicStateSettings::default(),
             primitive_topology_settings: PrimitiveTopologySettings::default(),
 
-            default_vertex_shader: "shader.vert".to_string(),
-            default_fragment_shader: "shader.frag".to_string(),
+            default_vertex_shader: "sdr_default_shader.vert".to_string(),
+            default_fragment_shader: "sdr_default_shader.frag".to_string(),
         }
     }
 }

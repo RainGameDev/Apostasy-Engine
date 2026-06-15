@@ -5,12 +5,16 @@ use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::objects::worldspace_serializer::load_worldspace;
 use apostasy_core::{
-    egui::{self, Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window},
+    egui::{
+        self, Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
+    },
     objects::world::World,
     ui::ui_context::EguiContext,
     update,
 };
 use apostasy_macros::Resource;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,7 +23,8 @@ use crate::ui::preferences_panel::EditorPreferences;
 
 #[derive(Clone, PartialEq)]
 pub enum SortColumn {
-    EditorId,
+    HexId,
+    Type,
     Name,
     Count,
 }
@@ -33,7 +38,9 @@ pub enum SortDir {
 /// Container for a piece of data
 #[derive(Clone)]
 pub struct ObjectEntry {
+    pub hex_id: String,
     pub editor_id: String,
+    pub entry_type: String,
     pub name: String,
     pub count: u32,
     pub category_path: Vec<String>,
@@ -75,7 +82,7 @@ impl FilterNode {
 pub struct ObjectWindowState {
     pub open: bool,
     pub show_used_in_cell: bool,
-    pub col_widths: [f32; 3],
+    pub col_widths: [f32; 4],
     pub filter_tree: Vec<FilterNode>,
     pub selected_filter: Option<Vec<String>>,
     pub entries: Vec<ObjectEntry>,
@@ -96,12 +103,12 @@ impl Default for ObjectWindowState {
         Self {
             open: true,
             show_used_in_cell: false,
-            col_widths: [190.0, 130.0, 150.0],
+            col_widths: [100.0, 80.0, 130.0, 150.0],
             filter_tree: vec![FilterNode::branch("Data", &[], vec![])],
             selected_filter: None,
             entries: Vec::new(),
             filter_string: "".to_string(),
-            sort_col: SortColumn::EditorId,
+            sort_col: SortColumn::HexId,
             sort_dir: SortDir::Asc,
             selected_entry: None,
             is_first_frame: true,
@@ -124,6 +131,32 @@ impl ObjectWindowState {
         let mut tree = Vec::new();
         let mut entries = Vec::new();
 
+        let make_hex = |id: &str| {
+            let mut hasher = DefaultHasher::new();
+            id.hash(&mut hasher);
+            format!("{:08x}", hasher.finish() as u32)
+        };
+
+        let make_type = |id: &str| -> String {
+            if id.starts_with("texture:") {
+                "Texture".into()
+            } else if id.starts_with("model:") {
+                "Model".into()
+            } else if id.starts_with("shader:") {
+                "Shader".into()
+            } else if id.contains(":Material:") {
+                "Material".into()
+            } else if let Some(rest) = id.split_once(':') {
+                if let Some(cls) = rest.1.split(':').next() {
+                    cls.to_string()
+                } else {
+                    "Data".into()
+                }
+            } else {
+                "Data".into()
+            }
+        };
+
         // "Data" branch yaml-loaded definitions
         let data_path = vec!["Data".to_string()];
         let mut data_children = Vec::new();
@@ -134,8 +167,11 @@ impl ObjectWindowState {
             let class_path = vec!["Data".to_string(), class_name.clone()];
             data_children.push(FilterNode::leaf(class_name, &data_path));
             for (namespace, name) in class_entries {
+                let editor_id = format!("{}:{}:{}", namespace, class_name, name);
                 entries.push(ObjectEntry {
-                    editor_id: format!("{}:{}:{}", namespace, class_name, name),
+                    hex_id: make_hex(&editor_id),
+                    editor_id: editor_id.clone(),
+                    entry_type: make_type(&editor_id),
                     name: name.clone(),
                     count: 0,
                     category_path: class_path.clone(),
@@ -154,9 +190,16 @@ impl ObjectWindowState {
             let models_path = vec!["Graphics".to_string(), "Models".to_string()];
             gfx_children.push(FilterNode::leaf("Models", &gfx_path));
             for name in &models {
+                let editor_id = format!("model:{}", name);
                 entries.push(ObjectEntry {
-                    editor_id: format!("model:{}", name),
-                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
+                    hex_id: make_hex(&editor_id),
+                    editor_id: editor_id.clone(),
+                    entry_type: make_type(&editor_id),
+                    name: Path::new(name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(name)
+                        .to_string(),
                     count: 0,
                     category_path: models_path.clone(),
                 });
@@ -167,9 +210,16 @@ impl ObjectWindowState {
             let shaders_path = vec!["Graphics".to_string(), "Shaders".to_string()];
             gfx_children.push(FilterNode::leaf("Shaders", &gfx_path));
             for name in &shaders {
+                let editor_id = format!("shader:{}", name);
                 entries.push(ObjectEntry {
-                    editor_id: format!("shader:{}", name),
-                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
+                    hex_id: make_hex(&editor_id),
+                    editor_id: editor_id.clone(),
+                    entry_type: make_type(&editor_id),
+                    name: Path::new(name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(name)
+                        .to_string(),
                     count: 0,
                     category_path: shaders_path.clone(),
                 });
@@ -180,9 +230,16 @@ impl ObjectWindowState {
             let textures_path = vec!["Graphics".to_string(), "Textures".to_string()];
             gfx_children.push(FilterNode::leaf("Textures", &gfx_path));
             for name in &textures {
+                let editor_id = format!("texture:{}", name);
                 entries.push(ObjectEntry {
-                    editor_id: format!("texture:{}", name),
-                    name: Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string(),
+                    hex_id: make_hex(&editor_id),
+                    editor_id: editor_id.clone(),
+                    entry_type: make_type(&editor_id),
+                    name: Path::new(name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(name)
+                        .to_string(),
                     count: 0,
                     category_path: textures_path.clone(),
                 });
@@ -222,6 +279,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
     let window = Window::new("Object Window")
         .default_pos(pos)
+        .collapsible(false)
         .default_size(size)
         .resizable(true)
         .movable(true);
@@ -231,10 +289,14 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .map(|s| s.is_first_frame)
         .unwrap_or(false);
     let populate_data = if needs_populate {
-        world
-            .get_resource::<AssetManager>()
-            .ok()
-            .map(|am| (am.all_loader_entries(), am.model_names(), am.shader_names(), am.texture_names()))
+        world.get_resource::<AssetManager>().ok().map(|am| {
+            (
+                am.all_loader_entries(),
+                am.model_names(),
+                am.shader_names(),
+                am.texture_names(),
+            )
+        })
     } else {
         None
     };
@@ -271,12 +333,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
 
             let filter_w = object_window_resource.col_widths[0];
-            let edid_w = object_window_resource.col_widths[1];
-            let name_w = object_window_resource.col_widths[2];
+            let hex_w = object_window_resource.col_widths[1];
+            let type_w = object_window_resource.col_widths[2];
+            let name_w = object_window_resource.col_widths[3];
             let total_w = ui.available_width();
             let refresh_btn_w = 26.0;
-            let count_w = (total_w - filter_w - edid_w - name_w - refresh_btn_w).max(50.0);
-            let table_w = edid_w + name_w + count_w;
+            let count_w = (total_w - filter_w - hex_w - type_w - name_w - refresh_btn_w).max(50.0);
+            let table_w = hex_w + type_w + name_w + count_w;
             let header_h = style.header_height();
             let row_h = style.row_height();
 
@@ -300,20 +363,23 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     .hint_text("Placeholder..."),
             )
             .on_hover_text(concat!(
-                "eid: / id:  - filter by ID\n",
+                "hex: / id:  - filter by hex ID\n",
+                "type:       - filter by type\n",
                 "name:       - filter by name\n",
                 "(no prefix) - filter by name",
             ));
 
             let data_left = header_rect.left() + filter_w + 2.0;
-            let col_specs: [(&str, f32, SortColumn); 3] = [
-                ("Editor Id", 0.0, SortColumn::EditorId),
-                ("Name", edid_w, SortColumn::Name),
-                ("Count", edid_w + name_w, SortColumn::Count),
+            let col_specs: [(&str, f32, SortColumn); 4] = [
+                ("Editor ID", 0.0, SortColumn::HexId),
+                ("Type", hex_w, SortColumn::Type),
+                ("Name", hex_w + type_w, SortColumn::Name),
+                ("Count", hex_w + type_w + name_w, SortColumn::Count),
             ];
             for (label, offset, col) in col_specs {
                 let col_w = match col {
-                    SortColumn::EditorId => edid_w,
+                    SortColumn::HexId => hex_w,
+                    SortColumn::Type => type_w,
                     SortColumn::Name => name_w,
                     SortColumn::Count => count_w,
                 };
@@ -503,7 +569,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     }
                     let val = filter_value.trim().to_lowercase();
                     match filter_type.trim().to_lowercase().as_str() {
-                        "eid" | "id" => e.editor_id.to_lowercase().contains(&val),
+                        "hex" | "id" => e.hex_id.to_lowercase().contains(&val),
+                        "type" => e.entry_type.to_lowercase().contains(&val),
                         "name" => e.name.to_lowercase().contains(&val),
                         _ => e.name.to_lowercase().contains(&val),
                     }
@@ -512,7 +579,8 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
             filtered.sort_by(|a, b| {
                 let ord = match object_window_resource.sort_col {
-                    SortColumn::EditorId => a.editor_id.cmp(&b.editor_id),
+                    SortColumn::HexId => a.hex_id.cmp(&b.hex_id),
+                    SortColumn::Type => a.entry_type.cmp(&b.entry_type),
                     SortColumn::Name => a.name.cmp(&b.name),
                     SortColumn::Count => a.count.cmp(&b.count),
                 };
@@ -546,11 +614,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         let is_model = entry.editor_id.starts_with("model:");
                         let is_shader = entry.editor_id.starts_with("shader:");
                         let is_material = entry.editor_id.contains(":Material:");
-                        let (row_rect, row_resp) =
-                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click_and_drag());
+                        let (row_rect, row_resp) = ui.allocate_exact_size(
+                            Vec2::new(table_w, row_h),
+                            Sense::click_and_drag(),
+                        );
 
-                        let is_scene =
-                            entry.category_path.len() >= 2 && entry.category_path[1] == "worldspace";
+                        let is_scene = entry.category_path.len() >= 2
+                            && entry.category_path[1] == "worldspace";
                         let is_renaming = object_window_resource.renaming_entry.as_deref()
                             == Some(entry.editor_id.as_str());
 
@@ -616,14 +686,22 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         paint_clipped(
                             ui,
                             Pos2::new(rl + 6.0, cy),
-                            edid_w - 12.0,
-                            &entry.editor_id,
+                            hex_w - 12.0,
+                            &entry.hex_id,
+                            fnt.clone(),
+                            style.dim_col,
+                        );
+                        paint_clipped(
+                            ui,
+                            Pos2::new(rl + hex_w + 6.0, cy),
+                            type_w - 12.0,
+                            &entry.entry_type,
                             fnt.clone(),
                             style.dim_col,
                         );
                         if is_renaming {
                             let name_rect = Rect::from_min_size(
-                                Pos2::new(rl + edid_w + 2.0, row_rect.top() + 1.0),
+                                Pos2::new(rl + hex_w + type_w + 2.0, row_rect.top() + 1.0),
                                 Vec2::new(name_w - 4.0, row_h - 2.0),
                             );
                             let te =
@@ -648,7 +726,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         } else {
                             paint_clipped(
                                 ui,
-                                Pos2::new(rl + edid_w + 6.0, cy),
+                                Pos2::new(rl + hex_w + type_w + 6.0, cy),
                                 name_w - 12.0,
                                 &entry.name,
                                 fnt.clone(),
@@ -657,7 +735,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         }
                         paint_clipped(
                             ui,
-                            Pos2::new(rl + edid_w + name_w + 6.0, cy),
+                            Pos2::new(rl + hex_w + type_w + name_w + 6.0, cy),
                             count_w - 12.0,
                             &entry.count.to_string(),
                             fnt.clone(),
@@ -668,7 +746,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             [row_rect.left_bottom(), row_rect.right_bottom()],
                             Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
                         );
-                        for offset in [edid_w, edid_w + name_w] {
+                        for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
                             ui.painter().line_segment(
                                 [
                                     Pos2::new(rl + offset, row_rect.top()),
@@ -708,7 +786,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                             [row_rect.left_bottom(), row_rect.right_bottom()],
                             Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
                         );
-                        for offset in [edid_w, edid_w + name_w] {
+                        for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
                             ui.painter().line_segment(
                                 [
                                     Pos2::new(rl + offset, row_rect.top()),
@@ -727,8 +805,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
             for (i, dx) in [
                 left_edge + filter_w,
-                left_edge + filter_w + edid_w,
-                left_edge + filter_w + edid_w + name_w,
+                left_edge + filter_w + hex_w,
+                left_edge + filter_w + hex_w + type_w,
+                left_edge + filter_w + hex_w + type_w + name_w,
             ]
             .iter()
             .enumerate()
@@ -753,6 +832,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         2 => {
                             object_window_resource.col_widths[2] =
                                 (object_window_resource.col_widths[2] + d).max(50.0)
+                        }
+                        3 => {
+                            object_window_resource.col_widths[3] =
+                                (object_window_resource.col_widths[3] + d).max(50.0)
                         }
                         _ => {}
                     }

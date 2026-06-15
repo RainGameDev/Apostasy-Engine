@@ -54,7 +54,10 @@ pub fn init(world: &mut World) -> Result<()> {
             .with_shift()
             .with_ctrl(),
     );
-
+    inputs.register_default_keybind(
+        "ReloadShaders",
+        KeyBind::new(PhysicalKey::Code(KeyCode::F1), KeyAction::Press),
+    );
     inputs.register_default_keybind(
         "SnapModifier",
         KeyBind::new(PhysicalKey::Code(KeyCode::ShiftLeft), KeyAction::Hold),

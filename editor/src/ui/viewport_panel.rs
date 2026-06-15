@@ -48,7 +48,11 @@ use super::EditorStyle;
 use crate::{
     objects::editor_camera::EditorCameraSettings,
     systems::object_focus::IsObjectFocused,
-    ui::{cell_panel::CellSearchState, inspector_panel::InspectorPanelState, shared::WindowLayout},
+    terrain::TerrainToolState,
+    ui::{
+        cell_panel::CellSearchState, gizmo::GizmoMode, inspector_panel::InspectorPanelState,
+        shared::WindowLayout,
+    },
 };
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -122,6 +126,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .default_pos(pos)
         .default_size(size)
         .resizable(true)
+        .collapsible(false)
         .movable(true);
 
     let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
@@ -225,10 +230,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .get_resource::<crate::terrain::TerrainBrushGizmo>()
             .ok()?
             .hit_pos?;
-        let radius = world
-            .get_resource::<crate::terrain::TerrainToolState>()
-            .ok()?
-            .brush_radius;
+        let radius = world.get_resource::<TerrainToolState>().ok()?.brush_radius;
         let cam_objs = world.get_objects_with_component::<Camera>();
         let cam_obj = cam_objs.first()?;
         let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
@@ -278,17 +280,19 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .get_resource::<ViewportInfo>()
             .map(|v| v.is_hovered)
             .unwrap_or(false);
-        if let Ok(inputs) = world.get_resource_mut::<InputManager>() {
-            if viewport_hovered && !ctx.egui_wants_keyboard_input() {
-                inputs.active_contexts.insert("viewport".to_string());
-            }
+        if let Ok(inputs) = world.get_resource_mut::<InputManager>()
+            && viewport_hovered
+            && !ctx.egui_wants_keyboard_input()
+        {
+            inputs.active_contexts.insert("viewport".to_string());
         }
     }
 
     // Keybind-driven gizmo mode switching and snap modifier.
     {
-        use crate::ui::gizmo::GizmoMode;
-        if let Ok(inputs) = world.get_resource::<InputManager>() {
+        if let Ok(inputs) = world.get_resource::<InputManager>()
+            && !inputs.is_mousebind_active("RightMouseClick")
+        {
             gizmo_state.shift_snap_held = inputs.is_keybind_active("SnapModifier");
             if inputs.is_keybind_active("GizmoTranslate") {
                 gizmo_state.mode = GizmoMode::Translate;
@@ -374,18 +378,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         ui.add_space(4.0);
                         {
                             let terrain_active = world
-                                .get_resource::<crate::terrain::TerrainToolState>()
+                                .get_resource::<TerrainToolState>()
                                 .map(|s| s.active)
                                 .unwrap_or(false);
+
                             if ui.selectable_label(terrain_active, "Terrain").clicked() {
-                                if !world.has_resource::<crate::terrain::TerrainToolState>() {
-                                    world.insert_resource(
-                                        crate::terrain::TerrainToolState::default(),
-                                    );
+                                if !world.has_resource::<TerrainToolState>() {
+                                    world.insert_resource(TerrainToolState::default());
                                 }
-                                if let Ok(s) =
-                                    world.get_resource_mut::<crate::terrain::TerrainToolState>()
-                                {
+                                if let Ok(s) = world.get_resource_mut::<TerrainToolState>() {
                                     s.active = !terrain_active;
                                 }
                             }
@@ -473,7 +474,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
             }
 
             let terrain_tool_active = world
-                .get_resource::<crate::terrain::TerrainToolState>()
+                .get_resource::<TerrainToolState>()
                 .map(|s| s.active)
                 .unwrap_or(false);
 

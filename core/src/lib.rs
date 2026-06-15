@@ -25,7 +25,6 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
-use crate::rendering::shared::material::GpuMaterial;
 use crate::objects::component::InspectorRegistry;
 use crate::objects::components::transform::Transform;
 use crate::objects::resources::cursor_manager::CursorManager;
@@ -50,18 +49,23 @@ use crate::rendering::lighting::gpu_light::{
 };
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
-use crate::rendering::shared::shadow_settings::ShadowDistance;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{
     PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
     ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
 };
+use crate::rendering::shared::shadow_settings::ShadowDistance;
 use crate::states::ShouldExit;
-use crate::utils::profiler::{FrameSample, Profiler};
+use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainMesh};
+use crate::terrain::rebuild::rebuild_dirty_terrain;
+use crate::terrain::texture_atlas::TerrainTextureAtlas;
+use crate::terrain::{TerrainAtlasNeedsRebuild, TerrainSettings};
 use crate::ui::FontRegistry;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
+use crate::utils::profiler::{FrameSample, Profiler};
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
@@ -70,10 +74,6 @@ use crate::voxels::meshes::{dispatch_remesh_jobs, receive_meshes};
 use crate::voxels::texture_atlas::PendingAtlas;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use crate::voxels::texture_atlas::upload_atlas;
-use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainMesh};
-use crate::terrain::rebuild::rebuild_dirty_terrain;
-use crate::terrain::texture_atlas::TerrainTextureAtlas;
-use crate::terrain::{TerrainAtlasNeedsRebuild, TerrainSettings};
 use crate::{
     objects::world::World,
     rendering::{RenderingBackend, RenderingInfo},
@@ -342,7 +342,11 @@ impl Core {
                         .filter_map(|obj| {
                             let light = obj.get_component::<Light>().ok()?;
                             let transform = obj.get_component::<Transform>().ok()?;
-                            if light.is_emitting { Some((light, transform)) } else { None }
+                            if light.is_emitting {
+                                Some((light, transform))
+                            } else {
+                                None
+                            }
                         })
                         .collect();
                     let gpu_lights: Vec<GpuLight> = emitting_lights
@@ -350,11 +354,24 @@ impl Core {
                         .map(|(l, t)| GpuLight::from_component(l, t))
                         .collect();
 
-                    let (shadow_dist, csm_cascade_count, shadow_bias_constant, shadow_bias_slope, shadow_map_size) =
-                        world
-                            .get_resource::<ShadowDistance>()
-                            .map(|r| (r.distance, r.cascade_count, r.bias_constant, r.bias_slope, r.shadow_map_size))
-                            .unwrap_or((128.0, 4, 2.0, 2.0, 2048));
+                    let (
+                        shadow_dist,
+                        csm_cascade_count,
+                        shadow_bias_constant,
+                        shadow_bias_slope,
+                        shadow_map_size,
+                    ) = world
+                        .get_resource::<ShadowDistance>()
+                        .map(|r| {
+                            (
+                                r.distance,
+                                r.cascade_count,
+                                r.bias_constant,
+                                r.bias_slope,
+                                r.shadow_map_size,
+                            )
+                        })
+                        .unwrap_or((128.0, 4, 2.0, 2.0, 2048));
 
                     if let Err(e) = renderer.rebuild_shadow_map(shadow_map_size) {
                         log_error!("Failed to rebuild shadow map: {}", e);
@@ -378,40 +395,59 @@ impl Core {
                     }
 
                     // Find first directional or spot light for shadow casting.
-                    let shadow_result: Option<ShadowCastData> =
-                        emitting_lights.iter().enumerate().find_map(|(idx, (light, transform))| {
-                            match light.light_type {
-                                LightType::Directional => {
-                                    let (matrices, splits) = compute_csm_matrices(
-                                        light,
-                                        transform,
-                                        camera_pos,
-                                        camera_comp.fov_y,
-                                        aspect,
-                                        camera_near,
-                                        camera_far,
-                                        shadow_dist,
-                                        csm_cascade_count,
-                                        shadow_map_size,
-                                    );
-                                    Some(ShadowCastData::Directional { matrices, splits, light_index: idx as u32 })
-                                }
-                                LightType::Spot { .. } => {
-                                    let m = compute_light_space_matrix(light, transform, camera_pos, shadow_dist);
-                                    Some(ShadowCastData::Spot { matrix: *m.as_ref(), light_index: idx as u32 })
-                                }
-                                _ => None,
+                    let shadow_result: Option<ShadowCastData> = emitting_lights
+                        .iter()
+                        .enumerate()
+                        .find_map(|(idx, (light, transform))| match light.light_type {
+                            LightType::Directional => {
+                                let (matrices, splits) = compute_csm_matrices(
+                                    light,
+                                    transform,
+                                    camera_pos,
+                                    camera_comp.fov_y,
+                                    aspect,
+                                    camera_near,
+                                    camera_far,
+                                    shadow_dist,
+                                    csm_cascade_count,
+                                    shadow_map_size,
+                                );
+                                Some(ShadowCastData::Directional {
+                                    matrices,
+                                    splits,
+                                    light_index: idx as u32,
+                                })
                             }
+                            LightType::Spot { .. } => {
+                                let m = compute_light_space_matrix(
+                                    light,
+                                    transform,
+                                    camera_pos,
+                                    shadow_dist,
+                                );
+                                Some(ShadowCastData::Spot {
+                                    matrix: *m.as_ref(),
+                                    light_index: idx as u32,
+                                })
+                            }
+                            _ => None,
                         });
 
                     let shadow_data = shadow_result.as_ref().map(|sr| match sr {
-                        ShadowCastData::Directional { matrices, splits, light_index } => ShadowData {
+                        ShadowCastData::Directional {
+                            matrices,
+                            splits,
+                            light_index,
+                        } => ShadowData {
                             matrices: matrices.iter().map(|m| *m.as_ref()).collect(),
                             splits: *splits,
                             cascade_count: csm_cascade_count as u32,
                             shadow_light_index: *light_index,
                         },
-                        ShadowCastData::Spot { matrix, light_index } => ShadowData {
+                        ShadowCastData::Spot {
+                            matrix,
+                            light_index,
+                        } => ShadowData {
                             matrices: vec![*matrix; 4],
                             splits: [shadow_dist; 4],
                             cascade_count: 1,
@@ -420,8 +456,10 @@ impl Core {
                     });
 
                     // Find first point light for omnidirectional shadow casting.
-                    let point_shadow_data: Option<PointShadowData> =
-                        emitting_lights.iter().enumerate().find_map(|(idx, (light, transform))| {
+                    let point_shadow_data: Option<PointShadowData> = emitting_lights
+                        .iter()
+                        .enumerate()
+                        .find_map(|(idx, (light, transform))| {
                             if let LightType::Point { radius } = light.light_type {
                                 let pos = transform.global_position;
                                 let face_mats = compute_point_shadow_matrices(pos, radius);
@@ -486,7 +524,11 @@ impl Core {
                             None => unreachable!(),
                         };
 
-                        if let Err(e) = renderer.begin_shadow_pass(cascade_idx, shadow_bias_constant, shadow_bias_slope) {
+                        if let Err(e) = renderer.begin_shadow_pass(
+                            cascade_idx,
+                            shadow_bias_constant,
+                            shadow_bias_slope,
+                        ) {
                             log_error!("Failed to begin shadow pass {}: {}", cascade_idx, e);
                             return;
                         }
@@ -529,7 +571,8 @@ impl Core {
                                 .collect();
                             for id in terrain_ids {
                                 if let Some(object) = world.get_object(id) {
-                                    let terrain_mesh = object.get_component::<TerrainMesh>().unwrap();
+                                    let terrain_mesh =
+                                        object.get_component::<TerrainMesh>().unwrap();
                                     if terrain_mesh.index_count == 0 {
                                         continue;
                                     }
@@ -539,7 +582,9 @@ impl Core {
                                         [1.0, 1.0, 1.0],
                                         [0.0, 0.0, 0.0, 1.0],
                                     );
-                                    if let Err(e) = renderer.shadow_model_render(Box::new(terrain_mesh.clone()), &pc) {
+                                    if let Err(e) = renderer
+                                        .shadow_model_render(Box::new(terrain_mesh.clone()), &pc)
+                                    {
                                         log_error!("Failed shadow terrain render: {}", e);
                                     }
                                 }
@@ -550,8 +595,7 @@ impl Core {
                         if self.packages.contains(&Packages::Voxel) {
                             for object in world.get_objects_with_component::<VoxelChunkMesh>() {
                                 let transform = object.get_component::<VoxelTransform>().unwrap();
-                                let voxel_mesh =
-                                    object.get_component::<VoxelChunkMesh>().unwrap();
+                                let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
                                 let pc = ShadowVoxelPushConstants::new(
                                     cascade_matrix,
                                     [
@@ -560,8 +604,8 @@ impl Core {
                                         transform.position.z * 32,
                                     ],
                                 );
-                                if let Err(e) = renderer
-                                    .shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
+                                if let Err(e) =
+                                    renderer.shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
                                 {
                                     log_error!("Failed shadow voxel render: {}", e);
                                 }
@@ -585,32 +629,48 @@ impl Core {
                         for face in 0..6usize {
                             let face_matrix = ps.face_matrices[face];
 
-                            if let Err(e) = renderer.begin_point_shadow_pass(face, shadow_bias_constant, shadow_bias_slope) {
+                            if let Err(e) = renderer.begin_point_shadow_pass(
+                                face,
+                                shadow_bias_constant,
+                                shadow_bias_slope,
+                            ) {
                                 log_error!("Failed to begin point shadow pass {}: {}", face, e);
                                 return;
                             }
 
                             for &id in &point_model_ids {
                                 if let Some(object) = world.get_object(id) {
-                                    let model_renderer = object.get_component::<ModelRenderer>().unwrap();
+                                    let model_renderer =
+                                        object.get_component::<ModelRenderer>().unwrap();
                                     if let Some(model) = &model_renderer.model {
-                                        let transform = object.get_component::<Transform>().unwrap();
+                                        let transform =
+                                            object.get_component::<Transform>().unwrap();
                                         let pc = ShadowPointModelPushConstants::new(
-                                            [gpu_lights[ps.light_index as usize].position[0],
-                                             gpu_lights[ps.light_index as usize].position[1],
-                                             gpu_lights[ps.light_index as usize].position[2]],
+                                            [
+                                                gpu_lights[ps.light_index as usize].position[0],
+                                                gpu_lights[ps.light_index as usize].position[1],
+                                                gpu_lights[ps.light_index as usize].position[2],
+                                            ],
                                             ps.far,
                                             face_matrix,
                                             transform.global_position.into(),
                                             transform.global_scale.into(),
-                                            [transform.global_rotation.v.x,
-                                             transform.global_rotation.v.y,
-                                             transform.global_rotation.v.z,
-                                             transform.global_rotation.s],
+                                            [
+                                                transform.global_rotation.v.x,
+                                                transform.global_rotation.v.y,
+                                                transform.global_rotation.v.z,
+                                                transform.global_rotation.s,
+                                            ],
                                         );
                                         for mesh in &model.meshes {
-                                            if let Err(e) = renderer.shadow_point_model_render(Box::new(mesh.clone()), &pc) {
-                                                log_error!("Failed point shadow model render: {}", e);
+                                            if let Err(e) = renderer.shadow_point_model_render(
+                                                Box::new(mesh.clone()),
+                                                &pc,
+                                            ) {
+                                                log_error!(
+                                                    "Failed point shadow model render: {}",
+                                                    e
+                                                );
                                             }
                                         }
                                     }
@@ -619,19 +679,28 @@ impl Core {
 
                             if self.packages.contains(&Packages::Voxel) {
                                 for object in world.get_objects_with_component::<VoxelChunkMesh>() {
-                                    let transform = object.get_component::<VoxelTransform>().unwrap();
-                                    let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                                    let transform =
+                                        object.get_component::<VoxelTransform>().unwrap();
+                                    let voxel_mesh =
+                                        object.get_component::<VoxelChunkMesh>().unwrap();
                                     let pc = ShadowPointVoxelPushConstants::new(
-                                        [gpu_lights[ps.light_index as usize].position[0],
-                                         gpu_lights[ps.light_index as usize].position[1],
-                                         gpu_lights[ps.light_index as usize].position[2]],
+                                        [
+                                            gpu_lights[ps.light_index as usize].position[0],
+                                            gpu_lights[ps.light_index as usize].position[1],
+                                            gpu_lights[ps.light_index as usize].position[2],
+                                        ],
                                         ps.far,
                                         face_matrix,
-                                        [transform.position.x * 32,
-                                         transform.position.y * 32,
-                                         transform.position.z * 32],
+                                        [
+                                            transform.position.x * 32,
+                                            transform.position.y * 32,
+                                            transform.position.z * 32,
+                                        ],
                                     );
-                                    if let Err(e) = renderer.shadow_point_voxel_render(Box::new(voxel_mesh.clone()), &pc) {
+                                    if let Err(e) = renderer.shadow_point_voxel_render(
+                                        Box::new(voxel_mesh.clone()),
+                                        &pc,
+                                    ) {
                                         log_error!("Failed point shadow voxel render: {}", e);
                                     }
                                 }
@@ -663,7 +732,8 @@ impl Core {
 
                     let world_fixed_update_start = std::time::Instant::now();
                     world.fixed_update();
-                    let world_fixed_update_ns = world_fixed_update_start.elapsed().as_nanos() as u64;
+                    let world_fixed_update_ns =
+                        world_fixed_update_start.elapsed().as_nanos() as u64;
 
                     let viewport_render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_viewport_render() {
@@ -722,18 +792,22 @@ impl Core {
                                 .model_path
                                 .clone();
 
-                            let model = model_registry.paths.get(&model_path).unwrap();
+                            let Some(model) = model_registry.paths.get(&model_path) else {
+                                continue;
+                            };
                             object.get_component_mut::<ModelRenderer>().unwrap().model =
                                 Some(Box::new(model.clone()));
                         }
 
                         let model_renderer = object.get_component::<ModelRenderer>().unwrap();
-                        let model = object
+                        let Some(model) = object
                             .get_component::<ModelRenderer>()
                             .unwrap()
                             .model
                             .clone()
-                            .unwrap();
+                        else {
+                            continue;
+                        };
 
                         let transform = object.get_component::<Transform>().unwrap();
 
@@ -742,7 +816,8 @@ impl Core {
                         model_push.world_scale = transform.global_scale;
                         model_push.world_rotation = transform.global_rotation;
 
-                        let override_gpu_mat = model_renderer.material_override
+                        let override_gpu_mat = model_renderer
+                            .material_override
                             .as_ref()
                             .and_then(|name| gpu_mat_by_name.get(name));
 
@@ -752,10 +827,11 @@ impl Core {
                             let albedo_ds = effective_mat
                                 .and_then(|m| m.albedo.as_ref())
                                 .map(|t| t.descriptor_set);
-                            let shader_override: Option<&str> = effective_mat
-                                .and_then(|m| m.shader.as_deref())
-                                .or_else(|| {
-                                    model_renderer.material_override.as_deref()
+                            let shader_override: Option<&str> =
+                                effective_mat.and_then(|m| m.shader.as_deref()).or_else(|| {
+                                    model_renderer
+                                        .material_override
+                                        .as_deref()
                                         .and_then(|name| yaml_shader_by_name.get(name))
                                         .map(|s| s.as_str())
                                 });
@@ -805,14 +881,16 @@ impl Core {
                             if let Ok(cmd_pool) = renderer.get_command_pool() {
                                 let dp = renderer.get_descriptor_pool();
                                 let dsl = renderer.get_voxel_descriptor_set_layout();
-                                if let Ok(atlas) = crate::terrain::texture_atlas::upload_terrain_textures(
-                                    &context,
-                                    cmd_pool,
-                                    dp,
-                                    dsl,
-                                    &tex_settings,
-                                    256,
-                                ) {
+                                if let Ok(atlas) =
+                                    crate::terrain::texture_atlas::upload_terrain_textures(
+                                        &context,
+                                        cmd_pool,
+                                        dp,
+                                        dsl,
+                                        &tex_settings,
+                                        256,
+                                    )
+                                {
                                     world.insert_resource(atlas);
                                 }
                             }
@@ -837,13 +915,14 @@ impl Core {
                             let mut terrain_push = model_push_constants.clone();
                             terrain_push.world_position = Vector3::new(0.0, 0.0, 0.0);
                             terrain_push.world_scale = Vector3::new(1.0, 1.0, 1.0);
-                            terrain_push.world_rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
+                            terrain_push.world_rotation =
+                                cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
                             if let Err(e) = renderer.render(
                                 Box::new(terrain_mesh.clone()),
                                 push_constants.clone(),
                                 &terrain_push,
                                 terrain_atlas_ds,
-                                Some("terrain"),
+                                Some("sdr_default_terrain"),
                             ) {
                                 log_error!("Failed to render terrain: {}", e);
                             }
@@ -1055,7 +1134,13 @@ impl ApplicationHandler for Core {
             asset_manager.model_loader = model_loader;
 
             asset_manager
-                .load_models(Path::new("res/"), Arc::new(context.clone()), command_pool, descriptor_pool, descriptor_set_layout)
+                .load_models(
+                    Path::new("res/"),
+                    Arc::new(context.clone()),
+                    command_pool,
+                    descriptor_pool,
+                    descriptor_set_layout,
+                )
                 .unwrap();
 
             asset_manager
@@ -1221,7 +1306,7 @@ pub fn editor_start(world: &mut World) -> Result<()> {
 #[update(mode = "editor")]
 pub fn editor_update(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>()?;
-    if inputs.is_keybind_active("Reload Shaders") {
+    if inputs.is_keybind_active("ReloadShaders") {
         world.insert_resource(ReloadShadersRequest(true));
     }
     Ok(())

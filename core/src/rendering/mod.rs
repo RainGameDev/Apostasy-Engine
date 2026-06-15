@@ -65,7 +65,7 @@ pub trait RenderingAPI {
     fn end_frame(&mut self) -> Result<()>;
 
     /// Draws a model mesh with the given push constants.
-    /// `shader_override`: name of a custom shader pair (e.g. `"water"` -> `water.vert`/`water.frag`),
+    /// `shader_override`: name of a custom shader pair (e.g. `"sdr_default_water"` -> `sdr_default_water.vert`/`sdr_default_water.frag`),
     /// or `None` to use the default model shader.
     fn render(
         &mut self,

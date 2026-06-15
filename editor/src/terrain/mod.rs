@@ -1,4 +1,9 @@
-use apostasy_core::cgmath::Vector3;
+use anyhow::Result;
+use apostasy_core::{
+    cgmath::Vector3,
+    objects::{resources::input_manager::InputManager, world::World},
+    update,
+};
 use apostasy_macros::Resource;
 
 pub mod terrain_input;
@@ -46,4 +51,22 @@ impl Default for TerrainToolState {
 #[derive(Resource, Clone, Default)]
 pub struct TerrainBrushGizmo {
     pub hit_pos: Option<Vector3<f32>>,
+}
+
+#[update(mode = "all")]
+pub fn toggle_terrain_state(world: &mut World) -> Result<()> {
+    if !world.has_resource::<TerrainToolState>() {
+        return Ok(());
+    }
+    let toggle = world
+        .get_resource::<InputManager>()?
+        .is_keybind_active("TerrainMode");
+
+    let state = world.get_resource_mut::<TerrainToolState>()?;
+
+    if toggle {
+        state.active = !state.active;
+    }
+
+    Ok(())
 }

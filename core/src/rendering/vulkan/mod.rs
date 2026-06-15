@@ -614,10 +614,10 @@ impl RenderingAPI for VulkanRenderer {
 
         let default_vertex_shader = rendering_info.settings.default_vertex_shader.clone();
         let default_fragment_shader = rendering_info.settings.default_fragment_shader.clone();
-        let voxel_vertex_shader = "voxel.vert".to_string();
-        let voxel_fragment_shader = "voxel.frag".to_string();
-        let water_vertex_shader = "water.vert".to_string();
-        let water_fragment_shader = "water.frag".to_string();
+        let voxel_vertex_shader = "sdr_default_voxel.vert".to_string();
+        let voxel_fragment_shader = "sdr_default_voxel.frag".to_string();
+        let water_vertex_shader = "sdr_default_water.vert".to_string();
+        let water_fragment_shader = "sdr_default_water.frag".to_string();
 
         let vertex_shader = pipeline_manager.create_shader_module(
             &rendering_info.context.clone().into(),
@@ -887,10 +887,10 @@ impl RenderingAPI for VulkanRenderer {
 
             let ui_renderer = UIRenderer::new(context.clone(), &swapchain, window)?;
 
-            let voxel_vertex_shader = "voxel.vert".to_string();
-            let voxel_fragment_shader = "voxel.frag".to_string();
-            let water_vertex_shader = "water.vert".to_string();
-            let water_fragment_shader = "water.frag".to_string();
+            let voxel_vertex_shader = "sdr_default_voxel.vert".to_string();
+            let voxel_fragment_shader = "sdr_default_voxel.frag".to_string();
+            let water_vertex_shader = "sdr_default_water.vert".to_string();
+            let water_fragment_shader = "sdr_default_water.frag".to_string();
 
             let viewport_extent = swapchain.extent;
 
@@ -1107,14 +1107,14 @@ impl RenderingAPI for VulkanRenderer {
             // Shadow pipeline layouts and pipelines.
             let shadow_model_vert_module = pipeline_manager.create_shader_module(
                 &rendering_info.context.clone().into(),
-                "shadow_model.vert",
+                "sdr_default_shadow_model.vert",
             )?;
             let shadow_voxel_vert_module = pipeline_manager.create_shader_module(
                 &rendering_info.context.clone().into(),
-                "shadow_voxel.vert",
+                "sdr_default_shadow_voxel.vert",
             )?;
             let shadow_frag_module = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "shadow.frag")?;
+                .create_shader_module(&rendering_info.context.clone().into(), "sdr_default_shadow.frag")?;
 
             let shadow_model_pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
@@ -1339,15 +1339,15 @@ impl RenderingAPI for VulkanRenderer {
             // Point shadow pipelines.
             let shadow_point_model_vert = pipeline_manager.create_shader_module(
                 &rendering_info.context.clone().into(),
-                "shadow_point_model.vert",
+                "sdr_default_shadow_point_model.vert",
             )?;
             let shadow_point_voxel_vert = pipeline_manager.create_shader_module(
                 &rendering_info.context.clone().into(),
-                "shadow_point_voxel.vert",
+                "sdr_default_shadow_point_voxel.vert",
             )?;
             let shadow_point_frag = pipeline_manager.create_shader_module(
                 &rendering_info.context.clone().into(),
-                "shadow_point.frag",
+                "sdr_default_shadow_point.frag",
             )?;
 
             let shadow_point_model_pipeline_layout = context.device.create_pipeline_layout(
@@ -1639,9 +1639,9 @@ impl RenderingAPI for VulkanRenderer {
                 shadow_map_size: SHADOW_MAP_SIZE,
                 shadow_model_pipeline_layout,
                 shadow_voxel_pipeline_layout,
-                shadow_model_vertex_shader: "shadow_model.vert".to_string(),
-                shadow_voxel_vertex_shader: "shadow_voxel.vert".to_string(),
-                shadow_fragment_shader: "shadow.frag".to_string(),
+                shadow_model_vertex_shader: "sdr_default_shadow_model.vert".to_string(),
+                shadow_voxel_vertex_shader: "sdr_default_shadow_voxel.vert".to_string(),
+                shadow_fragment_shader: "sdr_default_shadow.frag".to_string(),
 
                 point_shadow_image,
                 point_shadow_image_memory,
@@ -1651,9 +1651,9 @@ impl RenderingAPI for VulkanRenderer {
                 point_shadow_map_size: SHADOW_MAP_SIZE,
                 shadow_point_model_pipeline_layout,
                 shadow_point_voxel_pipeline_layout,
-                shadow_point_model_vertex_shader: "shadow_point_model.vert".to_string(),
-                shadow_point_voxel_vertex_shader: "shadow_point_voxel.vert".to_string(),
-                shadow_point_fragment_shader: "shadow_point.frag".to_string(),
+                shadow_point_model_vertex_shader: "sdr_default_shadow_point_model.vert".to_string(),
+                shadow_point_voxel_vertex_shader: "sdr_default_shadow_point_voxel.vert".to_string(),
+                shadow_point_fragment_shader: "sdr_default_shadow_point.frag".to_string(),
 
                 ubo,
                 pipeline_manager,
@@ -3152,6 +3152,8 @@ impl RenderingAPI for VulkanRenderer {
         }
 
         log!("Reloaded shaders: {}", reloaded.join(", "));
+        unsafe { self.context.device.device_wait_idle()? };
+        self.pipeline_manager.pipeline_cache.clear();
         self.rebuild_pipelines(self.aa_amount)?;
         Ok(true)
     }

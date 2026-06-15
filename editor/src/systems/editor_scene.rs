@@ -273,6 +273,11 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
     );
 
+    inputs.register_default_keybind(
+        "TerrainMode",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyH), KeyAction::Press),
+    );
+
     Ok(())
 }
 

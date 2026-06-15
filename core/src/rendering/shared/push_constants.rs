@@ -131,7 +131,7 @@ impl VoxelPushConstants {
 }
 
 /// Push constants for the depth-only shadow pass for model geometry (112 bytes).
-/// Layout must match `shadow_model.vert`.
+/// Layout must match `sdr_default_shadow_model.vert`.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ShadowModelPushConstants {
@@ -163,7 +163,7 @@ impl ShadowModelPushConstants {
 }
 
 /// Push constants for the depth-only shadow pass for voxel geometry (80 bytes).
-/// Layout must match `shadow_voxel.vert`.
+/// Layout must match `sdr_default_shadow_voxel.vert`.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ShadowVoxelPushConstants {
@@ -188,7 +188,7 @@ impl ShadowVoxelPushConstants {
 
 /// Push constants for the point-light cubemap shadow pass for model geometry (128 bytes).
 /// light_pos/far come first so the fragment shader can use a single shared layout.
-/// Layout must match `shadow_point_model.vert` and `shadow_point.frag`.
+/// Layout must match `sdr_default_shadow_point_model.vert` and `sdr_default_shadow_point.frag`.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ShadowPointModelPushConstants {
@@ -224,7 +224,7 @@ impl ShadowPointModelPushConstants {
 }
 
 /// Push constants for the point-light cubemap shadow pass for voxel geometry (96 bytes).
-/// Layout must match `shadow_point_voxel.vert` and `shadow_point.frag`.
+/// Layout must match `sdr_default_shadow_point_voxel.vert` and `sdr_default_shadow_point.frag`.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ShadowPointVoxelPushConstants {

@@ -172,6 +172,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
     let window = Window::new("Cell Panel")
         .open(&mut open)
+        .collapsible(false)
         .default_pos(pos)
         .default_size(size)
         .resizable(true)

@@ -177,6 +177,6 @@ mod tests {
 
     #[test]
     fn resolve_paths_does_not_crash() {
-        let _ = resolve_shader_path("voxel.vert");
+        let _ = resolve_shader_path("sdr_default_voxel.vert");
     }
 }

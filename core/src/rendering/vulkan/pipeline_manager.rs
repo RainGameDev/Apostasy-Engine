@@ -89,7 +89,7 @@ impl PipelineManager {
         {
             format!("{}.vert", shader_name)
         } else {
-            "shader.vert".to_string()
+            "sdr_default_shader.vert".to_string()
         };
         let frag_name = if self
             .shader_registry
@@ -100,7 +100,7 @@ impl PipelineManager {
         {
             format!("{}.frag", shader_name)
         } else {
-            "shader.frag".to_string()
+            "sdr_default_shader.frag".to_string()
         };
 
         let vert = self.create_shader_module(context, &vert_name)?;

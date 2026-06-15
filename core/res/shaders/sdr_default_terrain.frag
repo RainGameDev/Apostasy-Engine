@@ -3,7 +3,9 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
-layout(location = 3) in float fragTextureIndex;
+layout(location = 3) in float fragTexLayerA;
+layout(location = 4) in float fragTexLayerB;
+layout(location = 5) in float fragTexBlend;
 
 layout(set = 1, binding = 0) uniform sampler2DArray terrainTex;
 
@@ -51,6 +53,23 @@ layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
 layout(set = 0, binding = 2) uniform samplerCubeShadow pointShadowMap;
 
 layout(location = 0) out vec4 outColor;
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+float value_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+        mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
+        f.y
+    );
+}
 
 float attenuate(float dist, float radius) {
     float r = dist / radius;
@@ -135,22 +154,17 @@ void main() {
 
     vec4 baseColor;
 
-    // Interpolated texture index: blend between floor and ceil layers
-    float idx = max(fragTextureIndex, 0.0);
-    float layer_a = floor(idx);
-    float layer_b = ceil(idx);
-    float blend = fract(idx);
-
-    // If index is near an integer, avoid extra texture sample
-    if (blend < 0.001) {
-        baseColor = texture(terrainTex, vec3(fragTexCoord, layer_a));
-    } else if (blend > 0.999) {
-        baseColor = texture(terrainTex, vec3(fragTexCoord, layer_b));
+    float blend = clamp(fragTexBlend, 0.0, 1.0);
+    if (abs(fragTexLayerA - fragTexLayerB) < 0.001) {
+      baseColor = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerA)));
     } else {
-        vec4 ca = texture(terrainTex, vec3(fragTexCoord, layer_a));
-        vec4 cb = texture(terrainTex, vec3(fragTexCoord, layer_b));
-        baseColor = mix(ca, cb, blend);
+      float n = (value_noise(fragWorldPos.xz * 0.05)) * 0.01;  // subtler noise
+      blend = clamp(blend + n, 0.0, 1.0);
+      blend = smoothstep(0.0, 1.0, blend);  // gentle S-curve, no compression
+      vec4 ca = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerA)));
+      vec4 cb = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerB)));
+      baseColor = mix(ca, cb, blend ) ;
     }
 
-    outColor = vec4(baseColor.rgb * max(lighting, vec3(0.05)), 1.0);
+    outColor = vec4(baseColor.rgb *  max(lighting, vec3(0.05)), 1.0);
 }

@@ -10,13 +10,14 @@ use crate::{
 
 use super::{
     chunk::{NeedsTerrainRebuild, TerrainChunk, TerrainMesh},
-    mesh_builder::{ExistingMesh, NeighborBorders, build_terrain_mesh},
+    mesh_builder::{NeighborBorders, build_terrain_mesh},
 };
 
 /// Uploads or updates GPU meshes for all terrain chunks tagged with `NeedsTerrainRebuild`.
-/// On the first build: allocates HOST_VISIBLE vertex buffer + DEVICE_LOCAL index buffer.
-/// On subsequent rebuilds: writes vertex data directly into the mapped buffer — no staging
-/// buffer, no GPU queue submission, no pipeline stall.
+///
+/// Always creates fresh vertex / index buffers (the terrain switched to per-triangle
+/// vertices so the old shared-vertex buffers are incompatible).  Previous buffers are
+/// pushed onto `_graveyard` for deferred destruction.
 pub fn rebuild_dirty_terrain(
     world: &mut World,
     context: &VulkanRenderingContext,
@@ -38,32 +39,14 @@ pub fn rebuild_dirty_terrain(
             None => continue,
         };
 
-        // Reuse existing buffers if they are host-visible (created by a previous rebuild).
-        // Old DEVICE_LOCAL meshes (host_visible = false) fall through to the allocation path;
-        // their buffers are queued for deferred cleanup below.
-        let existing = world
-            .get_object(id)
-            .and_then(|o| o.get_component::<TerrainMesh>().ok())
-            .filter(|m| m.host_visible && m.vertex_buffer != vk::Buffer::null())
-            .map(|m| ExistingMesh {
-                vertex_buffer: m.vertex_buffer,
-                vertex_buffer_memory: m.vertex_buffer_memory,
-                index_buffer: m.index_buffer,
-                index_buffer_memory: m.index_buffer_memory,
-            });
-
-        let is_in_place = existing.is_some();
         let neighbors = gather_neighbors(world, &chunk);
-        let new_mesh = build_terrain_mesh(&chunk, &neighbors, existing, context, command_pool)?;
+        let new_mesh = build_terrain_mesh(&chunk, &neighbors, context, command_pool)?;
 
         if let Some(obj) = world.get_object_mut(id) {
-            if !is_in_place {
-                // Old mesh had DEVICE_LOCAL buffers — queue them for deferred cleanup.
-                if let Ok(old) = obj.get_component::<TerrainMesh>() {
-                    queue_old_buffers(_graveyard, old);
-                }
+            // Queue old gpu buffers for deferred destruction.
+            if let Ok(old) = obj.get_component::<TerrainMesh>() {
+                queue_old_buffers(_graveyard, old);
             }
-            // In-place: same Vulkan handles, struct just replaced with updated data.
 
             if obj.has_component::<TerrainMesh>() {
                 *obj.get_component_mut::<TerrainMesh>().unwrap() = new_mesh;
@@ -110,7 +93,28 @@ fn gather_neighbors(world: &World, chunk: &TerrainChunk) -> NeighborBorders {
         .and_then(|o| o.get_component::<TerrainChunk>().ok())
         .map(|c| (0..side).map(|x| c.heights[x + 1.min(r) * side]).collect::<Vec<_>>());
 
-    NeighborBorders { left_col, right_col, top_row, bottom_row }
+    // Texture-index edge columns/rows from each neighbor, for cross-chunk blend computation.
+    let left_tex = map.0.get(&Vector3::new(coord.x - 1, 0, coord.z))
+        .and_then(|&id| world.get_object(id))
+        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .map(|c| (0..side).map(|z| c.texture_index.get(r + z * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
+
+    let right_tex = map.0.get(&Vector3::new(coord.x + 1, 0, coord.z))
+        .and_then(|&id| world.get_object(id))
+        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .map(|c| (0..side).map(|z| c.texture_index.get(z * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
+
+    let top_tex = map.0.get(&Vector3::new(coord.x, 0, coord.z - 1))
+        .and_then(|&id| world.get_object(id))
+        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .map(|c| (0..side).map(|x| c.texture_index.get(x + r * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
+
+    let bottom_tex = map.0.get(&Vector3::new(coord.x, 0, coord.z + 1))
+        .and_then(|&id| world.get_object(id))
+        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .map(|c| (0..side).map(|x| c.texture_index.get(x).copied().unwrap_or(0.0)).collect::<Vec<_>>());
+
+    NeighborBorders { left_col, right_col, top_row, bottom_row, left_tex, right_tex, top_tex, bottom_tex }
 }
 
 fn queue_old_buffers(graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>, mesh: &TerrainMesh) {

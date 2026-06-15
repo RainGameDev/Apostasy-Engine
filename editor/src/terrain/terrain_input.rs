@@ -631,14 +631,9 @@ fn apply_brush(
                     }
                 }
                 TerrainTool::Paint => {
-                    let side = r + 1;
-                    let idx = x + z * side;
+                    let idx = x + z * (r + 1);
                     if idx < chunk.texture_index.len() && weight > 0.01 {
-                        let layer = state.paint_layer as f32;
-                        let cur = chunk.texture_index[idx];
-                        // Smoothly blend toward the target index
-                        let blend = (weight * 0.5).min(0.5);
-                        chunk.texture_index[idx] = cur * (1.0 - blend) + layer * blend;
+                        chunk.texture_index[idx] = state.paint_layer as f32;
                     }
                 }
             }

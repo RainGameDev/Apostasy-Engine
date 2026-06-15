@@ -2,7 +2,9 @@
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in float inTextureIndex;
+layout(location = 3) in float inTexLayerA;
+layout(location = 4) in float inTexLayerB;
+layout(location = 5) in float inTexBlend;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -15,7 +17,9 @@ layout(push_constant) uniform PushConstants {
 layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragWorldPos;
-layout(location = 3) out float fragTextureIndex;
+layout(location = 3) out float fragTexLayerA;
+layout(location = 4) out float fragTexLayerB;
+layout(location = 5) out float fragTexBlend;
 
 void main() {
     // Terrain vertices are in world space already (no transform applied).
@@ -26,5 +30,7 @@ void main() {
     fragNormal   = normalize(inNormal);
     fragTexCoord = inTexCoord;
     fragWorldPos = worldPos;
-    fragTextureIndex = inTextureIndex;
+    fragTexLayerA = inTexLayerA;
+    fragTexLayerB = inTexLayerB;
+    fragTexBlend  = inTexBlend;
 }
