@@ -71,6 +71,9 @@ pub struct TerrainMesh {
     pub index_buffer: vk::Buffer,
     pub index_buffer_memory: vk::DeviceMemory,
     pub index_count: u32,
+    /// True when the vertex buffer is HOST_VISIBLE | HOST_COHERENT and can be updated
+    /// in-place via a direct CPU write instead of a staging-buffer round-trip.
+    pub host_visible: bool,
 }
 
 impl TerrainMesh {

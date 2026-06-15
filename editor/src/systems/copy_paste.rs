@@ -29,6 +29,10 @@ pub fn init(world: &mut World) -> Result<()> {
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyD), KeyAction::Press).with_ctrl(),
     );
     inputs.register_default_keybind(
+        "Delete",
+        KeyBind::new(PhysicalKey::Code(KeyCode::Delete), KeyAction::Press),
+    );
+    inputs.register_default_keybind(
         "GizmoTranslate",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyG), KeyAction::Press).with_context("viewport"),
     );

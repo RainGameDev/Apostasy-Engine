@@ -4,6 +4,7 @@ use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, 
 use apostasy_core::objects::cell::{CELL_SIZE, ObjectId};
 use apostasy_core::objects::cell_streaming::CellMigrations;
 use apostasy_core::objects::components::transform::Transform;
+use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::rendering::components::camera::EditorCamera;
@@ -13,7 +14,7 @@ use apostasy_macros::Resource;
 
 use super::EditorStyle;
 use super::shared::WindowLayout;
-use crate::systems::history::EditorCommand;
+use crate::systems::history::{EditorCommand, History, RemoveObjectCmd};
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
 
@@ -89,6 +90,9 @@ pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
 #[allow(deprecated)]
 #[update(mode = "editor")]
 pub fn cell_search(world: &mut World) -> Result<()> {
+    let to_delete = world
+        .get_resource::<InputManager>()?
+        .is_keybind_active("Delete");
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let style = world
         .get_resource::<EditorStyle>()
@@ -782,6 +786,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         world
             .get_resource_mut::<crate::systems::history::History>()?
             .push(cmd);
+    }
+
+    if to_delete
+        && let Some(id) = world.get_resource::<CellSearchState>()?.selected_obj
+        && let Some(mut cmd) = RemoveObjectCmd::new(id, world).map(Box::new)
+    {
+        cmd.execute(world)?;
+        world.get_resource_mut::<History>()?.push(cmd);
     }
 
     if let Some(id) = pending_delete

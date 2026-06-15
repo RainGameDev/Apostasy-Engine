@@ -678,6 +678,45 @@ pub fn collider_gizmo(
     }
 }
 
+const BRUSH_SEGS: usize = 48;
+
+/// Draws the terrain brush circle in world space projected to screen.
+pub fn terrain_brush_gizmo(
+    ui: &mut egui::Ui,
+    hit_pos: Vector3<f32>,
+    brush_radius: f32,
+    view_proj: Matrix4<f32>,
+    frame_rect: egui::Rect,
+) {
+    let painter = ui.painter_at(frame_rect);
+    let ring_col = Color32::from_rgba_premultiplied(255, 255, 200, 210);
+    let stroke = Stroke::new(1.5, ring_col);
+
+    // Outer ring in world XZ at the hit height
+    let pts: Vec<Pos2> = (0..=BRUSH_SEGS)
+        .filter_map(|i| {
+            let a = i as f32 / BRUSH_SEGS as f32 * std::f32::consts::TAU;
+            project(
+                hit_pos + Vector3::new(brush_radius * a.cos(), 0.0, brush_radius * a.sin()),
+                view_proj,
+                frame_rect,
+            )
+        })
+        .collect();
+    for pair in pts.windows(2) {
+        painter.line_segment([pair[0], pair[1]], stroke);
+    }
+
+    // Center crosshair
+    if let Some(c) = project(hit_pos, view_proj, frame_rect) {
+        let cross_col = Color32::from_rgba_premultiplied(255, 255, 200, 160);
+        let cs = Stroke::new(1.5, cross_col);
+        let r = 5.0_f32;
+        painter.line_segment([c - Vec2::new(r, 0.0), c + Vec2::new(r, 0.0)], cs);
+        painter.line_segment([c - Vec2::new(0.0, r), c + Vec2::new(0.0, r)], cs);
+    }
+}
+
 const ICON_RADIUS: f32 = 12.0;
 const ICON_HIT: f32 = 14.0;
 

@@ -32,6 +32,9 @@ pub fn object_focus(world: &mut World) -> Result<()> {
         if inputs.is_keybind_active("FocusObject") {
             world.insert_resource(IsObjectFocused);
             let selected_obj = world.get_object(selected_obj).unwrap().clone();
+            if !selected_obj.has_component::<Transform>() {
+                return Ok(());
+            }
             let selected_transform = selected_obj.get_component::<Transform>()?;
             let editor_camera = world.get_object_with_tag_mut::<EditorCamera>()?;
             let transform = editor_camera.get_component_mut::<Transform>()?;

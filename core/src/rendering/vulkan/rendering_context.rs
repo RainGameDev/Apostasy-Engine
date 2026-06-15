@@ -819,6 +819,32 @@ impl VulkanRenderingContext {
         Ok((buffer, buffer_memory))
     }
 
+    /// Creates a host-visible, host-coherent vertex buffer for data that is updated every frame.
+    /// Eliminates the staging buffer, command buffer recording, and GPU sync on every update.
+    pub fn create_host_vertex_buffer<T: VertexDefinition>(
+        &self,
+        count: usize,
+    ) -> Result<(Buffer, DeviceMemory)> {
+        let size = (std::mem::size_of::<T>() * count) as DeviceSize;
+        self.create_buffer(
+            size,
+            BufferUsageFlags::VERTEX_BUFFER,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        )
+    }
+
+    /// Writes `data` directly into a host-visible, host-coherent buffer via mapped memory.
+    /// No staging buffer, no command buffer, no GPU queue submission.
+    pub fn write_host_buffer<T>(&self, memory: DeviceMemory, data: &[T]) -> Result<()> {
+        let size = (std::mem::size_of::<T>() * data.len()) as DeviceSize;
+        unsafe {
+            let ptr = self.device.map_memory(memory, 0, size, MemoryMapFlags::empty())? as *mut T;
+            ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
+            self.device.unmap_memory(memory);
+        }
+        Ok(())
+    }
+
     /// Creates an index buffer from a slice of indices
     pub fn create_index_buffer(
         &self,

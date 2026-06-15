@@ -1,15 +1,23 @@
 use anyhow::Result;
 use apostasy_core::{
-    egui::{DragValue, RichText, Slider, Window},
+    egui::{DragValue, Margin, RichText, Slider, Window},
     objects::world::World,
     terrain::TerrainSettings,
     update,
 };
 
-use crate::terrain::{TerrainTool, TerrainToolState};
+use crate::{
+    terrain::{TerrainTool, TerrainToolState},
+    ui::EditorStyle,
+};
 
 #[update(mode = "editor")]
 pub fn terrain_panel(world: &mut World) -> Result<()> {
+    let style = world
+        .get_resource::<EditorStyle>()
+        .cloned()
+        .unwrap_or_default();
+
     if !world.has_resource::<TerrainToolState>() {
         world.insert_resource(TerrainToolState::default());
     }
@@ -37,9 +45,16 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
     let mut resolution_changed = false;
 
     Window::new("Terrain")
-        .resizable(false)
-        .collapsible(false)
+        .open(&mut true)
+        .resizable(true)
+        .collapsible(true)
         .default_width(200.0)
+        .frame(style.window_frame(&ctx).inner_margin(Margin {
+            left: 8,
+            right: 8,
+            bottom: 0,
+            top: 0,
+        }))
         .show(&ctx, |ui| {
             ui.label(RichText::new("Tool").strong());
             ui.horizontal(|ui| {
@@ -86,7 +101,10 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
             ui.label(RichText::new("Settings").strong());
             ui.horizontal(|ui| {
                 ui.label("Resolution");
-                if ui.add(DragValue::new(&mut new_resolution).range(4_u32..=512)).changed() {
+                if ui
+                    .add(DragValue::new(&mut new_resolution).range(4_u32..=512))
+                    .changed()
+                {
                     resolution_changed = true;
                 }
             });

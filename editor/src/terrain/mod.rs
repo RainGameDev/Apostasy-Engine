@@ -1,3 +1,4 @@
+use apostasy_core::cgmath::Vector3;
 use apostasy_macros::Resource;
 
 pub mod terrain_input;
@@ -38,4 +39,11 @@ impl Default for TerrainToolState {
             dragging: false,
         }
     }
+}
+
+/// Updated every frame by `terrain_input` with the brush's current world-space hit point.
+/// Cleared when the tool is inactive or the cursor leaves the viewport.
+#[derive(Resource, Clone, Default)]
+pub struct TerrainBrushGizmo {
+    pub hit_pos: Option<Vector3<f32>>,
 }

@@ -1,0 +1,68 @@
+name: test
+namespace: game
+class: worldspace
+cells:
+  0,0,0:
+    name: ''
+    objects:
+    - name: Sun
+      components:
+      - type: Transform
+        local_position:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_euler_angles:
+        - -41.0
+        - -60.0
+        - 54.099998474121094
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      - type: Light
+        light_type: Directional
+        color:
+          r: 1.0
+          g: 0.8556164503097534
+          b: 0.778181791305542
+        intensity: 1.0
+        is_emitting: true
+        is_flickering: false
+        intensity_min: 1.0
+        intensity_max: 2.0
+        radius_min: 1.0
+        radius_max: 21.0
+      tags: []
+      children: []
+    - name: Ref Model
+      components:
+      - type: Transform
+        local_position:
+        - 0.0
+        - 1.5
+        - 0.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 3.0
+        - 1.0
+      - type: ModelRenderer
+        model_path: cylinder
+        material_override: model:cylinder
+        is_wireframe: false
+      - type: Collider
+        shape: Cylinder
+        radius: 1.0
+        height: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: false
+        is_area: false
+      tags: []
+      children: []

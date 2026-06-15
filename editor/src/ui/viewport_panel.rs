@@ -3,9 +3,7 @@ use apostasy_core::{
     cgmath::Vector3,
     egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
     objects::{
-        components::transform::Transform,
-        cell::ObjectId,
-        resources::input_manager::InputManager,
+        cell::ObjectId, components::transform::Transform, resources::input_manager::InputManager,
         world::World,
     },
     physics::collider::Collider,
@@ -14,7 +12,10 @@ use apostasy_core::{
             camera::{Camera, EditorCamera, get_perspective_projection, get_view_matrix},
             lighting::Light,
         },
-        shared::{UpdateRenderer, anti_alisaing::{AntiAliasing, AntiAliasingAmount}},
+        shared::{
+            UpdateRenderer,
+            anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+        },
     },
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
     update,
@@ -47,11 +48,7 @@ use super::EditorStyle;
 use crate::{
     objects::editor_camera::EditorCameraSettings,
     systems::object_focus::IsObjectFocused,
-    ui::{
-        cell_panel::CellSearchState,
-        inspector_panel::InspectorPanelState,
-        shared::WindowLayout,
-    },
+    ui::{cell_panel::CellSearchState, inspector_panel::InspectorPanelState, shared::WindowLayout},
 };
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -64,14 +61,19 @@ pub struct EditorGraphics {
 
 impl Default for EditorGraphics {
     fn default() -> Self {
-        Self { supersample: 1.0, anti_aliasing: AntiAliasingAmount::X0 }
+        Self {
+            supersample: 1.0,
+            anti_aliasing: AntiAliasingAmount::X0,
+        }
     }
 }
 
 impl EditorGraphics {
     pub const PATH: &'static str = "res/.editor/editor_graphics.yaml";
 
-    fn default_supersample() -> f32 { 1.0 }
+    fn default_supersample() -> f32 {
+        1.0
+    }
 
     pub fn load() -> Self {
         std::fs::read_to_string(Self::PATH)
@@ -139,7 +141,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .move_speed;
     let mut frame_rect_out = None;
     let viewport_texture = world.get_resource::<ViewportTexture>().ok().map(|r| r.0);
-    let supersample = world.get_resource::<ViewportSize>().map(|v| v.supersample).unwrap_or(1.0);
+    let supersample = world
+        .get_resource::<ViewportSize>()
+        .map(|v| v.supersample)
+        .unwrap_or(1.0);
 
     if !world.has_resource::<ViewportContextMenu>() {
         world.insert_resource(ViewportContextMenu::default());
@@ -166,7 +171,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .ok()
         .cloned()
         .unwrap_or_default();
-    let gizmo_data: Option<(ObjectId, Transform, apostasy_core::cgmath::Matrix4<f32>, Option<Collider>)> = {
+    let gizmo_data: Option<(
+        ObjectId,
+        Transform,
+        apostasy_core::cgmath::Matrix4<f32>,
+        Option<Collider>,
+    )> = {
         let sel_id = world
             .get_resource::<CellSearchState>()
             .ok()
@@ -205,30 +215,64 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let drag_start_transform = gizmo_state.drag.as_ref().map(|d| d.start_transform.clone());
     let had_drag = gizmo_state.drag.is_some();
 
-    // Collect light data for billboard gizmos (cloned so world isn't borrowed in closure)
-    let light_selected_id = world.get_resource::<CellSearchState>().ok().and_then(|s| s.selected_obj);
+    // Terrain brush gizmo data
+    let terrain_brush_data: Option<(
+        apostasy_core::cgmath::Vector3<f32>,
+        f32,
+        apostasy_core::cgmath::Matrix4<f32>,
+    )> = (|| {
+        let hit_pos = world
+            .get_resource::<crate::terrain::TerrainBrushGizmo>()
+            .ok()?
+            .hit_pos?;
+        let radius = world
+            .get_resource::<crate::terrain::TerrainToolState>()
+            .ok()?
+            .brush_radius;
+        let cam_objs = world.get_objects_with_component::<Camera>();
+        let cam_obj = cam_objs.first()?;
+        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
+        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let aspect = world
+            .get_resource::<ViewportSize>()
+            .map(|v| v.logical_width / v.logical_height)
+            .unwrap_or(1.0);
+        let vp = get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t);
+        Some((hit_pos, radius, vp))
+    })();
+
+    // Collect light data for billboard gizmos
+    let light_selected_id = world
+        .get_resource::<CellSearchState>()
+        .ok()
+        .and_then(|s| s.selected_obj);
     let light_view_proj: Option<apostasy_core::cgmath::Matrix4<f32>> = (|| {
         let cam_objs = world.get_objects_with_component::<Camera>();
         let cam_obj = cam_objs.first()?;
         let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
         let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
-        let aspect = world.get_resource::<ViewportSize>().map(|v| v.logical_width / v.logical_height).unwrap_or(1.0);
+        let aspect = world
+            .get_resource::<ViewportSize>()
+            .map(|v| v.logical_width / v.logical_height)
+            .unwrap_or(1.0);
         Some(get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t))
     })();
-    let light_entries: Vec<(ObjectId, Transform, apostasy_core::rendering::components::lighting::LightType, Vector3<f32>)> =
-        world.get_objects_with_component_with_ids::<Light>()
-            .into_iter()
-            .filter_map(|(id, obj)| {
-                let t = obj.get_component::<Transform>().ok()?.clone();
-                let l = obj.get_component::<Light>().ok()?;
-                Some((id, t, l.light_type, l.color))
-            })
-            .collect();
+    let light_entries: Vec<(
+        ObjectId,
+        Transform,
+        apostasy_core::rendering::components::lighting::LightType,
+        Vector3<f32>,
+    )> = world
+        .get_objects_with_component_with_ids::<Light>()
+        .into_iter()
+        .filter_map(|(id, obj)| {
+            let t = obj.get_component::<Transform>().ok()?.clone();
+            let l = obj.get_component::<Light>().ok()?;
+            Some((id, t, l.light_type, l.color))
+        })
+        .collect();
     let mut light_clicked: Option<ObjectId> = None;
 
-    // Activate the "viewport" context when the viewport is hovered and no text
-    // field has keyboard focus. Gizmo keybinds are registered with this context
-    // so they automatically suppress themselves in all other situations.
     {
         let viewport_hovered = world
             .get_resource::<ViewportInfo>()
@@ -303,15 +347,24 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         ui.separator();
                         ui.add_space(4.0);
                         use crate::ui::gizmo::GizmoMode;
-                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Translate, "Move").clicked() {
+                        if ui
+                            .selectable_label(gizmo_state.mode == GizmoMode::Translate, "Move")
+                            .clicked()
+                        {
                             gizmo_state.mode = GizmoMode::Translate;
                             gizmo_state.drag = None;
                         }
-                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Rotate, "Rotate").clicked() {
+                        if ui
+                            .selectable_label(gizmo_state.mode == GizmoMode::Rotate, "Rotate")
+                            .clicked()
+                        {
                             gizmo_state.mode = GizmoMode::Rotate;
                             gizmo_state.drag = None;
                         }
-                        if ui.selectable_label(gizmo_state.mode == GizmoMode::Scale, "Scale").clicked() {
+                        if ui
+                            .selectable_label(gizmo_state.mode == GizmoMode::Scale, "Scale")
+                            .clicked()
+                        {
                             gizmo_state.mode = GizmoMode::Scale;
                             gizmo_state.drag = None;
                         }
@@ -326,9 +379,13 @@ pub fn viewport(world: &mut World) -> Result<()> {
                                 .unwrap_or(false);
                             if ui.selectable_label(terrain_active, "Terrain").clicked() {
                                 if !world.has_resource::<crate::terrain::TerrainToolState>() {
-                                    world.insert_resource(crate::terrain::TerrainToolState::default());
+                                    world.insert_resource(
+                                        crate::terrain::TerrainToolState::default(),
+                                    );
                                 }
-                                if let Ok(s) = world.get_resource_mut::<crate::terrain::TerrainToolState>() {
+                                if let Ok(s) =
+                                    world.get_resource_mut::<crate::terrain::TerrainToolState>()
+                                {
                                     s.active = !terrain_active;
                                 }
                             }
@@ -422,17 +479,26 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
             if !terrain_tool_active {
                 if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
-                    let (new_t, gs) = crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
+                    let (new_t, gs) = crate::ui::gizmo::gizmo(
+                        ui,
+                        gizmo_state.clone(),
+                        obj_t,
+                        view_proj,
+                        frame_rect,
+                    );
                     gizmo_transform_out = new_t;
                     new_gizmo_state_from_fn = Some(gs);
                     if let Some(collider) = maybe_collider {
                         let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
-                        crate::ui::gizmo::collider_gizmo(ui, display_t, collider, view_proj, frame_rect);
+                        crate::ui::gizmo::collider_gizmo(
+                            ui, display_t, collider, view_proj, frame_rect,
+                        );
                     }
                 }
 
                 if let Some(vp_mat) = light_view_proj {
-                    let consuming = new_gizmo_state_from_fn.as_ref()
+                    let consuming = new_gizmo_state_from_fn
+                        .as_ref()
                         .map(|s| s.consuming)
                         .unwrap_or(gizmo_state.consuming);
                     if let Some(id) = crate::ui::gizmo::light_gizmos(
@@ -446,7 +512,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
                         light_clicked = Some(id);
                     }
                 }
-            } // end !terrain_tool_active
+            } else if let Some((hit_pos, radius, vp)) = terrain_brush_data {
+                crate::ui::gizmo::terrain_brush_gizmo(ui, hit_pos, radius, vp, frame_rect);
+            }
 
             if ctx_obj_id.is_some() {
                 frame_resp.context_menu(|ui| {
@@ -576,7 +644,11 @@ pub fn viewport(world: &mut World) -> Result<()> {
     }
 
     // Drag just completed: check before consuming new_gizmo_state_from_fn and gizmo_data
-    let drag_just_ended = had_drag && new_gizmo_state_from_fn.as_ref().map(|s| s.drag.is_none()).unwrap_or(false);
+    let drag_just_ended = had_drag
+        && new_gizmo_state_from_fn
+            .as_ref()
+            .map(|s| s.drag.is_none())
+            .unwrap_or(false);
     let gizmo_obj_id = gizmo_data.as_ref().map(|(id, _, _, _)| *id);
 
     // Write back gizmo state (drag + mode) and apply any transform produced by dragging
@@ -597,10 +669,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
     // Record one history entry per completed gizmo drag
     if drag_just_ended {
         if let (Some(old_t), Some(id)) = (drag_start_transform, gizmo_obj_id) {
-            let new_t = world.get_object(id)
+            let new_t = world
+                .get_object(id)
                 .and_then(|obj| obj.get_component::<Transform>().ok().cloned());
             if let Some(new_t) = new_t {
-                let cmd = Box::new(crate::systems::history::MoveObjectCmd { id, old_transform: old_t, new_transform: new_t });
+                let cmd = Box::new(crate::systems::history::MoveObjectCmd {
+                    id,
+                    old_transform: old_t,
+                    new_transform: new_t,
+                });
                 if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
                     h.push(cmd);
                 }
@@ -611,16 +688,24 @@ pub fn viewport(world: &mut World) -> Result<()> {
     if pending_delete {
         if let Some(id) = ctx_obj_id {
             use crate::systems::history::EditorCommand;
-            if let Some(mut cmd) = crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new) {
+            if let Some(mut cmd) =
+                crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new)
+            {
                 cmd.execute(world).ok();
                 if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
                     h.push(cmd);
                 }
             }
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-                if s.selected_obj == Some(id) { s.selected_obj = None; }
-                if s.clicked_obj == Some(id) { s.clicked_obj = None; }
-                if s.renaming_obj == Some(id) { s.renaming_obj = None; }
+                if s.selected_obj == Some(id) {
+                    s.selected_obj = None;
+                }
+                if s.clicked_obj == Some(id) {
+                    s.clicked_obj = None;
+                }
+                if s.renaming_obj == Some(id) {
+                    s.renaming_obj = None;
+                }
             }
             if let Ok(s) = world.get_resource_mut::<ViewportContextMenu>() {
                 s.hit_obj = None;
@@ -635,12 +720,22 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if aa_before != aa_selected {
         let ss = world.get_resource::<ViewportSize>().unwrap().supersample;
-        EditorGraphics { supersample: ss, anti_aliasing: aa_selected }.save();
+        EditorGraphics {
+            supersample: ss,
+            anti_aliasing: aa_selected,
+        }
+        .save();
     }
 
-    let prev_speed = world.get_resource::<EditorCameraSettings>().unwrap().move_speed;
+    let prev_speed = world
+        .get_resource::<EditorCameraSettings>()
+        .unwrap()
+        .move_speed;
     if (camera_speed - prev_speed).abs() > f32::EPSILON {
-        world.get_resource_mut::<EditorCameraSettings>().unwrap().move_speed = camera_speed;
+        world
+            .get_resource_mut::<EditorCameraSettings>()
+            .unwrap()
+            .move_speed = camera_speed;
         crate::ui::preferences_panel::EditorPreferences::save_camera_speed(camera_speed);
     }
 

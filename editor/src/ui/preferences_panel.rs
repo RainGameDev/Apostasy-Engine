@@ -690,6 +690,7 @@ const KEYBIND_DISPLAY: &[(&str, &str)] = &[
     ("Copy", "Copy"),
     ("Paste", "Paste"),
     ("Duplicate", "Duplicate"),
+    ("Delete", "Delete"),
     ("Save", "Save"),
     ("SaveAs", "Save As"),
 ];
