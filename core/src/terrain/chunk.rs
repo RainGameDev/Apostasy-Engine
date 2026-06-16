@@ -16,8 +16,6 @@ pub struct TerrainChunk {
     pub resolution: u32,
     /// Flattened (resolution+1)^2 heightmap.
     pub heights: Vec<f32>,
-    /// Per-vertex texture layer index (sampled as float for GPU-interpolated blending).
-    pub texture_index: Vec<f32>,
 }
 
 impl Default for TerrainChunk {
@@ -34,7 +32,6 @@ impl TerrainChunk {
             cell_coord,
             resolution,
             heights: vec![0.0; count],
-            texture_index: vec![0.0; count],
         }
     }
 

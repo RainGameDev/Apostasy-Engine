@@ -9,18 +9,13 @@ use crate::{
 
 use super::chunk::{TerrainChunk, TerrainMesh};
 
-/// Border data from neighboring chunks used for seamless normals and texture blending.
+/// Border data from neighboring chunks used for seamless normals.
 pub struct NeighborBorders {
     // Heights: one step inside each neighbor for central-difference normal computation.
     pub left_col: Option<Vec<f32>>,
     pub right_col: Option<Vec<f32>>,
     pub top_row: Option<Vec<f32>>,
     pub bottom_row: Option<Vec<f32>>,
-    // Texture indices: the neighbor's edge column/row, for cross-chunk blend computation.
-    pub left_tex: Option<Vec<f32>>,
-    pub right_tex: Option<Vec<f32>>,
-    pub top_tex: Option<Vec<f32>>,
-    pub bottom_tex: Option<Vec<f32>>,
 }
 
 impl Default for NeighborBorders {
@@ -30,19 +25,13 @@ impl Default for NeighborBorders {
             right_col: None,
             top_row: None,
             bottom_row: None,
-            left_tex: None,
-            right_tex: None,
-            top_tex: None,
-            bottom_tex: None,
         }
     }
 }
 
 /// Builds a terrain mesh using per-triangle vertices (6 per quad, no sharing).
 ///
-/// Each vertex stores the closest texture layer based on neighbor analysis.
-/// Smooth transitions are handled by creating a gradient of texture selections
-/// at the mesh level, creating a buffer zone around texture boundaries.
+/// Each vertex stores a single texture layer (no blending).
 pub fn build_terrain_mesh(
     chunk: &TerrainChunk,
     neighbors: &NeighborBorders,
@@ -61,7 +50,6 @@ pub fn build_terrain_mesh(
     let mut grid_positions: Vec<[f32; 3]> = Vec::with_capacity(side * side);
     let mut grid_normals: Vec<[f32; 3]> = Vec::with_capacity(side * side);
     let mut grid_uvs: Vec<[f32; 2]> = Vec::with_capacity(side * side);
-    let mut grid_layers: Vec<i32> = Vec::with_capacity(side * side);
 
     for z in 0..side {
         for x in 0..side {
@@ -74,71 +62,13 @@ pub fn build_terrain_mesh(
             let u = x as f32 / r as f32 * 16.0;
             let v = z as f32 / r as f32 * 16.0;
 
-            let layer = chunk
-                .texture_index
-                .get(x + z * side)
-                .copied()
-                .unwrap_or(0.0)
-                .round() as i32;
-
             grid_positions.push([wx, h, wz]);
             grid_normals.push([normal.x, normal.y, normal.z]);
             grid_uvs.push([u, v]);
-            grid_layers.push(layer);
-        }
-    }
-
-    // Pre-compute per-vertex neighbor-based blend weights.
-    // Counts how many of the 8 surrounding neighbors (cardinal + diagonal) have a
-    // different integer layer, then divides by 4 (not by total) so diagonal differences
-    // contribute to the blend without diluting it.  A vertex with one different diagonal
-    // neighbor gets weight 0.25, same as one different cardinal neighbor.
-    let mut blend_weights: Vec<f32> = Vec::with_capacity(side * side);
-    for z in 0..side {
-        for x in 0..side {
-            let own = grid_layers[x + z * side];
-            let mut diff = 0u32;
-            for (dx, dz) in [
-                (-1i32, 0i32), (1, 0), (0, -1), (0, 1),
-            ] {
-                let nx = x as i32 + dx;
-                let nz = z as i32 + dz;
-                let neighbor_layer: Option<i32> = if nx >= 0
-                    && nz >= 0
-                    && (nx as usize) < side
-                    && (nz as usize) < side
-                {
-                    Some(grid_layers[nx as usize + nz as usize * side])
-                } else if dx != 0 && dz == 0 {
-                    if nx < 0 {
-                        neighbors.left_tex.as_ref().and_then(|t| t.get(z)).map(|v| v.round() as i32)
-                    } else {
-                        neighbors.right_tex.as_ref().and_then(|t| t.get(z)).map(|v| v.round() as i32)
-                    }
-                } else if dx == 0 && dz != 0 {
-                    if nz < 0 {
-                        neighbors.top_tex.as_ref().and_then(|t| t.get(x)).map(|v| v.round() as i32)
-                    } else {
-                        neighbors.bottom_tex.as_ref().and_then(|t| t.get(x)).map(|v| v.round() as i32)
-                    }
-                } else {
-                    // Diagonal crossing a chunk corner — no border data available.
-                    None
-                };
-                if let Some(n) = neighbor_layer {
-                    if n != own {
-                        diff += 1;
-                    }
-                }
-            }
-            blend_weights.push((diff as f32 / 4.0).min(1.0));
         }
     }
 
     // Generate 6 per-triangle vertices per quad.
-    // Each vertex stores only the closest texture layer.
-    // Smooth transitions are handled by creating a gradient of texture selections
-    // at the mesh level, creating a buffer zone around texture boundaries.
     let mut vertices: Vec<Vertex> = Vec::with_capacity(r * r * 6);
 
     for z in 0..r {
@@ -148,52 +78,39 @@ pub fn build_terrain_mesh(
             let bl = x + (z + 1) * side;
             let br = (x + 1) + (z + 1) * side;
 
-            let quad_layers = [grid_layers[tl], grid_layers[tr], grid_layers[bl], grid_layers[br]];
-            let layer_a_int = *quad_layers.iter().min().unwrap();
-            let layer_b_int = *quad_layers.iter().max().unwrap();
-
-            let vertex_layer = |gi: usize| -> f32 {
-                let own = grid_layers[gi];
-                let w = blend_weights[gi];
-                
-                if layer_a_int == layer_b_int {
-                    // Homogeneous quad — use the single texture.
-                    own as f32
-                } else if own == layer_a_int {
-                    // A-side vertex: blend between A and B based on transition weight.
-                    // Creates smooth gradient from A to B across the boundary.
-                    let t = w * 0.5; // Weight from 0.0 to 0.5
-                    mix(own as f32, layer_b_int as f32, t)
-                } else if own == layer_b_int {
-                    // B-side vertex: blend between B and A based on transition weight.
-                    let t = 1.0 - w * 0.5; // Weight from 1.0 to 0.5
-                    mix(layer_a_int as f32, own as f32, t)
-                } else {
-                    // 3+ layer quad (rare): use the closest layer based on position.
-                    ((own - layer_a_int) as f32 / (layer_b_int - layer_a_int) as f32)
-                        .clamp(0.0, 1.0)
-                }
-            };
-
             // Triangle 1: tl, bl, tr
-            for &gi in &[tl, bl, tr] {
-                vertices.push(Vertex {
-                    position: grid_positions[gi],
-                    normal: grid_normals[gi],
-                    tex_coord: grid_uvs[gi],
-                    tex_layer: vertex_layer(gi),
-                });
-            }
+            vertices.push(Vertex {
+                position: grid_positions[tl],
+                normal: grid_normals[tl],
+                tex_coord: grid_uvs[tl],
+            });
+            vertices.push(Vertex {
+                position: grid_positions[bl],
+                normal: grid_normals[bl],
+                tex_coord: grid_uvs[bl],
+            });
+            vertices.push(Vertex {
+                position: grid_positions[tr],
+                normal: grid_normals[tr],
+                tex_coord: grid_uvs[tr],
+            });
 
             // Triangle 2: tr, bl, br
-            for &gi in &[tr, bl, br] {
-                vertices.push(Vertex {
-                    position: grid_positions[gi],
-                    normal: grid_normals[gi],
-                    tex_coord: grid_uvs[gi],
-                    tex_layer: vertex_layer(gi),
-                });
-            }
+            vertices.push(Vertex {
+                position: grid_positions[tr],
+                normal: grid_normals[tr],
+                tex_coord: grid_uvs[tr],
+            });
+            vertices.push(Vertex {
+                position: grid_positions[bl],
+                normal: grid_normals[bl],
+                tex_coord: grid_uvs[bl],
+            });
+            vertices.push(Vertex {
+                position: grid_positions[br],
+                normal: grid_normals[br],
+                tex_coord: grid_uvs[br],
+            });
         }
     }
 
@@ -267,8 +184,4 @@ fn compute_normal(
     } else {
         Vector3::new(0.0, 1.0, 0.0)
     }
-}
-
-fn mix(a: f32, b: f32, t: f32) -> f32 {
-    a * (1.0 - t) + b * t
 }

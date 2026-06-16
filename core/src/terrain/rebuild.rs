@@ -93,28 +93,7 @@ fn gather_neighbors(world: &World, chunk: &TerrainChunk) -> NeighborBorders {
         .and_then(|o| o.get_component::<TerrainChunk>().ok())
         .map(|c| (0..side).map(|x| c.heights[x + 1.min(r) * side]).collect::<Vec<_>>());
 
-    // Texture-index edge columns/rows from each neighbor, for cross-chunk blend computation.
-    let left_tex = map.0.get(&Vector3::new(coord.x - 1, 0, coord.z))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        .map(|c| (0..side).map(|z| c.texture_index.get(r + z * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
-
-    let right_tex = map.0.get(&Vector3::new(coord.x + 1, 0, coord.z))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        .map(|c| (0..side).map(|z| c.texture_index.get(z * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
-
-    let top_tex = map.0.get(&Vector3::new(coord.x, 0, coord.z - 1))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        .map(|c| (0..side).map(|x| c.texture_index.get(x + r * side).copied().unwrap_or(0.0)).collect::<Vec<_>>());
-
-    let bottom_tex = map.0.get(&Vector3::new(coord.x, 0, coord.z + 1))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        .map(|c| (0..side).map(|x| c.texture_index.get(x).copied().unwrap_or(0.0)).collect::<Vec<_>>());
-
-    NeighborBorders { left_col, right_col, top_row, bottom_row, left_tex, right_tex, top_tex, bottom_tex }
+    NeighborBorders { left_col, right_col, top_row, bottom_row }
 }
 
 fn queue_old_buffers(graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>, mesh: &TerrainMesh) {

@@ -3,7 +3,7 @@ cell_search:
   - 0.0
   - 329.0
   size:
-  - 1135.0
+  - 669.0
   - 359.65625
 object_window:
   pos:
@@ -14,11 +14,11 @@ object_window:
   - 689.0
 viewport:
   pos:
-  - 0.0
-  - 0.0
+  - 447.0
+  - 145.0
   size:
-  - 1135.0
-  - 689.0
+  - 669.0
+  - 451.75
 viewport_open: true
 object_window_open: true
 cell_open: true

@@ -1,6 +1,6 @@
 use ash::vk::{
-    self, BlendFactor, BlendOp, ColorComponentFlags, DynamicState, Extent2D, Format,
-    PipelineColorBlendAttachmentState, PrimitiveTopology, ShaderModule,
+    self, DynamicState, Extent2D, Format,
+    PrimitiveTopology, ShaderModule,
     VertexInputAttributeDescription, VertexInputBindingDescription,
 };
 
@@ -22,7 +22,6 @@ pub struct RenderingSettings {
     pub rasterization_settings: RasterizationSettings,
     pub image_settings: ImageSettings,
     pub debug_settings: DebugSettings,
-    pub color_blend_settings: ColorBlendSettings,
     pub dynamic_state_settings: DynamicStateSettings,
     pub primitive_topology_settings: PrimitiveTopologySettings,
 
@@ -37,7 +36,6 @@ impl Default for RenderingSettings {
             rasterization_settings: RasterizationSettings::default(),
             image_settings: ImageSettings::default(),
             debug_settings: DebugSettings::default(),
-            color_blend_settings: ColorBlendSettings::default(),
             dynamic_state_settings: DynamicStateSettings::default(),
             primitive_topology_settings: PrimitiveTopologySettings::default(),
 
@@ -57,28 +55,6 @@ impl Default for PrimitiveTopologySettings {
     fn default() -> Self {
         Self {
             primitive_topology: PrimitiveTopology::TRIANGLE_LIST,
-        }
-    }
-}
-
-/// The settings for the blending
-#[derive(Clone, Copy)]
-pub struct ColorBlendSettings {
-    pub blend_attachment: PipelineColorBlendAttachmentState,
-}
-
-impl Default for ColorBlendSettings {
-    fn default() -> Self {
-        Self {
-            blend_attachment: PipelineColorBlendAttachmentState::default()
-                .color_write_mask(ColorComponentFlags::RGBA)
-                .blend_enable(true)
-                .src_color_blend_factor(BlendFactor::SRC_ALPHA)
-                .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
-                .color_blend_op(BlendOp::ADD)
-                .src_alpha_blend_factor(BlendFactor::ONE)
-                .dst_alpha_blend_factor(BlendFactor::ZERO)
-                .alpha_blend_op(BlendOp::ADD),
         }
     }
 }

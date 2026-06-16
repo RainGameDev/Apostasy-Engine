@@ -57,6 +57,7 @@ use ash::vk::PhysicalDeviceBufferDeviceAddressFeatures;
 use ash::vk::PhysicalDeviceDynamicRenderingFeatures;
 use ash::vk::Pipeline;
 use ash::vk::PipelineCache;
+use ash::vk::PipelineColorBlendAttachmentState;
 use ash::vk::PipelineColorBlendStateCreateInfo;
 use ash::vk::PipelineDepthStencilStateCreateInfo;
 use ash::vk::PipelineDynamicStateCreateInfo;
@@ -80,6 +81,7 @@ use ash::vk::ShaderStageFlags;
 use ash::vk::SharingMode;
 use ash::vk::SubmitInfo;
 use ash::vk::Viewport;
+use ash::vk::ColorComponentFlags;
 use hashbrown::HashMap;
 use winit::raw_window_handle::HasDisplayHandle;
 use winit::raw_window_handle::HasWindowHandle;
@@ -428,7 +430,9 @@ impl VulkanRenderingContext {
 
         unsafe {
             let color_blend_attachments: Vec<_> = if pipeline_options.image_format.is_some() {
-                vec![rendering_settings.color_blend_settings.blend_attachment]
+                vec![PipelineColorBlendAttachmentState::default()
+                    .color_write_mask(ColorComponentFlags::RGBA)
+                    .blend_enable(false)]
             } else {
                 vec![]
             };

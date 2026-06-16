@@ -15,7 +15,6 @@ pub enum TerrainTool {
     Lower,
     Smooth,
     Flatten,
-    Paint,
 }
 
 #[derive(Resource, Clone)]
@@ -26,8 +25,6 @@ pub struct TerrainToolState {
     pub brush_strength: f32,
     /// Target height used by the Flatten tool. Set on first drag click.
     pub flatten_height: Option<f32>,
-    /// Which texture layer index (into TerrainSettings.texture_layers) to paint.
-    pub paint_layer: usize,
     /// Whether the user is currently dragging (mouse held).
     pub dragging: bool,
 }
@@ -40,7 +37,6 @@ impl Default for TerrainToolState {
             brush_radius: 10.0,
             brush_strength: 0.3,
             flatten_height: None,
-            paint_layer: 0,
             dragging: false,
         }
     }
@@ -56,7 +52,7 @@ pub struct TerrainBrushGizmo {
 #[update(mode = "all")]
 pub fn toggle_terrain_state(world: &mut World) -> Result<()> {
     if !world.has_resource::<TerrainToolState>() {
-        return Ok(());
+        world.insert_resource(TerrainToolState::default());
     }
     let toggle = world
         .get_resource::<InputManager>()?

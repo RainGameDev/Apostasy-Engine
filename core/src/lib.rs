@@ -61,8 +61,6 @@ use crate::rendering::shared::shadow_settings::ShadowDistance;
 use crate::states::ShouldExit;
 use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainMesh};
 use crate::terrain::rebuild::rebuild_dirty_terrain;
-use crate::terrain::texture_atlas::TerrainTextureAtlas;
-use crate::terrain::{TerrainAtlasNeedsRebuild, TerrainSettings};
 use crate::ui::FontRegistry;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
 use crate::utils::profiler::{FrameSample, Profiler};
@@ -865,41 +863,7 @@ impl Core {
 
                     // Render terrain chunks
                     if self.packages.contains(&Packages::Terrain) {
-                        // Rebuild atlas if textures changed
-                        if world.has_resource::<TerrainAtlasNeedsRebuild>() {
-                            world.remove_resource::<TerrainTextureAtlas>();
-                            world.remove_resource::<TerrainAtlasNeedsRebuild>();
-                        }
-
-                        // Lazily upload the terrain texture atlas
-                        if !world.has_resource::<TerrainTextureAtlas>() {
-                            let tex_settings = world
-                                .get_resource::<TerrainSettings>()
-                                .ok()
-                                .map(|s| s.texture_layers.clone())
-                                .unwrap_or_default();
-                            if let Ok(cmd_pool) = renderer.get_command_pool() {
-                                let dp = renderer.get_descriptor_pool();
-                                let dsl = renderer.get_voxel_descriptor_set_layout();
-                                if let Ok(atlas) =
-                                    crate::terrain::texture_atlas::upload_terrain_textures(
-                                        &context,
-                                        cmd_pool,
-                                        dp,
-                                        dsl,
-                                        &tex_settings,
-                                        256,
-                                    )
-                                {
-                                    world.insert_resource(atlas);
-                                }
-                            }
-                        }
-
-                        let terrain_atlas_ds = world
-                            .get_resource::<TerrainTextureAtlas>()
-                            .ok()
-                            .map(|a| a.descriptor_set);
+                        let terrain_atlas_ds = None;
 
                         let terrain_ids: Vec<_> = world
                             .get_objects_with_component_with_ids::<TerrainMesh>()

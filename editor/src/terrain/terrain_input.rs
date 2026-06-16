@@ -630,12 +630,6 @@ fn apply_brush(
                         *h += (*h - target) * -weight;
                     }
                 }
-                TerrainTool::Paint => {
-                    let idx = x + z * (r + 1);
-                    if idx < chunk.texture_index.len() && weight > 0.01 {
-                        chunk.texture_index[idx] = state.paint_layer as f32;
-                    }
-                }
             }
         }
     }
