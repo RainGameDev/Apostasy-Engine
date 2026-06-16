@@ -3,9 +3,7 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
-layout(location = 3) in float fragTexLayerA;
-layout(location = 4) in float fragTexLayerB;
-layout(location = 5) in float fragTexBlend;
+layout(location = 3) in float fragTexLayer;
 
 layout(set = 1, binding = 0) uniform sampler2DArray terrainTex;
 
@@ -152,19 +150,7 @@ void main() {
     vec3 N = normalize(fragNormal);
     vec3 lighting = compute_lighting(N);
 
-    vec4 baseColor;
-
-    float blend = clamp(fragTexBlend, 0.0, 1.0);
-    if (abs(fragTexLayerA - fragTexLayerB) < 0.001) {
-      baseColor = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerA)));
-    } else {
-      float n = (value_noise(fragWorldPos.xz * 0.05)) * 0.01;  // subtler noise
-      blend = clamp(blend + n, 0.0, 1.0);
-      blend = smoothstep(0.0, 1.0, blend);  // gentle S-curve, no compression
-      vec4 ca = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerA)));
-      vec4 cb = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayerB)));
-      baseColor = mix(ca, cb, blend ) ;
-    }
+    vec4 baseColor = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayer)));
 
     outColor = vec4(baseColor.rgb *  max(lighting, vec3(0.05)), 1.0);
 }

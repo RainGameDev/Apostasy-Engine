@@ -40,12 +40,9 @@ impl Default for NeighborBorders {
 
 /// Builds a terrain mesh using per-triangle vertices (6 per quad, no sharing).
 ///
-/// Each vertex stores integer texture layers (layer_a, layer_b) and a blend factor
-/// derived purely from how many of its 8-adjacent grid neighbors (cardinal + diagonal)
-/// have a different layer. This means the blend is 0 deep inside a texture region and
-/// rises toward 0.5 at the one-vertex-wide boundary, letting the GPU interpolate a
-/// smooth gradient across each transition quad. The fragment shader then adds
-/// world-space noise on top to break up any remaining straight edges.
+/// Each vertex stores the closest texture layer based on neighbor analysis.
+/// Smooth transitions are handled by creating a gradient of texture selections
+/// at the mesh level, creating a buffer zone around texture boundaries.
 pub fn build_terrain_mesh(
     chunk: &TerrainChunk,
     neighbors: &NeighborBorders,
@@ -139,9 +136,9 @@ pub fn build_terrain_mesh(
     }
 
     // Generate 6 per-triangle vertices per quad.
-    // Both triangles in a quad share the same integer (layer_a, layer_b) pair so the
-    // diagonal edge is seamless. Per-vertex tex_blend encodes where in that range
-    // the vertex sits, derived from neighbor topology not interpolated indices.
+    // Each vertex stores only the closest texture layer.
+    // Smooth transitions are handled by creating a gradient of texture selections
+    // at the mesh level, creating a buffer zone around texture boundaries.
     let mut vertices: Vec<Vertex> = Vec::with_capacity(r * r * 6);
 
     for z in 0..r {
@@ -154,24 +151,25 @@ pub fn build_terrain_mesh(
             let quad_layers = [grid_layers[tl], grid_layers[tr], grid_layers[bl], grid_layers[br]];
             let layer_a_int = *quad_layers.iter().min().unwrap();
             let layer_b_int = *quad_layers.iter().max().unwrap();
-            let layer_a = layer_a_int as f32;
-            let layer_b = layer_b_int as f32;
 
-            let vertex_blend = |gi: usize| -> f32 {
+            let vertex_layer = |gi: usize| -> f32 {
                 let own = grid_layers[gi];
                 let w = blend_weights[gi];
+                
                 if layer_a_int == layer_b_int {
-                    // Homogeneous quad — no blending needed.
-                    0.0
+                    // Homogeneous quad — use the single texture.
+                    own as f32
                 } else if own == layer_a_int {
-                    // A-side vertex: approach 0.5 from below so the gradient across
-                    // the transition quad goes 0 → ~0.4 → ~0.6 → 1 (monotonic).
-                    w * 0.5
+                    // A-side vertex: blend between A and B based on transition weight.
+                    // Creates smooth gradient from A to B across the boundary.
+                    let t = w * 0.5; // Weight from 0.0 to 0.5
+                    mix(own as f32, layer_b_int as f32, t)
                 } else if own == layer_b_int {
-                    // B-side vertex: approach 0.5 from above.
-                    1.0 - w * 0.5
+                    // B-side vertex: blend between B and A based on transition weight.
+                    let t = 1.0 - w * 0.5; // Weight from 1.0 to 0.5
+                    mix(layer_a_int as f32, own as f32, t)
                 } else {
-                    // 3+ layer quad (rare): fall back to linear position in range.
+                    // 3+ layer quad (rare): use the closest layer based on position.
                     ((own - layer_a_int) as f32 / (layer_b_int - layer_a_int) as f32)
                         .clamp(0.0, 1.0)
                 }
@@ -183,9 +181,7 @@ pub fn build_terrain_mesh(
                     position: grid_positions[gi],
                     normal: grid_normals[gi],
                     tex_coord: grid_uvs[gi],
-                    tex_layer_a: layer_a,
-                    tex_layer_b: layer_b,
-                    tex_blend: vertex_blend(gi).clamp(0.0, 1.0),
+                    tex_layer: vertex_layer(gi),
                 });
             }
 
@@ -195,9 +191,7 @@ pub fn build_terrain_mesh(
                     position: grid_positions[gi],
                     normal: grid_normals[gi],
                     tex_coord: grid_uvs[gi],
-                    tex_layer_a: layer_a,
-                    tex_layer_b: layer_b,
-                    tex_blend: vertex_blend(gi).clamp(0.0, 1.0),
+                    tex_layer: vertex_layer(gi),
                 });
             }
         }
@@ -273,4 +267,8 @@ fn compute_normal(
     } else {
         Vector3::new(0.0, 1.0, 0.0)
     }
+}
+
+fn mix(a: f32, b: f32, t: f32) -> f32 {
+    a * (1.0 - t) + b * t
 }

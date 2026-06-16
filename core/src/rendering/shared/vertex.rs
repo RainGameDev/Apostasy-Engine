@@ -11,12 +11,8 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub tex_coord: [f32; 2],
-    /// First texture-layer endpoint (flat-interpolated on terrain)
-    pub tex_layer_a: f32,
-    /// Second texture-layer endpoint (flat-interpolated on terrain)
-    pub tex_layer_b: f32,
-    /// Blend weight between layer_a and layer_b (smooth-interpolated)
-    pub tex_blend: f32,
+    /// Selected texture layer (closest/highest weight at this vertex)
+    pub tex_layer: f32,
 }
 
 impl VertexDefinition for Vertex {
