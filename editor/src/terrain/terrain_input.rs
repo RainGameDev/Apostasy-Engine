@@ -89,10 +89,6 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
     let toggle_smooth = input.is_keybind_active("TerrainSmooth");
     let toggle_flatten = input.is_keybind_active("TerrainFlatten");
 
-    if !mouse_held && !right_click {
-        return Ok(());
-    }
-
     if let Ok(state) = world.get_resource_mut::<TerrainToolState>()
         && !middle_mouse
     {
@@ -148,6 +144,9 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
 
     if let Ok(g) = world.get_resource_mut::<TerrainBrushGizmo>() {
         g.hit_pos = Some(hit_pos);
+    }
+    if !mouse_held && !right_click {
+        return Ok(());
     }
 
     let state = world.get_resource::<TerrainToolState>()?.clone();

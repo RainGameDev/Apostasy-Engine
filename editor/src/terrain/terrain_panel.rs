@@ -6,10 +6,9 @@ use apostasy_core::{
     egui::{
         self, Color32, DragValue, Margin, Pos2, RichText, ScrollArea, Slider, Vec2, Window, vec2,
     },
-    epaint::Vertex,
     objects::world::World,
     terrain::{TerrainAtlasNeedsRebuild, TerrainSettings, load_terrain_texture},
-    ui::{DRAG_SIZE, VERTICAL_THICK_DRAG_SIZE},
+    ui::DRAG_SIZE,
     update,
 };
 use apostasy_macros::Resource;
@@ -29,29 +28,19 @@ struct ThumbnailCache {
 #[derive(Clone, Resource, Default)]
 struct EditingTexturePath(Option<usize>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum TextureSortColumn {
     Id,
     FileName,
+    #[default]
     Index,
 }
 
-impl Default for TextureSortColumn {
-    fn default() -> Self {
-        Self::Index
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Default, Copy, PartialEq, Eq)]
 enum SortDir {
+    #[default]
     Asc,
     Desc,
-}
-
-impl Default for SortDir {
-    fn default() -> Self {
-        Self::Asc
-    }
 }
 
 /// Sort state for the texture list.
@@ -99,8 +88,8 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         .unwrap_or(128);
 
     let mut state = world.get_resource::<TerrainToolState>()?.clone();
-    let mut new_resolution = resolution;
-    let mut resolution_changed = false;
+    let new_resolution = resolution;
+    let resolution_changed = false;
 
     let mut textures_changed = false;
 
@@ -122,11 +111,11 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         }
     }
 
-    let mut editing = world
+    let editing = world
         .get_resource::<EditingTexturePath>()
         .cloned()
         .unwrap_or(EditingTexturePath(None));
-    let mut commit_path: Option<(usize, String)> = None;
+    let commit_path: Option<(usize, String)> = None;
 
     Window::new("Terrain")
         .open(&mut true)
@@ -448,14 +437,41 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
             }
 
             ui.separator();
+
+            let width = 105.0;
+            let button_size = egui::vec2(width * 1.5, 30.0);
+
+            ui.horizontal(|ui| {
+                ui.horizontal(|ui| {
+                    let id = ui.id().with("texture_buttons");
+                    let last_width: f32 = ui.memory(|mem| mem.data.get_temp(id)).unwrap_or(0.0);
+                    let available = ui.available_width();
+                    if last_width < available {
+                        ui.add_space((available - last_width) / 2.0);
+                    }
+
+                    let inner = ui.scope(|ui| {
+                        ui.scope(|ui| {
+                            ui.spacing_mut().interact_size = button_size;
+                            if ui.button("Add Texture").clicked() {}
+                            ui.separator();
+                            if ui.button("Show Preview").clicked() {}
+                        });
+                    });
+                    ui.memory_mut(|mem| mem.data.insert_temp(id, inner.response.rect.width()));
+                });
+
+                // ui.horizontal(|ui| {});
+            });
+
+            ui.separator();
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Vertex Color").strong());
             });
             ui.separator();
 
-            let width = 105.0;
-            let vetex_color_box_size = egui::vec2(width, 40.0);
             let button_size = egui::vec2(width, 20.0);
+            let vetex_color_box_size = egui::vec2(width, 40.0);
             ui.indent("vertexcolorindent", |ui| {
                 ui.horizontal(|ui| {
                     ui.horizontal(|ui| {
