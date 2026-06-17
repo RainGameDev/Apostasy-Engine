@@ -65,7 +65,7 @@ use crate::terrain::texture_atlas::TerrainTextureAtlas;
 use crate::terrain::{TerrainAtlasNeedsRebuild, TerrainSettings};
 use crate::ui::FontRegistry;
 use crate::ui::ui_context::{EguiContext, ViewportSize, ViewportTexture};
-use crate::utils::profiler::{FrameSample, Profiler};
+use crate::utils::profiler::{FrameSample, Profiler, SystemTiming};
 use crate::voxels::VoxelTransform;
 use crate::voxels::meshes::NeedsRemeshing;
 use crate::voxels::meshes::VoxelChunkMesh;
@@ -474,15 +474,19 @@ impl Core {
                         });
 
                     let prerender_start = std::time::Instant::now();
-                    world.prerender();
+                    let prerender_timings = world.prerender();
                     let prerender_ns = prerender_start.elapsed().as_nanos() as u64;
 
+                    let mut render_other_timings: Vec<(&'static str, u64)> = Vec::new();
                     let render_start = std::time::Instant::now();
+                    let render_step = std::time::Instant::now();
                     if let Err(e) = renderer.begin_frame() {
                         log_error!("Failed to begin frame: {}", e);
                         return;
                     }
+                    render_other_timings.push(("begin_frame", render_step.elapsed().as_nanos() as u64));
 
+                    let render_step = std::time::Instant::now();
                     renderer.set_lights(
                         &gpu_lights,
                         shadow_data,
@@ -495,6 +499,7 @@ impl Core {
                         [camera_pos.x, camera_pos.y, camera_pos.z],
                         [camera_forward.x, camera_forward.y, camera_forward.z],
                     );
+                    render_other_timings.push(("set_lights", render_step.elapsed().as_nanos() as u64));
 
                     let shadow_start = std::time::Instant::now();
                     // Shadow pre-pass - one pass per cascade (csm_cascade_count for directional, 1 for spot).
@@ -715,6 +720,7 @@ impl Core {
 
                     let shadow_ns = shadow_start.elapsed().as_nanos() as u64;
 
+                    let render_step = std::time::Instant::now();
                     if let Ok(viewport_size) = world.get_resource::<ViewportSize>() {
                         let w = viewport_size.pixel_width as u32;
                         let h = viewport_size.pixel_height as u32;
@@ -725,13 +731,14 @@ impl Core {
                         ));
                     }
                     renderer.begin_ui();
+                    render_other_timings.push(("begin_ui", render_step.elapsed().as_nanos() as u64));
 
                     let world_update_start = std::time::Instant::now();
-                    world.update();
+                    let update_timings = world.update();
                     let world_update_ns = world_update_start.elapsed().as_nanos() as u64;
 
                     let world_fixed_update_start = std::time::Instant::now();
-                    world.fixed_update();
+                    let fixed_timings = world.fixed_update();
                     let world_fixed_update_ns =
                         world_fixed_update_start.elapsed().as_nanos() as u64;
 
@@ -1017,34 +1024,64 @@ impl Core {
                     }
                     let viewport_render_ns = viewport_render_start.elapsed().as_nanos() as u64;
 
+                    let render_step = std::time::Instant::now();
                     if let Err(e) = renderer.begin_swapchain_render() {
                         log_error!("Failed to begin swapchain render: {}", e);
                     }
+                    render_other_timings.push(("begin_swapchain", render_step.elapsed().as_nanos() as u64));
+
+                    let render_step = std::time::Instant::now();
                     if let Err(e) = renderer.end_ui() {
                         log_error!("Failed to end UI: {}", e);
                     }
+                    render_other_timings.push(("end_ui", render_step.elapsed().as_nanos() as u64));
+
+                    let render_step = std::time::Instant::now();
                     if let Err(e) = renderer.end_frame() {
                         log_error!("Failed to end frame: {}", e);
                     }
+                    render_other_timings.push(("end_frame", render_step.elapsed().as_nanos() as u64));
                     let render_total_ns = render_start.elapsed().as_nanos() as u64;
 
                     let world_late_update_start = std::time::Instant::now();
-                    world.late_update();
+                    let late_timings = world.late_update();
                     let world_late_update_ns = world_late_update_start.elapsed().as_nanos() as u64;
 
                     let frame_time_ns = frame_start.elapsed().as_nanos() as u64;
 
                     if let Ok(profiler) = world.get_resource_mut::<Profiler>() {
-                        profiler.push_sample(FrameSample {
-                            frame_ns: frame_time_ns,
-                            render_total_ns,
-                            shadow_pass_ns: shadow_ns,
-                            viewport_render_ns,
-                            world_prerender_ns: prerender_ns,
-                            world_update_ns,
-                            world_fixed_update_ns,
-                            world_late_update_ns,
-                        });
+                        let system_timings = {
+                            let mut v = Vec::new();
+                            for (name, ns) in prerender_timings {
+                                v.push(SystemTiming { phase: "PreRender", name, elapsed_ns: ns });
+                            }
+                            for (name, ns) in update_timings {
+                                v.push(SystemTiming { phase: "Update", name, elapsed_ns: ns });
+                            }
+                            for (name, ns) in fixed_timings {
+                                v.push(SystemTiming { phase: "FixedUpdate", name, elapsed_ns: ns });
+                            }
+                            for (name, ns) in late_timings {
+                                v.push(SystemTiming { phase: "LateUpdate", name, elapsed_ns: ns });
+                            }
+                            for (name, ns) in render_other_timings {
+                                v.push(SystemTiming { phase: "RenderOther", name, elapsed_ns: ns });
+                            }
+                            v
+                        };
+                        profiler.push_sample(
+                            FrameSample {
+                                frame_ns: frame_time_ns,
+                                render_total_ns,
+                                shadow_pass_ns: shadow_ns,
+                                viewport_render_ns,
+                                world_prerender_ns: prerender_ns,
+                                world_update_ns,
+                                world_fixed_update_ns,
+                                world_late_update_ns,
+                            },
+                            system_timings,
+                        );
                     }
                 }
 

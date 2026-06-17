@@ -6,7 +6,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::objects::resources::input_manager::{InputManager, KeyAction, KeyBind};
 use crate::objects::world::World;
 use crate::ui::ui_context::EguiContext;
-use crate::utils::profiler::{FrameSample, Profiler};
+use crate::utils::profiler::{FrameSample, Profiler, SystemTiming};
 
 #[derive(Resource, Clone, Default)]
 pub struct ProfilerPanelState {
@@ -245,6 +245,79 @@ fn legend_row(ui: &mut egui::Ui, color: Color32, label: &str, value_ns: f64) {
     });
 }
 
+fn collapsible_legend_row(
+    ui: &mut egui::Ui,
+    color: Color32,
+    label: &str,
+    value_ns: f64,
+    systems: &[&SystemTiming],
+    system_timings_smooth: &std::collections::HashMap<String, f64>,
+    phase_name: &str,
+) {
+    let id = ui.make_persistent_id(format!("profiler_expand_{}", phase_name));
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+        .show_header(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+                ui.painter().rect_filled(r, 2.0, color);
+                ui.label(label);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let text = Profiler::fmt_ns(value_ns);
+                    let col = if value_ns >= 8_000_000.0 {
+                        Color32::from_rgb(220, 80, 80)
+                    } else if value_ns >= 4_000_000.0 {
+                        Color32::from_rgb(220, 160, 60)
+                    } else {
+                        Color32::from_rgb(100, 200, 100)
+                    };
+                    ui.label(RichText::new(text).color(col).monospace());
+                });
+            });
+        })
+        .body(|ui| {
+            ui.indent("system_indent", |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(130.0)
+                    .show(ui, |ui| {
+                        for timing in systems {
+                            let key = format!("{}::{}", timing.phase, timing.name);
+                            let smooth = system_timings_smooth
+                                .get(&key)
+                                .copied()
+                                .unwrap_or(timing.elapsed_ns as f64);
+                            let pct = if value_ns > 0.0 {
+                                smooth / value_ns * 100.0
+                            } else {
+                                0.0
+                            };
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(timing.name).monospace().size(11.0));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        let text =
+                                            format!("{} ({:.0}%)", Profiler::fmt_ns(smooth), pct);
+                                        let col = if smooth >= 8_000_000.0 {
+                                            Color32::from_rgb(220, 80, 80)
+                                        } else if smooth >= 4_000_000.0 {
+                                            Color32::from_rgb(220, 160, 60)
+                                        } else if smooth >= 1_000_000.0 {
+                                            Color32::from_rgb(200, 200, 80)
+                                        } else {
+                                            Color32::from_rgb(100, 200, 100)
+                                        };
+                                        ui.label(
+                                            RichText::new(text).color(col).monospace().size(10.0),
+                                        );
+                                    },
+                                );
+                            });
+                        }
+                    });
+            });
+        });
+}
+
 // systems
 
 #[start(mode = "all")]
@@ -261,12 +334,11 @@ pub fn profiler_start(world: &mut World) -> Result<()> {
 
 #[update(mode = "all")]
 pub fn profiler_keybind(world: &mut World) -> Result<()> {
-    let pressed = world
+    if world
         .get_resource::<InputManager>()
         .map(|i| i.is_keybind_active("Toggle Profiler"))
-        .unwrap_or(false);
-
-    if pressed {
+        .unwrap_or(false)
+    {
         if let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
             s.open = !s.open;
         }
@@ -335,9 +407,10 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
             ui.add_space(4.0);
             ui.separator();
 
-            // legend + per-category times
+            // legend + per-category times (world phase rows are collapsible)
             let last = profiler.history.back().cloned().unwrap_or_default();
             let slices = Slices::from(&last);
+            let system_timings = &profiler.last_system_timings;
 
             legend_row(ui, COL_SHADOW, "  Shadow Pass", slices.shadow as f64);
             legend_row(
@@ -346,21 +419,76 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
                 "  Viewport Render",
                 slices.viewport as f64,
             );
-            legend_row(
+            let render_other_systems: Vec<&SystemTiming> = system_timings
+                .iter()
+                .filter(|t| t.phase == "RenderOther")
+                .collect();
+            collapsible_legend_row(
                 ui,
                 COL_RENDER_OTHER,
                 "  Render Other",
                 slices.render_other as f64,
+                &render_other_systems,
+                &profiler.system_timings_smooth,
+                "RenderOther",
             );
-            legend_row(
+
+            let prerender_systems: Vec<&SystemTiming> = system_timings
+                .iter()
+                .filter(|t| t.phase == "PreRender")
+                .collect();
+            collapsible_legend_row(
                 ui,
                 COL_PRERENDER,
                 "World Prerender",
                 slices.prerender as f64,
+                &prerender_systems,
+                &profiler.system_timings_smooth,
+                "PreRender",
             );
-            legend_row(ui, COL_UPDATE, "World Update", slices.update as f64);
-            legend_row(ui, COL_FIXED, "World Fixed Update", slices.fixed as f64);
-            legend_row(ui, COL_LATE, "World Late Update", slices.late as f64);
+
+            let update_systems: Vec<&SystemTiming> = system_timings
+                .iter()
+                .filter(|t| t.phase == "Update")
+                .collect();
+            collapsible_legend_row(
+                ui,
+                COL_UPDATE,
+                "World Update",
+                slices.update as f64,
+                &update_systems,
+                &profiler.system_timings_smooth,
+                "Update",
+            );
+
+            let fixed_systems: Vec<&SystemTiming> = system_timings
+                .iter()
+                .filter(|t| t.phase == "FixedUpdate")
+                .collect();
+            collapsible_legend_row(
+                ui,
+                COL_FIXED,
+                "World Fixed Update",
+                slices.fixed as f64,
+                &fixed_systems,
+                &profiler.system_timings_smooth,
+                "FixedUpdate",
+            );
+
+            let late_systems: Vec<&SystemTiming> = system_timings
+                .iter()
+                .filter(|t| t.phase == "LateUpdate")
+                .collect();
+            collapsible_legend_row(
+                ui,
+                COL_LATE,
+                "World Late Update",
+                slices.late as f64,
+                &late_systems,
+                &profiler.system_timings_smooth,
+                "LateUpdate",
+            );
+
             legend_row(ui, COL_OTHER, "Other", slices.other as f64);
 
             ui.separator();
@@ -387,10 +515,8 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
             });
         });
 
-    if !still_open {
-        if let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
-            s.open = false;
-        }
+    if !still_open && let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
+        s.open = false;
     }
 
     Ok(())

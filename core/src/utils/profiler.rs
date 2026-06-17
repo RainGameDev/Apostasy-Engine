@@ -1,8 +1,16 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use apostasy_macros::Resource;
 
 pub const HISTORY_SIZE: usize = 512;
+
+#[derive(Clone, Default)]
+pub struct SystemTiming {
+    pub phase: &'static str,
+    pub name: &'static str,
+    pub elapsed_ns: u64,
+}
 
 #[derive(Clone, Default)]
 pub struct FrameSample {
@@ -29,6 +37,11 @@ pub struct Profiler {
     pub render_total_smooth: f64,
     pub shadow_pass_smooth: f64,
     pub viewport_render_smooth: f64,
+
+    // Per-system timing (latest frame only)
+    pub last_system_timings: Vec<SystemTiming>,
+    // Per-system smoothed values keyed by "phase::name"
+    pub system_timings_smooth: HashMap<String, f64>,
 }
 
 impl Default for Profiler {
@@ -43,6 +56,8 @@ impl Default for Profiler {
             render_total_smooth: 0.0,
             shadow_pass_smooth: 0.0,
             viewport_render_smooth: 0.0,
+            last_system_timings: Vec::new(),
+            system_timings_smooth: HashMap::new(),
         }
     }
 }
@@ -54,7 +69,7 @@ impl Profiler {
         ALPHA * new as f64 + (1.0 - ALPHA) * prev
     }
 
-    pub fn push_sample(&mut self, sample: FrameSample) {
+    pub fn push_sample(&mut self, sample: FrameSample, system_timings: Vec<SystemTiming>) {
         self.frame_time_smooth = Self::smooth(self.frame_time_smooth, sample.frame_ns);
         self.render_total_smooth = Self::smooth(self.render_total_smooth, sample.render_total_ns);
         self.shadow_pass_smooth = Self::smooth(self.shadow_pass_smooth, sample.shadow_pass_ns);
@@ -67,6 +82,15 @@ impl Profiler {
             Self::smooth(self.world_fixed_update_smooth, sample.world_fixed_update_ns);
         self.world_late_update_smooth =
             Self::smooth(self.world_late_update_smooth, sample.world_late_update_ns);
+
+        // Update per-system smoothed values
+        self.last_system_timings = system_timings;
+        for timing in &self.last_system_timings {
+            let key = format!("{}::{}", timing.phase, timing.name);
+            let prev = self.system_timings_smooth.get(&key).copied().unwrap_or(0.0);
+            self.system_timings_smooth
+                .insert(key, Self::smooth(prev, timing.elapsed_ns));
+        }
 
         if self.history.len() == HISTORY_SIZE {
             self.history.pop_front();

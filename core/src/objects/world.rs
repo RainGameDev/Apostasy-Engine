@@ -168,16 +168,19 @@ impl World {
         }
     }
 
-    pub(crate) fn prerender(&mut self) {
+    pub(crate) fn prerender(&mut self) -> Vec<(&'static str, u64)> {
         let systems = std::mem::take(&mut self.prerender_systems);
+        let mut timings = Vec::with_capacity(systems.len());
         for system in &systems {
+            let start = std::time::Instant::now();
             (system.func)(self).unwrap();
+            timings.push((system.name, start.elapsed().as_nanos() as u64));
         }
-
         self.prerender_systems = systems;
+        timings
     }
 
-    pub(crate) fn update(&mut self) {
+    pub(crate) fn update(&mut self) -> Vec<(&'static str, u64)> {
         // update delta time
         {
             let timer = self.get_resource_mut::<FixedUpdateTimer>().unwrap();
@@ -199,14 +202,18 @@ impl World {
         }
 
         let systems = std::mem::take(&mut self.update_systems);
+        let mut timings = Vec::with_capacity(systems.len());
         for system in &systems {
+            let start = std::time::Instant::now();
             (system.func)(self).unwrap();
+            timings.push((system.name, start.elapsed().as_nanos() as u64));
         }
-
         self.update_systems = systems;
+        timings
     }
 
-    pub(crate) fn fixed_update(&mut self) {
+    pub(crate) fn fixed_update(&mut self) -> Vec<(&'static str, u64)> {
+        let mut timings = Vec::new();
         loop {
             let (should_run, timestep) = {
                 let timer = self.get_resource::<FixedUpdateTimer>().unwrap();
@@ -226,19 +233,32 @@ impl World {
 
             let systems = std::mem::take(&mut self.fixed_update_systems);
             for system in &systems {
+                let start = std::time::Instant::now();
                 (system.func)(self, timestep).unwrap();
+                let elapsed = start.elapsed().as_nanos() as u64;
+                // Accumulate across possible multiple fixed-step iterations
+                if let Some((_, existing)) = timings.iter_mut().find(|(n, _)| *n == system.name) {
+                    *existing += elapsed;
+                } else {
+                    timings.push((system.name, elapsed));
+                }
             }
             self.fixed_update_systems = systems;
         }
+        timings
     }
 
     /// Runs all late update systems
-    pub(crate) fn late_update(&mut self) {
+    pub(crate) fn late_update(&mut self) -> Vec<(&'static str, u64)> {
         let systems = std::mem::take(&mut self.late_update_systems);
+        let mut timings = Vec::with_capacity(systems.len());
         for system in &systems {
+            let start = std::time::Instant::now();
             (system.func)(self);
+            timings.push((system.name, start.elapsed().as_nanos() as u64));
         }
         self.late_update_systems = systems;
+        timings
     } // ========== ========== Objects ========== ==========
 
     /// Adds a new Object to the world
