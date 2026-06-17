@@ -11,6 +11,7 @@ use crate::utils::profiler::{FrameSample, Profiler, SystemTiming};
 #[derive(Resource, Clone, Default)]
 pub struct ProfilerPanelState {
     pub open: bool,
+    pub skip_counter: u32,
 }
 
 // colours per category
@@ -355,6 +356,11 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
 
     if !open {
         return Ok(());
+    }
+
+    {
+        let mut state = world.get_resource_mut::<ProfilerPanelState>()?;
+        state.skip_counter += 1;
     }
 
     let ctx = world.get_resource::<EguiContext>()?.0.clone();

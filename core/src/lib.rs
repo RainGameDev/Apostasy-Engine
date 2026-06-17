@@ -484,7 +484,10 @@ impl Core {
                         log_error!("Failed to begin frame: {}", e);
                         return;
                     }
-                    render_other_timings.push(("begin_frame", render_step.elapsed().as_nanos() as u64));
+                    let begin_frame_ns = render_step.elapsed().as_nanos() as u64;
+                    let fence_wait_ns = renderer.last_fence_wait_ns().min(begin_frame_ns);
+                    render_other_timings.push(("fence_wait", fence_wait_ns));
+                    render_other_timings.push(("begin_frame", begin_frame_ns - fence_wait_ns));
 
                     let render_step = std::time::Instant::now();
                     renderer.set_lights(

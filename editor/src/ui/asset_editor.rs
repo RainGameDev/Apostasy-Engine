@@ -168,6 +168,8 @@ pub struct AssetEditorState {
     // Add-component picker (main editor)
     pub add_comp_open: bool,
     pub add_comp_search: String,
+    pub precomputed_example: Option<serde_yaml::Value>,
+    pub cached_class_idx: usize,
     // New-asset template editing
     pub new_template: serde_yaml::Value,
     pub new_template_class_idx: usize,
@@ -192,6 +194,8 @@ impl Default for AssetEditorState {
             new_class_idx: 0,
             add_comp_open: false,
             add_comp_search: String::new(),
+            precomputed_example: None,
+            cached_class_idx: usize::MAX,
             new_template: serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
             new_template_class_idx: usize::MAX,
             new_add_comp_open: false,
@@ -293,26 +297,39 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
         .map(|s| s.new_class_idx)
         .unwrap_or(0);
     let precomputed_example: Option<serde_yaml::Value> = {
-        let class = CLASS_OPTIONS
-            .get(current_new_class_idx)
-            .copied()
-            .unwrap_or("")
-            .to_lowercase();
-        world
-            .get_resource::<AssetManager>()
-            .ok()
-            .and_then(|am| {
-                am.all_loader_entries()
-                    .iter()
-                    .find(|(c, entries)| c.to_lowercase() == class && !entries.is_empty())
-                    .and_then(|(c, entries)| {
-                        entries
-                            .first()
-                            .map(|(ns, name)| format!("{}:{}:{}", ns, c, name))
-                    })
-            })
-            .and_then(|id| find_asset_file(&id))
-            .map(|(_, yaml)| yaml)
+        let cached = world
+            .get_resource::<AssetEditorState>()
+            .map(|s| (s.precomputed_example.clone(), s.cached_class_idx))
+            .unwrap_or((None, usize::MAX));
+        if cached.1 == current_new_class_idx {
+            cached.0
+        } else {
+            let class = CLASS_OPTIONS
+                .get(current_new_class_idx)
+                .copied()
+                .unwrap_or("")
+                .to_lowercase();
+            let example = world
+                .get_resource::<AssetManager>()
+                .ok()
+                .and_then(|am| {
+                    am.all_loader_entries()
+                        .iter()
+                        .find(|(c, entries)| c.to_lowercase() == class && !entries.is_empty())
+                        .and_then(|(c, entries)| {
+                            entries
+                                .first()
+                                .map(|(ns, name)| format!("{}:{}:{}", ns, c, name))
+                        })
+                })
+                .and_then(|id| find_asset_file(&id))
+                .map(|(_, yaml)| yaml);
+            if let Ok(mut s) = world.get_resource_mut::<AssetEditorState>() {
+                s.precomputed_example = example.clone();
+                s.cached_class_idx = current_new_class_idx;
+            }
+            example
+        }
     };
 
     let state = world.get_resource_mut::<AssetEditorState>()?;

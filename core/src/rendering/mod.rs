@@ -55,6 +55,8 @@ pub struct RenderingInfo {
 pub trait RenderingAPI {
     /// Acquires the next swapchain image and prepares per-frame state.
     fn begin_frame(&mut self) -> Result<()>;
+    /// Returns the fence wait time (ns) from the last begin_frame call.
+    fn last_fence_wait_ns(&self) -> u64;
     /// Begins the offscreen viewport render pass.
     fn begin_viewport_render(&mut self) -> Result<()>;
     /// Ends the offscreen viewport render pass.

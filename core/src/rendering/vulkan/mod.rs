@@ -93,6 +93,7 @@ pub struct VulkanRenderer {
     pub viewport_extent: vk::Extent2D,
     pub viewport_target_initialized: bool,
     pub viewport_depth_initialized: bool,
+    pub last_fence_wait_ns: u64,
 
     pub light_ssbo: vk::Buffer,
     pub light_ssbo_memory: vk::DeviceMemory,
@@ -1624,6 +1625,7 @@ impl RenderingAPI for VulkanRenderer {
                 viewport_extent,
                 viewport_target_initialized: false,
                 viewport_depth_initialized: false,
+                last_fence_wait_ns: 0,
 
                 light_ssbo,
                 light_ssbo_memory,
@@ -1675,6 +1677,10 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
+    fn last_fence_wait_ns(&self) -> u64 {
+        self.last_fence_wait_ns
+    }
+
     fn begin_frame(&mut self) -> Result<()> {
         let frame = &self.frames[self.current_frame];
 
@@ -1688,12 +1694,14 @@ impl RenderingAPI for VulkanRenderer {
         unsafe {
             const FENCE_TIMEOUT_NS: u64 = 20_000_000_000; // 20 seconds (better for iGPU)
 
+            let fence_start = std::time::Instant::now();
             match self.context.device.wait_for_fences(
                 &[frame.in_flight_fence],
                 true,
                 FENCE_TIMEOUT_NS,
             ) {
                 Ok(()) => {
+                    self.last_fence_wait_ns = fence_start.elapsed().as_nanos() as u64;
                     self.buffer_graveyard.drain(..);
                 }
                 Err(e) => {

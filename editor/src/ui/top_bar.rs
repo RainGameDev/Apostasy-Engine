@@ -372,7 +372,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         if let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
             s.open = !s.open;
         } else {
-            world.insert_resource(ProfilerPanelState { open: true });
+            world.insert_resource(ProfilerPanelState { open: true, skip_counter: 0 });
         }
     }
 
