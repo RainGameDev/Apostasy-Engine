@@ -12,6 +12,7 @@ use apostasy_macros::Resource;
 
 use crate::{
     systems::object_focus::IsObjectFocused,
+    terrain::TerrainToolState,
     ui::{preferences_panel::EditorPreferences, viewport_panel::ViewportInfo},
 };
 
@@ -38,11 +39,17 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     }
     let editor_camera_settings = world.get_resource::<EditorCameraSettings>()?.clone();
 
+    if !world.has_resource::<TerrainToolState>() {
+        world.insert_resource(TerrainToolState::default());
+    }
+    let mut state = world.get_resource::<TerrainToolState>()?.clone();
+
     let is_object_focused = world.has_resource::<IsObjectFocused>();
 
     // inputs
     let inputs = world.get_resource::<InputManager>().unwrap();
-    let is_looking = inputs.is_mousebind_active("RightMouseClick");
+    let is_looking = inputs.is_mousebind_active("RightMouseClick") && !state.active
+        || inputs.is_mousebind_active("MiddleMouseClick");
     let is_middle_mouse = inputs.is_mousebind_active("MiddleMouseClick");
     let mouse_delta = inputs.mouse_delta;
     let scroll_delta = inputs.scroll_delta;

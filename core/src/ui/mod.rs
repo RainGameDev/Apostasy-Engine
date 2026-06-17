@@ -77,4 +77,5 @@ pub const DIM_COL: Color32 = Color32::from_rgb(170, 170, 170);
 pub const SEL_BG: Color32 = Color32::from_rgb(40, 80, 140);
 pub const HOVER_BG: Color32 = Color32::from_rgb(38, 38, 50);
 pub const DRAG_SIZE: egui::Vec2 = egui::vec2(60.0, 20.0);
+pub const VERTICAL_THICK_DRAG_SIZE: egui::Vec2 = egui::vec2(60.0, 40.0);
 pub const LABEL_WIDTH: f32 = 100.0;

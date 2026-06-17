@@ -62,6 +62,10 @@ pub fn init(world: &mut World) -> Result<()> {
         "SnapModifier",
         KeyBind::new(PhysicalKey::Code(KeyCode::ShiftLeft), KeyAction::Hold),
     );
+    inputs.register_default_keybind(
+        "ShiftModifier",
+        KeyBind::new(PhysicalKey::Code(KeyCode::ShiftLeft), KeyAction::Hold),
+    );
     Ok(())
 }
 

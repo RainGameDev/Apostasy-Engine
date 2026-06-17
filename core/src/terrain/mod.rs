@@ -7,22 +7,24 @@ pub mod chunk;
 pub mod mesh_builder;
 pub mod persistence;
 pub mod rebuild;
+pub mod texture_atlas;
 
-pub use mesh_builder::build_terrain_mesh;
-pub use persistence::{load_terrain_cells, save_terrain_cells};
-pub use rebuild::rebuild_dirty_terrain;
+pub use texture_atlas::{TerrainAtlasNeedsRebuild, TerrainTextureAtlas, discover_terrain_textures, load_terrain_texture};
 
 /// Global terrain configuration.
 #[derive(Resource, Clone)]
 pub struct TerrainSettings {
     /// Vertex grid resolution per cell side (default 128). Must be >= 2.
     pub resolution: u32,
+    /// Texture layer paths for the terrain shader (up to 64).
+    pub texture_layers: Vec<String>,
 }
 
 impl Default for TerrainSettings {
     fn default() -> Self {
         Self {
             resolution: 32,
+            texture_layers: Vec::new(),
         }
     }
 }

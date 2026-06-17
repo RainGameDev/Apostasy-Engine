@@ -11,7 +11,6 @@ use super::chunk::{TerrainChunk, TerrainMesh};
 
 /// Border data from neighboring chunks used for seamless normals.
 pub struct NeighborBorders {
-    // Heights: one step inside each neighbor for central-difference normal computation.
     pub left_col: Option<Vec<f32>>,
     pub right_col: Option<Vec<f32>>,
     pub top_row: Option<Vec<f32>>,
@@ -31,7 +30,9 @@ impl Default for NeighborBorders {
 
 /// Builds a terrain mesh using per-triangle vertices (6 per quad, no sharing).
 ///
-/// Each vertex stores a single texture layer (no blending).
+/// Per-vertex weights are copied directly from chunk.vertex_weights.
+/// The shader samples the texture atlas using the chunk's active_layer_ids
+/// (passed via push constants) and blends by the vertex weights.
 pub fn build_terrain_mesh(
     chunk: &TerrainChunk,
     neighbors: &NeighborBorders,
@@ -49,7 +50,6 @@ pub fn build_terrain_mesh(
     // Pre-compute per-grid-position data
     let mut grid_positions: Vec<[f32; 3]> = Vec::with_capacity(side * side);
     let mut grid_normals: Vec<[f32; 3]> = Vec::with_capacity(side * side);
-    let mut grid_uvs: Vec<[f32; 2]> = Vec::with_capacity(side * side);
 
     for z in 0..side {
         for x in 0..side {
@@ -59,12 +59,8 @@ pub fn build_terrain_mesh(
 
             let normal = compute_normal(chunk, x, z, step, neighbors);
 
-            let u = x as f32 / r as f32 * 16.0;
-            let v = z as f32 / r as f32 * 16.0;
-
             grid_positions.push([wx, h, wz]);
             grid_normals.push([normal.x, normal.y, normal.z]);
-            grid_uvs.push([u, v]);
         }
     }
 
@@ -78,39 +74,35 @@ pub fn build_terrain_mesh(
             let bl = x + (z + 1) * side;
             let br = (x + 1) + (z + 1) * side;
 
+            // Copy per-vertex weights directly from chunk data.
+            // The shader will blend using chunk.active_layer_ids via push constants.
+            let get_weights = |gi: usize| -> [f32; 6] {
+                chunk
+                    .vertex_weights
+                    .get(gi)
+                    .copied()
+                    .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            };
+
             // Triangle 1: tl, bl, tr
-            vertices.push(Vertex {
-                position: grid_positions[tl],
-                normal: grid_normals[tl],
-                tex_coord: grid_uvs[tl],
-            });
-            vertices.push(Vertex {
-                position: grid_positions[bl],
-                normal: grid_normals[bl],
-                tex_coord: grid_uvs[bl],
-            });
-            vertices.push(Vertex {
-                position: grid_positions[tr],
-                normal: grid_normals[tr],
-                tex_coord: grid_uvs[tr],
-            });
+            for &gi in &[tl, bl, tr] {
+                vertices.push(Vertex {
+                    position: grid_positions[gi],
+                    normal: grid_normals[gi],
+                    tex_coord: [0.0; 2],
+                    weights: get_weights(gi),
+                });
+            }
 
             // Triangle 2: tr, bl, br
-            vertices.push(Vertex {
-                position: grid_positions[tr],
-                normal: grid_normals[tr],
-                tex_coord: grid_uvs[tr],
-            });
-            vertices.push(Vertex {
-                position: grid_positions[bl],
-                normal: grid_normals[bl],
-                tex_coord: grid_uvs[bl],
-            });
-            vertices.push(Vertex {
-                position: grid_positions[br],
-                normal: grid_normals[br],
-                tex_coord: grid_uvs[br],
-            });
+            for &gi in &[tr, bl, br] {
+                vertices.push(Vertex {
+                    position: grid_positions[gi],
+                    normal: grid_normals[gi],
+                    tex_coord: [0.0; 2],
+                    weights: get_weights(gi),
+                });
+            }
         }
     }
 

@@ -736,13 +736,13 @@ impl RenderingAPI for VulkanRenderer {
 
             let pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default()
-                    .push_constant_ranges(&[vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                        .offset(0)
-                        .size(192)])
-                    .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
-                None,
-            )?;
+        .push_constant_ranges(&[vk::PushConstantRange::default()
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+            .offset(0)
+            .size(220)])
+        .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
+    None,
+)?;
 
             let pipeline_options = PipelineOptions {
                 image_format: Some(swapchain.format),

@@ -1,28 +1,49 @@
+use std::os::linux::raw::stat;
+
 use anyhow::Result;
 use apostasy_core::{
     cgmath::{SquareMatrix, Vector3, Vector4},
     objects::{
         cell::{CELL_SIZE, CellCoord, ObjectId, world_to_cell},
         components::transform::Transform,
+        resources::input_manager::{InputManager, KeyAction, KeyBind},
         tags::skips_serilization::SkipsSerilization,
         world::World,
     },
     rendering::components::camera::{
         Camera, EditorCamera, get_perspective_projection, get_view_matrix,
     },
+    start,
     terrain::{
         TerrainChunkMap, TerrainSettings,
         chunk::{NeedsTerrainRebuild, TerrainChunk},
     },
     ui::ui_context::ViewportSize,
     update,
-    winit::event::MouseButton,
+    winit::{
+        event::MouseButton,
+        keyboard::{KeyCode, PhysicalKey},
+    },
 };
 
 use crate::{
     terrain::{TerrainBrushGizmo, TerrainTool, TerrainToolState},
     ui::viewport_panel::ViewportInfo,
 };
+
+#[start(mode = "editor")]
+pub fn terrain_init_input(world: &mut World) -> Result<()> {
+    let inputs = world.get_resource_mut::<InputManager>().unwrap();
+    inputs.register_default_keybind(
+        "TerrainSmooth",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyS), KeyAction::Press),
+    );
+    inputs.register_default_keybind(
+        "TerrainFlatten",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
+    );
+    Ok(())
+}
 
 #[update(mode = "editor")]
 pub fn terrain_input(world: &mut World) -> Result<()> {
@@ -58,12 +79,39 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    let input = world
-        .get_resource::<apostasy_core::objects::resources::input_manager::InputManager>()?
-        .clone();
+    let input = world.get_resource::<InputManager>()?.clone();
+    let middle_mouse = input.mouse_held.contains(&MouseButton::Middle);
     let mouse_held = input.mouse_held.contains(&MouseButton::Left);
     let mouse_pressed = input.mouse_pressed.contains(&MouseButton::Left);
     let mouse_released = input.mouse_released.contains(&MouseButton::Left);
+    let right_click = input.mouse_held.contains(&MouseButton::Right);
+    let shift_pressed = input.is_keybind_active("ShiftModifier");
+    let toggle_smooth = input.is_keybind_active("TerrainSmooth");
+    let toggle_flatten = input.is_keybind_active("TerrainFlatten");
+
+    if !mouse_held && !right_click {
+        return Ok(());
+    }
+
+    if let Ok(state) = world.get_resource_mut::<TerrainToolState>()
+        && !middle_mouse
+    {
+        if toggle_flatten {
+            if state.tool == TerrainTool::Flatten {
+                state.tool = TerrainTool::Modify;
+            } else {
+                state.tool = TerrainTool::Flatten;
+            }
+        }
+
+        if toggle_smooth {
+            if state.tool == TerrainTool::Smooth {
+                state.tool = TerrainTool::Modify;
+            } else {
+                state.tool = TerrainTool::Smooth;
+            }
+        }
+    }
 
     // Update dragging flag
     {
@@ -102,10 +150,6 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
         g.hit_pos = Some(hit_pos);
     }
 
-    if !mouse_held {
-        return Ok(());
-    }
-
     let state = world.get_resource::<TerrainToolState>()?.clone();
 
     let affected_cells = cells_in_radius(hit_pos, state.brush_radius);
@@ -133,7 +177,16 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
     for &cell in &affected_cells {
         let chunk_map = world.get_resource::<TerrainChunkMap>()?.clone();
         if let Some(&obj_id) = chunk_map.0.get(&cell) {
-            apply_brush(world, obj_id, hit_pos, &state, flatten_target, resolution);
+            apply_brush(
+                world,
+                obj_id,
+                hit_pos,
+                &state,
+                flatten_target,
+                resolution,
+                shift_pressed,
+                right_click,
+            );
         }
     }
 
@@ -366,27 +419,27 @@ fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: ObjectId, reso
             .map(|c| (0..side).map(|x| c.heights[x]).collect())
     };
 
-    if let Some(obj) = world.get_object_mut(new_id) {
-        if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-            if let Some(col) = left_col {
-                for z in 0..side {
-                    chunk.heights[z * side] = col[z];
-                }
+    if let Some(obj) = world.get_object_mut(new_id)
+        && let Ok(chunk) = obj.get_component_mut::<TerrainChunk>()
+    {
+        if let Some(col) = left_col {
+            for z in 0..side {
+                chunk.heights[z * side] = col[z];
             }
-            if let Some(col) = right_col {
-                for z in 0..side {
-                    chunk.heights[r + z * side] = col[z];
-                }
+        }
+        if let Some(col) = right_col {
+            for z in 0..side {
+                chunk.heights[r + z * side] = col[z];
             }
-            if let Some(row) = top_row {
-                for x in 0..side {
-                    chunk.heights[x] = row[x];
-                }
+        }
+        if let Some(row) = top_row {
+            for x in 0..side {
+                chunk.heights[x] = row[x];
             }
-            if let Some(row) = bottom_row {
-                for x in 0..side {
-                    chunk.heights[x + r * side] = row[x];
-                }
+        }
+        if let Some(row) = bottom_row {
+            for x in 0..side {
+                chunk.heights[x + r * side] = row[x];
             }
         }
     }
@@ -544,24 +597,22 @@ fn stitch_corners(
 
         // Read phase: collect (id, index, height) for all present chunks
         let mut entries: Vec<(ObjectId, usize, f32)> = Vec::with_capacity(4);
-        if let Some(&id) = chunk_map.0.get(&cell) {
-            if let Some(h) = world
+        if let Some(&id) = chunk_map.0.get(&cell)
+            && let Some(h) = world
                 .get_object(id)
                 .and_then(|o| o.get_component::<TerrainChunk>().ok())
                 .map(|c| c.heights[corner_idx])
-            {
-                entries.push((id, corner_idx, h));
-            }
+        {
+            entries.push((id, corner_idx, h));
         }
         for &(nc, idx) in &neighbor_slots {
-            if let Some(&id) = chunk_map.0.get(&nc) {
-                if let Some(h) = world
+            if let Some(&id) = chunk_map.0.get(&nc)
+                && let Some(h) = world
                     .get_object(id)
                     .and_then(|o| o.get_component::<TerrainChunk>().ok())
                     .map(|c| c.heights[idx])
-                {
-                    entries.push((id, idx, h));
-                }
+            {
+                entries.push((id, idx, h));
             }
         }
 
@@ -584,11 +635,13 @@ fn stitch_corners(
 
 fn apply_brush(
     world: &mut World,
-    obj_id: apostasy_core::objects::cell::ObjectId,
+    obj_id: ObjectId,
     hit_pos: Vector3<f32>,
     state: &TerrainToolState,
     flatten_target: Option<f32>,
     resolution: u32,
+    shift_pressed: bool,
+    right_click_pressed: bool,
 ) {
     let obj = match world.get_object_mut(obj_id) {
         Some(o) => o,
@@ -619,23 +672,36 @@ fn apply_brush(
             let weight = gaussian_weight(dist, radius) * strength;
             let h = chunk.height_at_mut(x, z);
 
-            match state.tool {
-                TerrainTool::Raise => *h += weight,
-                TerrainTool::Lower => *h -= weight,
-                TerrainTool::Smooth => {
-                    // Smoothing is applied as a separate pass below
-                }
-                TerrainTool::Flatten => {
-                    if let Some(target) = flatten_target {
-                        *h += (*h - target) * -weight;
+            if !right_click_pressed {
+                match state.tool {
+                    TerrainTool::Modify => {
+                        if shift_pressed {
+                            *h -= weight
+                        } else {
+                            *h += weight
+                        }
                     }
+                    TerrainTool::Smooth => {
+                        // Smoothing is applied as a separate pass below
+                    }
+                    TerrainTool::Flatten => {
+                        if let Some(target) = flatten_target {
+                            *h += (*h - target) * -weight;
+                        }
+                    }
+                }
+            }
+            if right_click_pressed {
+                let idx = x + z * (r + 1);
+                if idx < chunk.vertex_weights.len() && weight > 0.01 {
+                    paint_vertex(chunk, idx, state.paint_layer as u32, weight);
                 }
             }
         }
     }
 
     // Smooth pass: replace heights with local average
-    if state.tool == TerrainTool::Smooth {
+    if state.tool == TerrainTool::Smooth && !right_click_pressed {
         let side = r + 1;
         let old_heights = chunk.heights.clone();
         for z in 0..=r {
@@ -688,4 +754,31 @@ fn neighbor_avg(heights: &[f32], x: usize, z: usize, side: usize) -> f32 {
     }
 }
 
+/// Weight-based paint: add weight to the target layer, renormalize all other slots.
+fn paint_vertex(chunk: &mut TerrainChunk, vertex_idx: usize, target_layer_id: u32, strength: f32) {
+    let slot = match chunk.find_or_allocate_slot(target_layer_id) {
+        Some(s) => s,
+        None => {
+            // All 6 slots are full — can't paint here.
+            return;
+        }
+    };
 
+    let weights = &mut chunk.vertex_weights[vertex_idx];
+    let old_target = weights[slot];
+    let new_target = (old_target + strength).min(1.0);
+
+    // Renormalize: scale down other slots so total still sums to 1.0.
+    let remaining_old = 1.0 - old_target;
+    let remaining_new = 1.0 - new_target;
+    let scale = if remaining_old > 0.0001 {
+        remaining_new / remaining_old
+    } else {
+        0.0
+    };
+
+    for w in weights.iter_mut() {
+        *w *= scale;
+    }
+    weights[slot] = new_target;
+}

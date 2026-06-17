@@ -7,6 +7,8 @@ use crate::{
     rendering::shared::model::GpuMesh,
 };
 
+pub const MAX_ACTIVE_LAYERS: u8 = 6;
+
 /// Heightmap data for a single terrain cell.
 #[derive(Debug, Inspect, Component, Clone)]
 pub struct TerrainChunk {
@@ -16,6 +18,14 @@ pub struct TerrainChunk {
     pub resolution: u32,
     /// Flattened (resolution+1)^2 heightmap.
     pub heights: Vec<f32>,
+    /// Active texture layer global IDs for this chunk (indices into TerrainSettings.texture_layers).
+    /// 0 = unused slot. Sorted so slot 0 is always the base layer.
+    pub active_layer_ids: [u32; MAX_ACTIVE_LAYERS as usize],
+    /// How many of the 6 slots are active.
+    pub active_layer_count: u8,
+    /// Per-vertex weights for each active layer. Always sums to 1.0 per vertex.
+    /// Length is (resolution+1)^2, each entry is [f32; 6].
+    pub vertex_weights: Vec<[f32; MAX_ACTIVE_LAYERS as usize]>,
 }
 
 impl Default for TerrainChunk {
@@ -28,10 +38,34 @@ impl TerrainChunk {
     pub fn new(cell_coord: CellCoord, resolution: u32) -> Self {
         let side = (resolution + 1) as usize;
         let count = side * side;
+        let weights = vec![[1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0]; count];
         Self {
             cell_coord,
             resolution,
             heights: vec![0.0; count],
+            active_layer_ids: [0, 0, 0, 0, 0, 0],
+            active_layer_count: 1,
+            vertex_weights: weights,
+        }
+    }
+
+    /// Find the slot index for a given global layer ID, or allocate a new slot if available.
+    /// Returns None if no slot is free and the layer is not already present.
+    pub fn find_or_allocate_slot(&mut self, global_layer_id: u32) -> Option<usize> {
+        // Check if already present
+        for i in 0..self.active_layer_count as usize {
+            if self.active_layer_ids[i] == global_layer_id {
+                return Some(i);
+            }
+        }
+        // Allocate a new slot
+        let count = self.active_layer_count as usize;
+        if count < MAX_ACTIVE_LAYERS as usize {
+            self.active_layer_ids[count] = global_layer_id;
+            self.active_layer_count += 1;
+            Some(count)
+        } else {
+            None
         }
     }
 

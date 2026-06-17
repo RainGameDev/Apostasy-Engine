@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
@@ -6,18 +7,24 @@ use cgmath::Vector3;
 use crate::{
     objects::{Object, cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
     terrain::{
-        TerrainChunkMap, TerrainSettings,
-        chunk::{NeedsTerrainRebuild, TerrainChunk},
+        TerrainAtlasNeedsRebuild, TerrainChunkMap, TerrainSettings,
+        chunk::{NeedsTerrainRebuild, TerrainChunk, MAX_ACTIVE_LAYERS},
     },
 };
 
-const FILE_MAGIC: u32 = 0x41525448; // "TRHA" — TeRrain HeAder
-const FILE_VERSION: u32 = 1;
+const FILE_MAGIC: u32 = 0x41525448; // "TRHA"
+const FILE_VERSION: u32 = 2;
 
 /// Saves all terrain chunks to binary files under `dir`.
 /// Each cell is written as `{cx}_{cz}.terrain`.
 pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dir)?;
+
+    let texture_layers: Vec<String> = world
+        .get_resource::<TerrainSettings>()
+        .ok()
+        .map(|s| s.texture_layers.clone())
+        .unwrap_or_default();
 
     let terrain_ids: Vec<_> = world
         .get_objects_with_component_with_ids::<TerrainChunk>()
@@ -29,7 +36,7 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
         if let Some(obj) = world.get_object(id) {
             if let Ok(chunk) = obj.get_component::<TerrainChunk>() {
                 let filename = cell_filename(chunk.cell_coord);
-                write_terrain_cell(chunk, &dir.join(&filename))?;
+                write_terrain_cell(chunk, &texture_layers, &dir.join(&filename))?;
             }
         }
     }
@@ -37,13 +44,11 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
 }
 
 /// Loads all `.terrain` files from `dir`, creating or updating terrain objects in `world`.
-/// Registers each chunk in `TerrainChunkMap` and tags it with `NeedsTerrainRebuild`.
 pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     if !dir.exists() {
         return Ok(());
     }
 
-    // read all files, collect chunk data
     let mut loaded: Vec<(TerrainChunk, Vec<String>)> = Vec::new();
 
     let entries: Vec<_> = std::fs::read_dir(dir)?
@@ -69,12 +74,47 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // update TerrainSettings with empty texture list (no longer used).
-    if let Ok(settings) = world.get_resource_mut::<TerrainSettings>() {
-        // texture_layers field has been removed
+    // Collect all unique texture paths, sort alphabetically for stable order.
+    let mut all_paths: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (_, table) in &loaded {
+        for p in table {
+            if seen.insert(p.clone()) {
+                all_paths.push(p.clone());
+            }
+        }
+    }
+    all_paths.sort();
+
+    // Build mapping from texture path -> new sorted index.
+    let mapping: HashMap<&str, usize> = all_paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.as_str(), i))
+        .collect();
+
+    // Remap each chunk's active_layer_ids from local table -> global sorted order.
+    for (chunk, table) in &mut loaded {
+        if table.is_empty() {
+            continue;
+        }
+        for id in &mut chunk.active_layer_ids {
+            if *id < table.len() as u32 {
+                let old_path = &table[*id as usize];
+                if let Some(&new_id) = mapping.get(old_path.as_str()) {
+                    *id = new_id as u32;
+                }
+            }
+        }
     }
 
-    // place chunks in the world (existing logic, one-phase).
+    // Update TerrainSettings with the sorted texture list.
+    if let Ok(settings) = world.get_resource_mut::<TerrainSettings>() {
+        settings.texture_layers = all_paths;
+    }
+    world.insert_resource(TerrainAtlasNeedsRebuild);
+
+    // Place chunks in the world.
     for (chunk, _) in &loaded {
         let coord = chunk.cell_coord;
 
@@ -108,39 +148,64 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Binary format (new)
-// u32  magic      = 0x41525448  ("TRHA")
-// u32  version    = 1
-// u32  resolution (LE)
+// Binary format (version 2):
+// u32  magic      = "TRHA"
+// u32  version    = 2
+// u32  resolution
 // u32  layer_count
-// [layer_count texture layer paths: u16 len + bytes]
-// f32  heights[(resolution+1)^2] (LE)
-//
-// Old format (no header):
-// u32  resolution (LE)
-// f32  heights[...] (LE)
+// [for each layer:]
+//   u16  path_len
+//   u8[path_len] path (UTF-8)
+// f32  heights[(resolution+1)^2]
+// u32  active_layer_count
+// u32  active_layer_ids[6]
+// f32  vertex_weights[(resolution+1)^2][6]
 
-fn write_terrain_cell(chunk: &TerrainChunk, path: &Path) -> Result<()> {
+fn write_terrain_cell(chunk: &TerrainChunk, texture_layers: &[String], path: &Path) -> Result<()> {
     let count = ((chunk.resolution + 1) as usize).pow(2);
 
-    let mut bytes: Vec<u8> =
-        Vec::with_capacity(4 + 4 + 4 + 4 + count * 4);
+    let layer_count = texture_layers.len() as u32;
+    let layers_bytes: usize = texture_layers.iter().map(|s| 2 + s.len()).sum();
+
+    let mut bytes: Vec<u8> = Vec::with_capacity(
+        4 + 4 + 4 + 4 + layers_bytes + count * 4 // heights
+        + 4 + 6 * 4 + count * 6 * 4, // weights
+    );
 
     bytes.extend_from_slice(&FILE_MAGIC.to_le_bytes());
     bytes.extend_from_slice(&FILE_VERSION.to_le_bytes());
     bytes.extend_from_slice(&chunk.resolution.to_le_bytes());
-    bytes.extend_from_slice(&0u32.to_le_bytes()); // layer_count = 0
+    bytes.extend_from_slice(&layer_count.to_le_bytes());
 
+    for path_str in texture_layers {
+        let path_bytes = path_str.as_bytes();
+        let path_len = path_bytes.len() as u16;
+        bytes.extend_from_slice(&path_len.to_le_bytes());
+        bytes.extend_from_slice(path_bytes);
+    }
+
+    // Heights
     for &h in &chunk.heights {
         bytes.extend_from_slice(&h.to_le_bytes());
+    }
+
+    // Active layer IDs
+    bytes.extend_from_slice(&(chunk.active_layer_count as u32).to_le_bytes());
+    for &id in &chunk.active_layer_ids {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+
+    // Vertex weights (flat array: count * 6 floats)
+    for w in &chunk.vertex_weights {
+        for &v in w {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
     }
 
     std::fs::write(path, bytes)?;
     Ok(())
 }
 
-/// Reads a terrain cell file. Returns the chunk and its per-file texture table
-/// (empty vec for old-format files).
 fn read_terrain_cell(path: &Path, coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
     let bytes = std::fs::read(path)?;
     if bytes.len() < 4 {
@@ -150,100 +215,199 @@ fn read_terrain_cell(path: &Path, coord: CellCoord) -> Result<(TerrainChunk, Vec
     let first = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
 
     if first == FILE_MAGIC {
-        read_new_format(&bytes, coord)
+        let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        match version {
+            1 => read_v1_format(&bytes, coord),
+            _ => read_v2_format(&bytes, coord),
+        }
     } else {
         read_old_format(&bytes, coord)
     }
 }
 
-fn read_new_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
+/// Version 2: vertex_weights with active_layer_ids
+fn read_v2_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
     if bytes.len() < 12 {
-        anyhow::bail!("new-format terrain file too small");
+        anyhow::bail!("v2 terrain file too small");
     }
-    let _version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     let resolution = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
     let side = (resolution + 1) as usize;
     let count = side * side;
 
     let mut offset = 12;
 
-    // Old writer: no layer_count, heights start at offset 12.
-    // New writer: layer_count (u32) + layer paths, then heights.
-    let heights_only_size = 12 + count * 4;
-    let has_layers = bytes.len() > heights_only_size;
+    let layer_count = u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ]);
+    offset += 4;
 
-    if has_layers {
-        let layer_count = u32::from_le_bytes([
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ]);
-        offset += 4;
-
-        let mut texture_layers = Vec::with_capacity(layer_count as usize);
-        for _ in 0..layer_count {
-            if offset + 2 > bytes.len() {
-                anyhow::bail!("truncated layer path length");
-            }
-            let path_len = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as usize;
-            offset += 2;
-            if offset + path_len > bytes.len() {
-                anyhow::bail!("truncated layer path data");
-            }
-            let path = String::from_utf8_lossy(&bytes[offset..offset + path_len]).into_owned();
-            offset += path_len;
-            texture_layers.push(path);
+    let mut texture_layers = Vec::with_capacity(layer_count as usize);
+    for _ in 0..layer_count {
+        if offset + 2 > bytes.len() {
+            anyhow::bail!("truncated layer path length");
         }
-
-        let expected_data = count * 4;
-        if offset + expected_data > bytes.len() {
-            anyhow::bail!("truncated height data");
+        let path_len = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        offset += 2;
+        if offset + path_len > bytes.len() {
+            anyhow::bail!("truncated layer path data");
         }
-
-        let mut heights = vec![0.0f32; count];
-        for i in 0..count {
-            let o = offset + i * 4;
-            heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
-        }
-
-        Ok((
-            TerrainChunk {
-                cell_coord: coord,
-                resolution,
-                heights,
-            },
-            texture_layers,
-        ))
-    } else {
-        let expected = 12 + count * 4;
-        if bytes.len() < expected {
-            anyhow::bail!("truncated height data");
-        }
-
-        let mut heights = vec![0.0f32; count];
-        for i in 0..count {
-            let o = offset + i * 4;
-            heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
-        }
-
-        Ok((
-            TerrainChunk {
-                cell_coord: coord,
-                resolution,
-                heights,
-            },
-            Vec::new(),
-        ))
+        let path = String::from_utf8_lossy(&bytes[offset..offset + path_len]).into_owned();
+        offset += path_len;
+        texture_layers.push(path);
     }
+
+    // Heights
+    let expected_heights = count * 4;
+    if offset + expected_heights > bytes.len() {
+        anyhow::bail!("truncated height data");
+    }
+    let mut heights = vec![0.0f32; count];
+    for i in 0..count {
+        let o = offset + i * 4;
+        heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+    offset += count * 4;
+
+    // Active layer count + IDs
+    if offset + 4 > bytes.len() {
+        anyhow::bail!("truncated layer count");
+    }
+    let active_layer_count = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+    offset += 4;
+
+    let mut active_layer_ids = [0u32; MAX_ACTIVE_LAYERS as usize];
+    for i in 0..MAX_ACTIVE_LAYERS as usize {
+        if offset + 4 > bytes.len() {
+            anyhow::bail!("truncated layer IDs");
+        }
+        active_layer_ids[i] = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+        offset += 4;
+    }
+
+    // Vertex weights
+    let expected_weights = count * MAX_ACTIVE_LAYERS as usize * 4;
+    if offset + expected_weights > bytes.len() {
+        anyhow::bail!("truncated weight data");
+    }
+    let mut vertex_weights = vec![[0.0f32; MAX_ACTIVE_LAYERS as usize]; count];
+    for i in 0..count {
+        for j in 0..MAX_ACTIVE_LAYERS as usize {
+            let o = offset + (i * MAX_ACTIVE_LAYERS as usize + j) * 4;
+            vertex_weights[i][j] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+        }
+    }
+
+    Ok((
+        TerrainChunk {
+            cell_coord: coord,
+            resolution,
+            heights,
+            active_layer_ids,
+            active_layer_count: active_layer_count as u8,
+            vertex_weights,
+        },
+        texture_layers,
+    ))
 }
 
-/// Fallback for the original format: no texture table, just indices.
+/// Version 1: old texture_index format — convert to new weight system.
+fn read_v1_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
+    let resolution = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+    let side = (resolution + 1) as usize;
+    let count = side * side;
+
+    let mut offset = 12;
+
+    let layer_count = u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ]);
+    offset += 4;
+
+    let mut texture_layers = Vec::with_capacity(layer_count as usize);
+    for _ in 0..layer_count {
+        let path_len = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        offset += 2;
+        let path = String::from_utf8_lossy(&bytes[offset..offset + path_len]).into_owned();
+        offset += path_len;
+        texture_layers.push(path);
+    }
+
+    let mut heights = vec![0.0f32; count];
+    for i in 0..count {
+        let o = offset + i * 4;
+        heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+    offset += count * 4;
+
+    let mut texture_index = vec![0.0f32; count];
+    for i in 0..count {
+        let o = offset + i * 4;
+        texture_index[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+
+    // Convert old single-index format to new weight format.
+    // Find all unique rounded layer indices used in this chunk.
+    let mut unique_layers: Vec<u32> = Vec::new();
+    for &ti in &texture_index {
+        let layer = ti.round() as i32;
+        if layer >= 0 && !unique_layers.contains(&(layer as u32)) {
+            unique_layers.push(layer as u32);
+        }
+    }
+    unique_layers.sort();
+    // Default to layer 0 if nothing found.
+    if unique_layers.is_empty() {
+        unique_layers.push(0);
+    }
+
+    // Cap to MAX_ACTIVE_LAYERS.
+    let active_count = unique_layers.len().min(MAX_ACTIVE_LAYERS as usize);
+    let mut active_layer_ids = [0u32; MAX_ACTIVE_LAYERS as usize];
+    for (i, &id) in unique_layers.iter().enumerate().take(active_count) {
+        active_layer_ids[i] = id;
+    }
+
+    // Build lookup: old layer index → new slot.
+    let mut layer_to_slot: HashMap<u32, usize> = HashMap::new();
+    for (i, &id) in unique_layers.iter().enumerate().take(active_count) {
+        layer_to_slot.insert(id, i);
+    }
+
+    let mut vertex_weights = vec![[0.0f32; MAX_ACTIVE_LAYERS as usize]; count];
+    for (vi, &ti) in texture_index.iter().enumerate() {
+        let layer = ti.round() as u32;
+        if let Some(&slot) = layer_to_slot.get(&layer) {
+            vertex_weights[vi][slot] = 1.0;
+        } else {
+            vertex_weights[vi][0] = 1.0; // fallback to base
+        }
+    }
+
+    Ok((
+        TerrainChunk {
+            cell_coord: coord,
+            resolution,
+            heights,
+            active_layer_ids,
+            active_layer_count: active_count as u8,
+            vertex_weights,
+        },
+        texture_layers,
+    ))
+}
+
+/// Fallback for the original format: no texture table, single-index format.
 fn read_old_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
     let resolution = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     let side = (resolution + 1) as usize;
     let count = side * side;
-    let expected = 4 + count * 4;
+    let expected = 4 + count * 4 + count * 4;
     if bytes.len() < expected {
         anyhow::bail!(
             "old-format terrain file truncated: expected {} bytes, got {}",
@@ -258,13 +422,41 @@ fn read_old_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<
         heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
     }
 
+    let mut texture_index = vec![0.0f32; count];
+    let base = 4 + count * 4;
+    for i in 0..count {
+        let o = base + i * 4;
+        texture_index[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+
+    // Convert to new format — all vertices become slot 0 (base layer = texture_index[0] rounded).
+    let base_layer = texture_index
+        .iter()
+        .map(|v| v.round() as u32)
+        .reduce(|a, b| if a == b { a } else { 0 })
+        .unwrap_or(0);
+
+    let mut active_layer_ids = [0u32; MAX_ACTIVE_LAYERS as usize];
+    active_layer_ids[0] = base_layer;
+
+    let mut vertex_weights = vec![[0.0f32; MAX_ACTIVE_LAYERS as usize]; count];
+    for (vi, &ti) in texture_index.iter().enumerate() {
+        let layer = ti.round() as u32;
+        vertex_weights[vi][0] = if layer == base_layer { 1.0 } else { 0.0 };
+        // Try to find the layer in active_layer_ids; if it matches base, fine.
+        // Otherwise the vertex gets 0 weight (will show as 0-contribution in shader).
+    }
+
     Ok((
         TerrainChunk {
             cell_coord: coord,
             resolution,
             heights,
+            active_layer_ids,
+            active_layer_count: 1,
+            vertex_weights,
         },
-        Vec::new(), // empty texture table for old format
+        Vec::new(),
     ))
 }
 

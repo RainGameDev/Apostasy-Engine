@@ -3,7 +3,12 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
-layout(location = 3) in float fragTexLayer;
+layout(location = 3) in float fragWeight0;
+layout(location = 4) in float fragWeight1;
+layout(location = 5) in float fragWeight2;
+layout(location = 6) in float fragWeight3;
+layout(location = 7) in float fragWeight4;
+layout(location = 8) in float fragWeight5;
 
 layout(set = 1, binding = 0) uniform sampler2DArray terrainTex;
 
@@ -14,6 +19,8 @@ layout(push_constant) uniform PushConstants {
     vec3 scale;
     vec4 rotation;
     vec4 colorModifier;
+    int  activeLayerIds[6];
+    uint layerCount;
 } pc;
 
 #define LIGHT_DIRECTIONAL 0u
@@ -150,7 +157,33 @@ void main() {
     vec3 N = normalize(fragNormal);
     vec3 lighting = compute_lighting(N);
 
-    vec4 baseColor = texture(terrainTex, vec3(fragTexCoord, round(fragTexLayer)));
+    // World-space UVs: tile 16 times per cell (128 world units).
+    float tileScale = 16.0 / 128.0;
+    vec2 uv = fragWorldPos.xz * tileScale;
 
-    outColor = vec4(baseColor.rgb *  max(lighting, vec3(0.05)), 1.0);
+    // Accumulate weighted texture samples from all active layers.
+    float weights[6] = float[](
+        fragWeight0, fragWeight1, fragWeight2,
+        fragWeight3, fragWeight4, fragWeight5
+    );
+
+    vec3  albedo = vec3(0.0);
+    float weightSum = 0.0;
+
+    uint count = max(pc.layerCount, 1u);
+    for (uint i = 0u; i < count; i++) {
+        float w = weights[i];
+        if (w <= 0.001) continue;
+
+        int layerId = pc.activeLayerIds[i];
+        if (layerId < 0) continue;
+
+        albedo += texture(terrainTex, vec3(uv, layerId)).rgb * w;
+        weightSum += w;
+    }
+
+    // Normalize to guard against floating-point drift.
+    vec4 baseColor = vec4(albedo / max(weightSum, 0.0001), 1.0);
+
+    outColor = vec4(baseColor.rgb * max(lighting, vec3(0.05)), 1.0);
 }

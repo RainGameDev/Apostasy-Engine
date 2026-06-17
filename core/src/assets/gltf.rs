@@ -118,6 +118,7 @@ pub fn load_model(
                     position: *pos,
                     normal: *norm,
                     tex_coord: *tex,
+                    weights: [0.0; 6],
                 })
                 .collect();
 

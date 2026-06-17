@@ -453,7 +453,6 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
             // Some othershit idc
 
-            ui.separator();
             let available_size = ui.available_size();
             if available_size.x <= 0.0 || available_size.y <= 0.0 {
                 return;
