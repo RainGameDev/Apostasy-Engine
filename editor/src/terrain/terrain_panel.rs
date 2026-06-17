@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use apostasy_core::{
+    assets::texture::list_available_textures,
     egui::{
         self, Color32, DragValue, Margin, Pos2, RichText, ScrollArea, Slider, Vec2, Window, vec2,
     },
@@ -50,6 +51,22 @@ struct TextureSortState {
     dir: SortDir,
 }
 
+/// State for the "Add Texture" texture picker popup.
+#[derive(Clone, Resource)]
+struct TexturePickerState {
+    open: bool,
+    search: String,
+}
+
+impl Default for TexturePickerState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            search: String::new(),
+        }
+    }
+}
+
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "tga", "bmp", "hdr"];
 
 #[update(mode = "editor")]
@@ -67,6 +84,9 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
     }
     if !world.has_resource::<TextureSortState>() {
         world.insert_resource(TextureSortState::default());
+    }
+    if !world.has_resource::<TexturePickerState>() {
+        world.insert_resource(TexturePickerState::default());
     }
 
     let active = world
@@ -116,6 +136,23 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         .cloned()
         .unwrap_or(EditingTexturePath(None));
     let commit_path: Option<(usize, String)> = None;
+
+    let mut picker_state = world
+        .get_resource::<TexturePickerState>()
+        .cloned()
+        .unwrap_or_default();
+    let mut texture_to_add: Option<String> = None;
+
+    // Pre-compute textures available for adding
+    let existing_textures: Vec<String> = world
+        .get_resource::<TerrainSettings>()
+        .map(|s| s.texture_layers.clone())
+        .unwrap_or_default();
+    let all_textures = list_available_textures();
+    let available_textures: Vec<&String> = all_textures
+        .iter()
+        .filter(|t| !existing_textures.contains(t))
+        .collect();
 
     Window::new("Terrain")
         .open(&mut true)
@@ -353,6 +390,7 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
 
             ScrollArea::vertical()
                 .id_salt("textures_scroll")
+                .max_height(row_h * 5.0)
                 .auto_shrink([true; 2])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -450,15 +488,95 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
                         ui.add_space((available - last_width) / 2.0);
                     }
 
-                    let inner = ui.scope(|ui| {
-                        ui.scope(|ui| {
-                            ui.spacing_mut().interact_size = button_size;
-                            if ui.button("Add Texture").clicked() {}
-                            ui.separator();
-                            if ui.button("Show Preview").clicked() {}
-                        });
+                    let add_resp = ui.scope(|ui| {
+                        ui.spacing_mut().interact_size = button_size;
+                        ui.button("Add Texture")
+                    })
+                    .inner;
+                    ui.separator();
+                    ui.scope(|ui| {
+                        ui.spacing_mut().interact_size = button_size;
+                        if ui.button("Show Preview").clicked() {}
                     });
-                    ui.memory_mut(|mem| mem.data.insert_temp(id, inner.response.rect.width()));
+
+                    if add_resp.clicked() {
+                        picker_state.open = !picker_state.open;
+                        if picker_state.open {
+                            picker_state.search.clear();
+                        }
+                    }
+
+                    if picker_state.open {
+                        let anchor = add_resp.rect.left_bottom();
+
+                        let area_resp = egui::Area::new(ui.id().with("texture_picker"))
+                            .order(egui::Order::Foreground)
+                            .fixed_pos(anchor)
+                            .show(ui.ctx(), |ui| {
+                                egui::Frame::popup(&ui.style())
+                                    .fill(style.dark_bg)
+                                    .show(ui, |ui| {
+                                        ui.set_width(260.0);
+
+                                        let search_resp =
+                                            ui.text_edit_singleline(&mut picker_state.search);
+                                        search_resp.request_focus();
+                                        ui.add_space(4.0);
+
+                                        let query = picker_state.search.to_lowercase();
+
+                                        egui::ScrollArea::vertical()
+                                            .max_height(240.0)
+                                            .show(ui, |ui| {
+                                                let mut any_shown = false;
+
+                                                for tex in &available_textures {
+                                                    let file_name = Path::new(tex)
+                                                        .file_name()
+                                                        .and_then(|s| s.to_str())
+                                                        .unwrap_or(tex);
+
+                                                    if !query.is_empty()
+                                                        && !file_name
+                                                            .to_lowercase()
+                                                            .contains(&query)
+                                                    {
+                                                        continue;
+                                                    }
+
+                                                    let resp =
+                                                        ui.selectable_label(false, file_name);
+                                                    if resp.clicked() {
+                                                        texture_to_add =
+                                                            Some((*tex).clone());
+                                                        picker_state.open = false;
+                                                    }
+                                                    any_shown = true;
+                                                }
+
+                                                if !any_shown {
+                                                    ui.label(
+                                                        egui::RichText::new(
+                                                            "No textures available",
+                                                        )
+                                                        .italics()
+                                                        .weak(),
+                                                    );
+                                                }
+                                            });
+                                    });
+                            });
+
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape))
+                            || (!add_resp.clicked()
+                                && picker_state.open
+                                && ui.input(|i| i.pointer.any_click())
+                                && !area_resp.response.hovered())
+                        {
+                            picker_state.open = false;
+                        }
+                    }
+                    ui.memory_mut(|mem| mem.data.insert_temp(id, add_resp.rect.width()));
                 });
 
                 // ui.horizontal(|ui| {});
@@ -658,6 +776,20 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
             }
         }
         textures_changed = true;
+    }
+
+    // Apply texture picker addition
+    if let Some(path) = texture_to_add {
+        if let Ok(mut settings) = world.get_resource_mut::<TerrainSettings>() {
+            if !settings.texture_layers.contains(&path) {
+                settings.texture_layers.push(path);
+            }
+        }
+        textures_changed = true;
+    }
+
+    if let Ok(mut ps) = world.get_resource_mut::<TexturePickerState>() {
+        *ps = picker_state;
     }
 
     // Apply committed path edits

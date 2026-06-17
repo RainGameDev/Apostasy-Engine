@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use cgmath::Vector3;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     objects::{Object, cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
@@ -14,6 +15,47 @@ use crate::{
 
 const FILE_MAGIC: u32 = 0x41525448; // "TRHA"
 const FILE_VERSION: u32 = 2;
+
+#[derive(Serialize, Deserialize)]
+struct TextureLayerList {
+    texture_layers: Vec<String>,
+}
+
+/// Saves the terrain texture layer list as a sidecar YAML file.
+pub fn save_terrain_settings(world: &World, dir: &Path) -> Result<()> {
+    let layers = world
+        .get_resource::<TerrainSettings>()
+        .ok()
+        .map(|s| s.texture_layers.clone())
+        .unwrap_or_default();
+    let list = TextureLayerList {
+        texture_layers: layers,
+    };
+    let yaml = serde_yaml::to_string(&list)?;
+    std::fs::write(dir.join("texture_layers.yaml"), yaml)?;
+    Ok(())
+}
+
+/// Loads the texture layer list from the sidecar YAML file, if it exists.
+pub fn load_terrain_settings(dir: &Path) -> Vec<String> {
+    let path = dir.join("texture_layers.yaml");
+    if !path.exists() {
+        return Vec::new();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(content) => match serde_yaml::from_str::<TextureLayerList>(&content) {
+            Ok(list) => list.texture_layers,
+            Err(e) => {
+                eprintln!("[terrain] Failed to parse texture_layers.yaml: {}", e);
+                Vec::new()
+            }
+        },
+        Err(e) => {
+            eprintln!("[terrain] Failed to read texture_layers.yaml: {}", e);
+            Vec::new()
+        }
+    }
+}
 
 /// Saves all terrain chunks to binary files under `dir`.
 /// Each cell is written as `{cx}_{cz}.terrain`.
@@ -40,12 +82,25 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
             }
         }
     }
+
+    // Also persist the texture list as a sidecar file so it survives
+    // even when no terrain chunks exist yet.
+    save_terrain_settings(world, dir)?;
+
     Ok(())
 }
 
 /// Loads all `.terrain` files from `dir`, creating or updating terrain objects in `world`.
 pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     if !dir.exists() {
+        // Still try to load standalone texture list even without terrain dir.
+        let saved = load_terrain_settings(dir);
+        if !saved.is_empty()
+            && let Ok(mut settings) = world.get_resource_mut::<TerrainSettings>()
+        {
+            settings.texture_layers = saved;
+            world.insert_resource(TerrainAtlasNeedsRebuild);
+        }
         return Ok(());
     }
 
@@ -74,9 +129,9 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // Collect all unique texture paths, sort alphabetically for stable order.
-    let mut all_paths: Vec<String> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    // Start with the standalone texture list, then merge in any paths from chunks.
+    let mut all_paths = load_terrain_settings(dir);
+    let mut seen: std::collections::HashSet<String> = all_paths.iter().cloned().collect();
     for (_, table) in &loaded {
         for p in table {
             if seen.insert(p.clone()) {
