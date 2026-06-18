@@ -2,6 +2,7 @@ use anyhow::Result;
 use apostasy_core::{egui::{self, Pos2, Vec2}, objects::world::World};
 use apostasy_macros::{Resource, late_update};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Fixed position and size for a window (in pixels)
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -80,42 +81,55 @@ impl Default for WindowLayout {
     }
 }
 
-const LAYOUT_PATH: &str = "res/.editor/editor_layout.yaml";
+#[derive(Clone, Resource, Serialize, Debug, Deserialize)]
+pub struct EditorLayouts {
+    pub current: String,
+    pub layouts: HashMap<String, WindowLayout>,
+}
 
-fn save_layout(layout: &WindowLayout) {
-    let path = std::path::Path::new(LAYOUT_PATH);
+impl Default for EditorLayouts {
+    fn default() -> Self {
+        let mut layouts = HashMap::new();
+        layouts.insert("Default".to_string(), WindowLayout::default());
+        Self {
+            current: "Default".to_string(),
+            layouts,
+        }
+    }
+}
+
+const LAYOUTS_PATH: &str = "res/.editor/editor_layouts.yaml";
+
+pub fn save_layouts(editor_layouts: &EditorLayouts) {
+    let path = std::path::Path::new(LAYOUTS_PATH);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(yaml) = serde_yaml::to_string(layout) {
+    if let Ok(yaml) = serde_yaml::to_string(editor_layouts) {
         let _ = std::fs::write(path, yaml);
     }
 }
 
-pub fn load_layout() -> WindowLayout {
-    std::fs::read_to_string(LAYOUT_PATH)
+pub fn load_layouts() -> EditorLayouts {
+    std::fs::read_to_string(LAYOUTS_PATH)
         .ok()
         .and_then(|s| serde_yaml::from_str(&s).ok())
         .unwrap_or_default()
 }
 
+pub fn load_layout() -> WindowLayout {
+    let editor_layouts = load_layouts();
+    editor_layouts
+        .layouts
+        .get(&editor_layouts.current)
+        .cloned()
+        .unwrap_or_default()
+}
+
 #[late_update(mode = "editor")]
 pub fn flush_layout(world: &mut World) -> Result<()> {
-    let should_save = if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
-        if layout.dirty {
-            layout.dirty = false;
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    if should_save {
-        if let Ok(layout) = world.get_resource::<WindowLayout>() {
-            save_layout(layout);
-        }
+    if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
+        layout.dirty = false;
     }
     Ok(())
 }

@@ -33,7 +33,12 @@ use viewport_panel::{EditorGraphics, ViewportInfo};
 #[start(mode = "all")]
 pub fn init(world: &mut World) -> Result<()> {
     world.remove_resource::<WindowLayout>();
-    let layout = load_layout();
+    let editor_layouts = load_layouts();
+    let layout = editor_layouts
+        .layouts
+        .get(&editor_layouts.current)
+        .cloned()
+        .unwrap_or_default();
 
     world.insert_resource(ViewportInfo {
         open: layout.viewport_open,
@@ -56,6 +61,7 @@ pub fn init(world: &mut World) -> Result<()> {
         ..Default::default()
     });
     world.insert_resource(layout);
+    world.insert_resource(editor_layouts);
 
     let prefs = EditorPreferences::load();
     let mut style = EditorStyle::from_theme(prefs.theme);

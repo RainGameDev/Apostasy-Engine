@@ -18,11 +18,17 @@ use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::{EditorPreferences, PreferencesState};
 use apostasy_core::ui::ProfilerPanelState;
-use crate::ui::shared::WindowLayout;
+use crate::ui::shared::{EditorLayouts, WindowLayout, save_layouts};
 use crate::ui::viewport_panel::ViewportInfo;
 
 #[derive(Resource, Clone, Default)]
 pub struct SaveAsDialog {
+    pub open: bool,
+    pub name_buf: String,
+}
+
+#[derive(Resource, Clone, Default)]
+pub struct SaveLayoutDialog {
     pub open: bool,
     pub name_buf: String,
 }
@@ -105,6 +111,8 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let mut do_save_current = false;
     let mut open_save_as = false;
     let mut load_scene_name: Option<String> = None;
+    let mut load_layout_name: Option<String> = None;
+    let mut open_save_layout = false;
 
     if save_as_pressed {
         open_save_as = true;
@@ -231,6 +239,37 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                         toggle_profiler = true;
                                         ui.close();
                                     }
+
+                                    ui.separator();
+
+                                    ui.menu_button("Layout", |ui| {
+                                        let layouts = world
+                                            .get_resource::<EditorLayouts>()
+                                            .map(|l| l.layouts.keys().cloned().collect::<Vec<_>>())
+                                            .unwrap_or_default();
+                                        let current = world
+                                            .get_resource::<EditorLayouts>()
+                                            .map(|l| l.current.clone())
+                                            .unwrap_or_default();
+
+                                        if layouts.is_empty() {
+                                            ui.label("No saved layouts");
+                                        }
+                                        for name in &layouts {
+                                            let is_current = name == &current;
+                                            if ui.selectable_label(is_current, name).clicked() {
+                                                load_layout_name = Some(name.clone());
+                                                ui.close();
+                                            }
+                                        }
+
+                                        ui.separator();
+
+                                        if ui.button("Save Layout As...").clicked() {
+                                            open_save_layout = true;
+                                            ui.close();
+                                        }
+                                    });
                                 });
                             });
                             ui.separator();
@@ -292,6 +331,69 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                 });
 
                 if let Ok(d) = world.get_resource_mut::<SaveAsDialog>() {
+                    d.name_buf = name_buf;
+                }
+            });
+    }
+
+    // Save Layout dialog
+    let mut confirm_save_layout: Option<String> = None;
+    let mut close_save_layout = false;
+
+    let save_layout_open = world
+        .get_resource::<SaveLayoutDialog>()
+        .map(|d| d.open)
+        .unwrap_or(false);
+
+    if save_layout_open {
+        let mut name_buf = world
+            .get_resource::<SaveLayoutDialog>()
+            .map(|d| d.name_buf.clone())
+            .unwrap_or_default();
+
+        let screen_rect = ctx.viewport_rect();
+        let win_w = 320.0_f32;
+        let win_h = 110.0_f32;
+        let pos = egui::pos2(
+            (screen_rect.width() - win_w) * 0.5,
+            (screen_rect.height() - win_h) * 0.5,
+        );
+
+        egui::Window::new("Save Layout As")
+            .fixed_pos(pos)
+            .fixed_size(egui::vec2(win_w, win_h))
+            .collapsible(false)
+            .resizable(false)
+            .show(&ctx, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("Layout name:");
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(&mut name_buf)
+                            .desired_width(180.0)
+                            .hint_text("my layout"),
+                    );
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if !name_buf.trim().is_empty() {
+                            confirm_save_layout = Some(name_buf.trim().to_string());
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let can_save = !name_buf.trim().is_empty();
+                    if ui
+                        .add_enabled(can_save, egui::Button::new("Save"))
+                        .clicked()
+                    {
+                        confirm_save_layout = Some(name_buf.trim().to_string());
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close_save_layout = true;
+                    }
+                });
+
+                if let Ok(d) = world.get_resource_mut::<SaveLayoutDialog>() {
                     d.name_buf = name_buf;
                 }
             });
@@ -427,6 +529,64 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                 s.selected_obj = None;
             }
+        }
+    }
+
+    if open_save_layout {
+        let name_buf = world
+            .get_resource::<EditorLayouts>()
+            .map(|l| l.current.clone())
+            .unwrap_or_default();
+        world.insert_resource(SaveLayoutDialog {
+            open: true,
+            name_buf,
+        });
+    }
+
+    if let Some(name) = confirm_save_layout {
+        let layout = world.get_resource::<WindowLayout>().ok().cloned();
+        if let Ok(mut layouts) = world.get_resource_mut::<EditorLayouts>()
+            && let Some(layout) = layout
+        {
+            layouts.layouts.insert(name.clone(), layout);
+            layouts.current = name;
+            save_layouts(&layouts);
+        }
+        world.insert_resource(SaveLayoutDialog::default());
+    }
+
+    if close_save_layout {
+        world.insert_resource(SaveLayoutDialog::default());
+    }
+
+    if let Some(ref layout_name) = load_layout_name {
+        let new_layout = world
+            .get_resource::<EditorLayouts>()
+            .ok()
+            .and_then(|l| l.layouts.get(layout_name).cloned());
+        if let Ok(mut layouts) = world.get_resource_mut::<EditorLayouts>() {
+            layouts.current = layout_name.clone();
+        }
+        if let Some(layout) = new_layout {
+            if let Ok(mut viewport) = world.get_resource_mut::<ViewportInfo>() {
+                viewport.open = layout.viewport_open;
+            }
+            if let Ok(mut obj) = world.get_resource_mut::<ObjectWindowState>() {
+                obj.open = layout.object_window_open;
+            }
+            if let Ok(mut cell) = world.get_resource_mut::<CellSearchState>() {
+                cell.open = layout.cell_open;
+            }
+            if let Ok(mut insp) = world.get_resource_mut::<InspectorPanelState>() {
+                insp.visible = layout.inspector_visible;
+            }
+            if let Ok(mut ae) = world.get_resource_mut::<AssetEditorState>() {
+                ae.open = layout.asset_editor_open;
+            }
+            world.insert_resource(layout);
+        }
+        if let Ok(layouts) = world.get_resource::<EditorLayouts>() {
+            save_layouts(&layouts);
         }
     }
 
