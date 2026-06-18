@@ -1,13 +1,14 @@
 use anyhow::Result;
 use apostasy_core::cgmath::Vector3;
 use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
-use apostasy_core::objects::cell::{CELL_SIZE, ObjectId};
+use apostasy_core::objects::cell::{CELL_SIZE, ObjectId, world_to_cell};
 use apostasy_core::objects::cell_streaming::CellMigrations;
 use apostasy_core::objects::components::transform::Transform;
 use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
 use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::rendering::components::camera::EditorCamera;
+use apostasy_core::terrain::chunk::TerrainChunk;
 use apostasy_core::ui::ui_context::EguiContext;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
@@ -90,10 +91,11 @@ pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
 #[allow(deprecated)]
 #[update(mode = "editor")]
 pub fn cell_search(world: &mut World) -> Result<()> {
-    let to_delete = world
-        .get_resource::<InputManager>()?
-        .is_keybind_active("Delete");
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    let to_delete = !ctx.egui_wants_keyboard_input()
+        && world
+            .get_resource::<InputManager>()?
+            .is_keybind_active("Delete");
     let style = world
         .get_resource::<EditorStyle>()
         .cloned()
@@ -103,9 +105,20 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         world.insert_resource(CellSearchState::default());
     }
 
+    // Track camera's current cell
+    if let Ok(camera) = world.get_object_with_tag::<EditorCamera>()
+        && let Ok(transform) = camera.get_component::<Transform>()
+    {
+        let cam_cell = world_to_cell(transform.global_position);
+        world.get_resource_mut::<CellSearchState>()?.selected_cell = Some(cam_cell);
+    }
+
     let obj_entries: Vec<ObjectRefEntry> = world
         .get_all_objects()
         .iter()
+        .filter(|(_, obj)| {
+            !obj.has_component::<TerrainChunk>() && !obj.has_tag::<EditorCamera>()
+        })
         .map(|(id, obj)| ObjectRefEntry {
             obj_name: obj.name.clone(),
             id: fmt_key(*id),
@@ -232,10 +245,44 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 font_hdr.clone(),
                                 style.text_col,
                             );
+
+                            // column widths
+                            let name_w = avail_w * 0.40;
+                            let pos_w = avail_w * 0.30;
+                            let count_w = avail_w - name_w - pos_w;
+
+                            // column headers
+                            let (hdr_rect, _) = ui.allocate_exact_size(
+                                Vec2::new(avail_w, header_h),
+                                Sense::hover(),
+                            );
+                            ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
+                            for (label, offset) in [
+                                ("Name", 0.0_f32),
+                                ("Position", name_w),
+                                ("Ref count", name_w + pos_w),
+                            ] {
+                                ui.painter().text(
+                                    Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
+                                    egui::Align2::LEFT_CENTER,
+                                    label,
+                                    font_hdr.clone(),
+                                    style.text_col,
+                                );
+                            }
                             ui.painter().line_segment(
-                                [title_rect.left_bottom(), title_rect.right_bottom()],
+                                [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
                                 Stroke::new(1.0, style.div_col),
                             );
+                            for offset in [name_w, name_w + pos_w] {
+                                ui.painter().line_segment(
+                                    [
+                                        Pos2::new(hdr_rect.left() + offset, hdr_rect.top()),
+                                        Pos2::new(hdr_rect.left() + offset, hdr_rect.bottom()),
+                                    ],
+                                    Stroke::new(1.0, style.div_col),
+                                );
+                            }
 
                             let table_h = ui.available_height();
                             ScrollArea::vertical()
@@ -258,6 +305,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             font_row.clone(),
                                             style.dim_col,
                                         );
+                                        for offset in [name_w, name_w + pos_w] {
+                                            ui.painter().line_segment(
+                                                [
+                                                    Pos2::new(row_rect.left() + offset, row_rect.top()),
+                                                    Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                ],
+                                                Stroke::new(1.0, style.div_col),
+                                            );
+                                        }
                                     }
 
                                     for (idx, (coord, name, count)) in
@@ -272,9 +328,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         );
 
                                         if row_resp.clicked() && !is_renaming {
-                                            // toggle: clicking the selected cell clears the filter
-                                            selected_cell =
-                                                if is_selected { None } else { Some(*coord) };
+                                            selected_cell = Some(*coord);
                                         }
                                         if row_resp.double_clicked() {
                                             renaming_cell = Some(*coord);
@@ -293,13 +347,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         };
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
 
+                                        let rl = row_rect.left();
+                                        let cy = row_rect.center().y;
                                         if is_renaming {
                                             let edit_rect = Rect::from_min_size(
-                                                Pos2::new(
-                                                    row_rect.left() + 2.0,
-                                                    row_rect.top() + 1.0,
-                                                ),
-                                                Vec2::new(avail_w - 4.0, row_h - 2.0),
+                                                Pos2::new(rl + 2.0, row_rect.top() + 1.0),
+                                                Vec2::new(name_w - 4.0, row_h - 2.0),
                                             );
                                             let te =
                                                 egui::TextEdit::singleline(&mut cell_rename_buf)
@@ -328,31 +381,32 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             } else {
                                                 style.dim_col
                                             };
-                                            // "name (X, Z)" when named, else "(X, Z)"
-                                            let label = if name.is_empty() {
-                                                format!("({}, {})", coord.x, coord.z)
+                                            let display_name = if name.is_empty() {
+                                                "Wilderness".to_string()
                                             } else {
-                                                format!("{} ({}, {})", name, coord.x, coord.z)
+                                                name.clone()
                                             };
                                             paint_clipped(
                                                 ui,
-                                                Pos2::new(
-                                                    row_rect.left() + 6.0,
-                                                    row_rect.center().y,
-                                                ),
-                                                avail_w - 48.0,
-                                                &label,
+                                                Pos2::new(rl + 6.0, cy),
+                                                name_w - 12.0,
+                                                &display_name,
                                                 font_row.clone(),
                                                 text_col,
                                             );
-                                            // object count, right-aligned
-                                            ui.painter().text(
-                                                Pos2::new(
-                                                    row_rect.right() - 6.0,
-                                                    row_rect.center().y,
-                                                ),
-                                                egui::Align2::RIGHT_CENTER,
-                                                count.to_string(),
+                                            paint_clipped(
+                                                ui,
+                                                Pos2::new(rl + name_w + 6.0, cy),
+                                                pos_w - 12.0,
+                                                &format!("({}, {})", coord.x, coord.z),
+                                                font_row.clone(),
+                                                style.dim_col,
+                                            );
+                                            paint_clipped(
+                                                ui,
+                                                Pos2::new(rl + name_w + pos_w + 6.0, cy),
+                                                count_w - 12.0,
+                                                &count.to_string(),
                                                 font_row.clone(),
                                                 style.dim_col,
                                             );
@@ -376,6 +430,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             [row_rect.left_bottom(), row_rect.right_bottom()],
                                             Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
                                         );
+                                        for offset in [name_w, name_w + pos_w] {
+                                            ui.painter().line_segment(
+                                                [
+                                                    Pos2::new(rl + offset, row_rect.top()),
+                                                    Pos2::new(rl + offset, row_rect.bottom()),
+                                                ],
+                                                Stroke::new(1.0, style.div_col),
+                                            );
+                                        }
                                     }
 
                                     // filler rows
@@ -397,6 +460,15 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             [row_rect.left_bottom(), row_rect.right_bottom()],
                                             Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
                                         );
+                                        for offset in [name_w, name_w + pos_w] {
+                                            ui.painter().line_segment(
+                                                [
+                                                    Pos2::new(row_rect.left() + offset, row_rect.top()),
+                                                    Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                ],
+                                                Stroke::new(1.0, style.div_col),
+                                            );
+                                        }
                                     }
                                 });
                         });
@@ -514,10 +586,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let filtered: Vec<&ObjectRefEntry> = obj_entries
                                 .iter()
                                 .filter(|e| {
-                                    // when a cell is selected, only show that cell's objects
-                                    if let Some(cell) = selected_cell
-                                        && e.object_id.cell != cell
-                                    {
+                                    let Some(cell) = selected_cell else { return false };
+                                    if e.object_id.cell != cell {
                                         return false;
                                     }
                                     if filter_value.trim().is_empty() {

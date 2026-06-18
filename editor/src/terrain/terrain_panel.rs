@@ -154,8 +154,9 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         .filter(|t| !existing_textures.contains(t))
         .collect();
 
+    let mut visible = state.active;
     Window::new("Terrain")
-        .open(&mut true)
+        .open(&mut visible)
         .resizable(true)
         .collapsible(true)
         .order(egui::Order::Foreground)
@@ -765,6 +766,8 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
             });
             ui.add_space(8.0);
         });
+
+    state.active = visible;
 
     // Apply OS drag-and-drop additions
     if !drop_add.is_empty()

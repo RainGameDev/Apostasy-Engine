@@ -8,7 +8,7 @@ use apostasy_core::{
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
     },
-    start, update,
+    start, ui::ui_context::EguiContext, update,
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 use apostasy_macros::Resource;
@@ -223,9 +223,16 @@ pub fn remap_history_after_migration(world: &mut World) -> Result<()> {
 
 #[update(mode = "editor")]
 pub fn handle_undo_redo(world: &mut World) -> Result<()> {
+    let wants_keyboard = world
+        .get_resource::<EguiContext>()
+        .map(|ctx| ctx.0.egui_wants_keyboard_input())
+        .unwrap_or(false);
     let (undo, redo) = {
         let inputs = world.get_resource::<InputManager>()?;
-        (inputs.is_keybind_active("Undo"), inputs.is_keybind_active("Redo"))
+        (
+            !wants_keyboard && inputs.is_keybind_active("Undo"),
+            !wants_keyboard && inputs.is_keybind_active("Redo"),
+        )
     };
 
     if undo {

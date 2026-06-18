@@ -7,6 +7,7 @@ use apostasy_core::{
         world::World,
     },
     rendering::components::camera::EditorCamera,
+    ui::ui_context::EguiContext,
     update,
 };
 use apostasy_macros::Resource;
@@ -29,6 +30,11 @@ pub fn object_focus(world: &mut World) -> Result<()> {
         .unwrap()
         .selected_obj
     {
+        if let Ok(ctx) = world.get_resource::<EguiContext>() {
+            if ctx.0.egui_wants_keyboard_input() {
+                return Ok(());
+            }
+        }
         if inputs.is_keybind_active("FocusObject") {
             world.insert_resource(IsObjectFocused);
             let selected_obj = world.get_object(selected_obj).unwrap().clone();

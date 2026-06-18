@@ -270,7 +270,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
     inputs.register_default_keybind(
         "FocusObject",
-        KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press),
     );
 
     inputs.register_default_keybind(

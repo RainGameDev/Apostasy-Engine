@@ -5,7 +5,7 @@ use apostasy_core::{
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
     },
-    start, update,
+    start, ui::ui_context::EguiContext, update,
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -75,10 +75,14 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
         world.insert_resource(CellSearchState::default());
     }
 
+    let wants_keyboard = world
+        .get_resource::<EguiContext>()
+        .map(|ctx| ctx.0.egui_wants_keyboard_input())
+        .unwrap_or(false);
     let inputs = world.get_resource::<InputManager>().unwrap();
-    let do_copy = inputs.is_keybind_active("Copy");
-    let do_paste = inputs.is_keybind_active("Paste");
-    let do_duplicate = inputs.is_keybind_active("Duplicate");
+    let do_copy = !wants_keyboard && inputs.is_keybind_active("Copy");
+    let do_paste = !wants_keyboard && inputs.is_keybind_active("Paste");
+    let do_duplicate = !wants_keyboard && inputs.is_keybind_active("Duplicate");
 
     let clipboard = world.get_resource::<CellSearchState>()?.copied_obj.clone();
     let selected_id = world.get_resource::<CellSearchState>()?.selected_obj;

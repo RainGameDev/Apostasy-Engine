@@ -2,6 +2,7 @@ use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
     objects::{resources::input_manager::InputManager, world::World},
+    ui::ui_context::EguiContext,
     update,
 };
 use apostasy_macros::Resource;
@@ -68,6 +69,11 @@ pub struct TerrainBrushGizmo {
 pub fn toggle_terrain_state(world: &mut World) -> Result<()> {
     if !world.has_resource::<TerrainToolState>() {
         return Ok(());
+    }
+    if let Ok(ctx) = world.get_resource::<EguiContext>() {
+        if ctx.0.egui_wants_keyboard_input() {
+            return Ok(());
+        }
     }
     let toggle = world
         .get_resource::<InputManager>()?
