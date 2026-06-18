@@ -305,6 +305,7 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
     doc.insert("name".into(), name.into());
     doc.insert("namespace".into(), namespace.into());
     doc.insert("class".into(), "worldspace".into());
+    doc.insert("is_interior".into(), world.worldspace().is_interior.into());
     doc.insert("cells".into(), serde_yaml::Value::Mapping(cells));
 
     let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(doc))?;
@@ -399,6 +400,10 @@ pub fn load_worldspace(
         if !should_keep {
             world.remove_object(id);
         }
+    }
+
+    if let Some(v) = value.get("is_interior").and_then(|v| v.as_bool()) {
+        world.worldspace_mut().is_interior = v;
     }
 
     if let Some(cells) = value.get("cells").and_then(|v| v.as_mapping()) {

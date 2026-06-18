@@ -295,6 +295,10 @@ impl World {
         &mut self.worldspace
     }
 
+    pub fn replace_worldspace(&mut self, ws: Worldspace) {
+        self.worldspace = ws;
+    }
+
     /// Removes an Object from the world
     pub fn remove_object(&mut self, id: ObjectId) {
         self.worldspace.remove_object(id);

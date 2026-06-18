@@ -16,6 +16,7 @@ use crate::objects::{
 #[derive(Default)]
 pub struct Worldspace {
     pub name: String,
+    pub is_interior: bool,
     pub(crate) cells: HashMap<CellCoord, Cell>,
 }
 
@@ -23,8 +24,13 @@ impl Worldspace {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            is_interior: false,
             cells: HashMap::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.cells.clear();
     }
 
     // ========== ========== Cell access ========== ==========

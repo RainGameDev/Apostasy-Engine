@@ -1,4 +1,9 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use anyhow::Result;
+use apostasy_core::assets::asset_manager::AssetManager;
+use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::cgmath::Vector3;
 use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
 use apostasy_core::objects::cell::{CELL_SIZE, ObjectId, world_to_cell};
@@ -6,6 +11,7 @@ use apostasy_core::objects::cell_streaming::CellMigrations;
 use apostasy_core::objects::components::transform::Transform;
 use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
+use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
 use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::terrain::chunk::TerrainChunk;
@@ -18,6 +24,7 @@ use super::shared::WindowLayout;
 use crate::systems::history::{EditorCommand, History, RemoveObjectCmd};
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
+use crate::ui::preferences_panel::EditorPreferences;
 
 #[derive(Clone)]
 pub struct ObjectRefEntry {
@@ -43,6 +50,12 @@ pub struct CellSearchState {
     pub renaming_cell: Option<Vector3<i32>>,
     pub cell_rename_buf: String,
     pub cell_rename_focus: bool,
+    // whether to show worldspaces list instead of cells
+    pub show_worldspaces: bool,
+    // create worldspace dialog state
+    pub create_ws_open: bool,
+    pub create_ws_name: String,
+    pub create_ws_interior: bool,
 }
 
 impl Default for CellSearchState {
@@ -61,6 +74,10 @@ impl Default for CellSearchState {
             renaming_cell: None,
             cell_rename_buf: String::new(),
             cell_rename_focus: false,
+            show_worldspaces: false,
+            create_ws_open: false,
+            create_ws_name: String::new(),
+            create_ws_interior: false,
         }
     }
 }
@@ -169,6 +186,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let mut cell_rename_focus: bool = world.get_resource::<CellSearchState>()?.cell_rename_focus;
     let mut pending_goto_cell: Option<Vector3<i32>> = None;
     let mut pending_cell_rename: Option<(Vector3<i32>, String)> = None;
+    let mut show_worldspaces = world.get_resource::<CellSearchState>()?.show_worldspaces;
 
     let row_h = style.row_height();
     let header_h = style.header_height();
@@ -226,6 +244,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let avail_w = ui.available_width();
 
                             // title
+                            let title = if show_worldspaces { "Worldspaces" } else { "Cells" };
                             let (title_rect, _) = ui
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
                             ui.painter().rect_filled(
@@ -241,236 +260,445 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.painter().text(
                                 title_rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "Cells",
+                                title,
                                 font_hdr.clone(),
                                 style.text_col,
                             );
 
-                            // column widths
-                            let name_w = avail_w * 0.40;
-                            let pos_w = avail_w * 0.30;
-                            let count_w = avail_w - name_w - pos_w;
-
-                            // column headers
-                            let (hdr_rect, _) = ui.allocate_exact_size(
-                                Vec2::new(avail_w, header_h),
-                                Sense::hover(),
-                            );
-                            ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
-                            for (label, offset) in [
-                                ("Name", 0.0_f32),
-                                ("Position", name_w),
-                                ("Ref count", name_w + pos_w),
-                            ] {
-                                ui.painter().text(
-                                    Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
-                                    egui::Align2::LEFT_CENTER,
-                                    label,
-                                    font_hdr.clone(),
-                                    style.text_col,
-                                );
-                            }
+                            // toggle bar
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                let half_w = (ui.available_width() / 2.0).floor().max(1.0);
+                                if ui
+                                    .add_sized(Vec2::new(half_w, 25.0), egui::Button::new("Cells"))
+                                    .clicked()
+                                {
+                                    show_worldspaces = false;
+                                }
+                                if ui
+                                    .add_sized(
+                                        Vec2::new(half_w, 25.0),
+                                        egui::Button::new("Worldspaces"),
+                                    )
+                                    .clicked()
+                                {
+                                    show_worldspaces = true;
+                                }
+                            });
                             ui.painter().line_segment(
-                                [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
+                                [
+                                    Pos2::new(ui.cursor().min.x, ui.cursor().min.y),
+                                    Pos2::new(ui.cursor().min.x + avail_w, ui.cursor().min.y),
+                                ],
                                 Stroke::new(1.0, style.div_col),
                             );
-                            for offset in [name_w, name_w + pos_w] {
+
+                            if show_worldspaces {
+                                let ws_name_w = avail_w * 0.60;
+                                let ws_int_w = avail_w - ws_name_w;
+
+                                // column headers
+                                let (hdr_rect, _) = ui.allocate_exact_size(
+                                    Vec2::new(avail_w, header_h),
+                                    Sense::hover(),
+                                );
+                                ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
+                                for (label, offset) in [
+                                    ("Name", 0.0_f32),
+                                    ("Interior", ws_name_w),
+                                ] {
+                                    ui.painter().text(
+                                        Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        label,
+                                        font_hdr.clone(),
+                                        style.text_col,
+                                    );
+                                }
+                                ui.painter().line_segment(
+                                    [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
+                                    Stroke::new(1.0, style.div_col),
+                                );
                                 ui.painter().line_segment(
                                     [
-                                        Pos2::new(hdr_rect.left() + offset, hdr_rect.top()),
-                                        Pos2::new(hdr_rect.left() + offset, hdr_rect.bottom()),
+                                        Pos2::new(hdr_rect.left() + ws_name_w, hdr_rect.top()),
+                                        Pos2::new(hdr_rect.left() + ws_name_w, hdr_rect.bottom()),
                                     ],
                                     Stroke::new(1.0, style.div_col),
                                 );
-                            }
 
-                            let table_h = ui.available_height();
-                            ScrollArea::vertical()
-                                .id_salt("cells_scroll")
-                                .auto_shrink([false; 2])
-                                .max_height(table_h)
-                                .show(ui, |ui| {
-                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                // get worldspace list
+                                let ws_names: Vec<String> = world
+                                    .get_resource::<AssetManager>()
+                                    .ok()
+                                    .and_then(|am| am.get_loader::<WorldspaceLoader>())
+                                    .map(|l| {
+                                        l.registry
+                                            .read()
+                                            .ok()
+                                            .map(|r| {
+                                                let mut names: Vec<String> = r.worldspaces.keys().cloned().collect();
+                                                names.sort();
+                                                names
+                                            })
+                                            .unwrap_or_default()
+                                    })
+                                    .unwrap_or_default();
 
-                                    if cell_entries.is_empty() {
-                                        let (row_rect, _) = ui.allocate_exact_size(
-                                            Vec2::new(avail_w, row_h),
-                                            Sense::hover(),
-                                        );
-                                        ui.painter().rect_filled(row_rect, 0.0, style.dark_bg);
-                                        ui.painter().text(
-                                            Pos2::new(row_rect.left() + 6.0, row_rect.center().y),
-                                            egui::Align2::LEFT_CENTER,
-                                            "No loaded cells",
-                                            font_row.clone(),
-                                            style.dim_col,
-                                        );
-                                        for offset in [name_w, name_w + pos_w] {
-                                            ui.painter().line_segment(
-                                                [
-                                                    Pos2::new(row_rect.left() + offset, row_rect.top()),
-                                                    Pos2::new(row_rect.left() + offset, row_rect.bottom()),
-                                                ],
-                                                Stroke::new(1.0, style.div_col),
+                                let table_h = ui.available_height();
+                                ScrollArea::vertical()
+                                    .id_salt("ws_scroll")
+                                    .auto_shrink([false; 2])
+                                    .max_height(table_h)
+                                    .show(ui, |ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                        for (idx, ws_name) in ws_names.iter().enumerate() {
+                                            let is_current = ws_name == &world.worldspace().name;
+                                            let (row_rect, row_resp) = ui.allocate_exact_size(
+                                                Vec2::new(avail_w, row_h),
+                                                Sense::click(),
                                             );
-                                        }
-                                    }
-
-                                    for (idx, (coord, name, count)) in
-                                        cell_entries.iter().enumerate()
-                                    {
-                                        let is_selected = selected_cell == Some(*coord);
-                                        let is_renaming = renaming_cell == Some(*coord);
-
-                                        let (row_rect, row_resp) = ui.allocate_exact_size(
-                                            Vec2::new(avail_w, row_h),
-                                            Sense::click(),
-                                        );
-
-                                        if row_resp.clicked() && !is_renaming {
-                                            selected_cell = Some(*coord);
-                                        }
-                                        if row_resp.double_clicked() {
-                                            renaming_cell = Some(*coord);
-                                            cell_rename_buf = name.clone();
-                                            cell_rename_focus = true;
-                                        }
-
-                                        let bg = if is_selected && !is_renaming {
-                                            style.sel_bg
-                                        } else if row_resp.hovered() || is_renaming {
-                                            style.hover_bg
-                                        } else if idx % 2 == 0 {
-                                            style.dark_bg
-                                        } else {
-                                            style.row_alt
-                                        };
-                                        ui.painter().rect_filled(row_rect, 0.0, bg);
-
-                                        let rl = row_rect.left();
-                                        let cy = row_rect.center().y;
-                                        if is_renaming {
-                                            let edit_rect = Rect::from_min_size(
-                                                Pos2::new(rl + 2.0, row_rect.top() + 1.0),
-                                                Vec2::new(name_w - 4.0, row_h - 2.0),
-                                            );
-                                            let te =
-                                                egui::TextEdit::singleline(&mut cell_rename_buf)
-                                                    .font(font_row.clone());
-                                            let te_resp = ui.put(edit_rect, te);
-                                            if cell_rename_focus {
-                                                te_resp.request_focus();
-                                                cell_rename_focus = false;
-                                            }
-                                            let escape =
-                                                ui.input(|i| i.key_pressed(egui::Key::Escape));
-                                            let enter =
-                                                ui.input(|i| i.key_pressed(egui::Key::Enter));
-                                            if (te_resp.lost_focus() && !escape) || enter {
-                                                pending_cell_rename = Some((
-                                                    *coord,
-                                                    cell_rename_buf.trim().to_string(),
-                                                ));
-                                                renaming_cell = None;
-                                            } else if escape {
-                                                renaming_cell = None;
-                                            }
-                                        } else {
-                                            let text_col = if is_selected {
-                                                style.text_col
+                                            let bg = if is_current {
+                                                style.sel_bg
+                                            } else if row_resp.hovered() {
+                                                style.hover_bg
+                                            } else if idx % 2 == 0 {
+                                                style.dark_bg
                                             } else {
-                                                style.dim_col
+                                                style.row_alt
                                             };
-                                            let display_name = if name.is_empty() {
-                                                "Wilderness".to_string()
-                                            } else {
-                                                name.clone()
-                                            };
+                                            ui.painter().rect_filled(row_rect, 0.0, bg);
+
+                                            let rl = row_rect.left();
+                                            let cy = row_rect.center().y;
                                             paint_clipped(
                                                 ui,
                                                 Pos2::new(rl + 6.0, cy),
-                                                name_w - 12.0,
-                                                &display_name,
+                                                ws_name_w - 12.0,
+                                                ws_name,
                                                 font_row.clone(),
-                                                text_col,
+                                                if is_current { style.text_col } else { style.dim_col },
                                             );
+
+                                            // check interior flag from registry
+                                            let is_interior: bool = world
+                                                .get_resource::<AssetManager>()
+                                                .ok()
+                                                .and_then(|am| am.get_loader::<WorldspaceLoader>())
+                                                .and_then(|l| {
+                                                    l.registry.read().ok()?.worldspaces.get(ws_name).cloned()
+                                                })
+                                                .and_then(|v| v.get("is_interior").and_then(|v| v.as_bool()))
+                                                .unwrap_or(false);
                                             paint_clipped(
                                                 ui,
-                                                Pos2::new(rl + name_w + 6.0, cy),
-                                                pos_w - 12.0,
-                                                &format!("({}, {})", coord.x, coord.z),
+                                                Pos2::new(rl + ws_name_w + 6.0, cy),
+                                                ws_int_w - 12.0,
+                                                if is_interior { "Yes" } else { "No" },
                                                 font_row.clone(),
                                                 style.dim_col,
                                             );
-                                            paint_clipped(
-                                                ui,
-                                                Pos2::new(rl + name_w + pos_w + 6.0, cy),
-                                                count_w - 12.0,
-                                                &count.to_string(),
-                                                font_row.clone(),
-                                                style.dim_col,
+
+                                            row_resp.context_menu(|ui| {
+                                                ui.set_min_width(120.0);
+                                                if ui.button("Load").clicked() {
+                                                    ow_scene_load_internal(world, ws_name);
+                                                    ui.close();
+                                                }
+                                                if ui.button("Delete").clicked() {
+                                                    ow_scene_delete_internal(world, ws_name);
+                                                    ui.close();
+                                                }
+                                                ui.separator();
+                                                if ui.button("New Worldspace...").clicked() {
+                                                    if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                                                        s.create_ws_open = true;
+                                                        s.create_ws_name.clear();
+                                                        s.create_ws_interior = false;
+                                                    }
+                                                    ui.close();
+                                                }
+                                            });
+
+                                            ui.painter().line_segment(
+                                                [row_rect.left_bottom(), row_rect.right_bottom()],
+                                                Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
+                                            );
+                                            ui.painter().line_segment(
+                                                [
+                                                    Pos2::new(rl + ws_name_w, row_rect.top()),
+                                                    Pos2::new(rl + ws_name_w, row_rect.bottom()),
+                                                ],
+                                                Stroke::new(1.0, style.div_col),
                                             );
                                         }
 
-                                        row_resp.context_menu(|ui| {
-                                            ui.set_min_width(120.0);
-                                            if ui.button("Go to cell").clicked() {
-                                                pending_goto_cell = Some(*coord);
-                                                ui.close();
+                                        // filler rows
+                                        let rows_drawn = ws_names.len();
+                                        let remaining = (ui.available_height() / row_h).ceil() as usize;
+                                        for i in 0..remaining {
+                                            let idx = rows_drawn + i;
+                                            let bg = if idx.is_multiple_of(2) {
+                                                style.dark_bg
+                                            } else {
+                                                style.row_alt
+                                            };
+                                            let (row_rect, row_resp) = ui.allocate_exact_size(
+                                                Vec2::new(avail_w, row_h),
+                                                Sense::click(),
+                                            );
+                                            ui.painter().rect_filled(row_rect, 0.0, bg);
+                                            row_resp.context_menu(|ui| {
+                                                ui.set_min_width(120.0);
+                                                if ui.button("New Worldspace...").clicked() {
+                                                    if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                                                        s.create_ws_open = true;
+                                                        s.create_ws_name.clear();
+                                                        s.create_ws_interior = false;
+                                                    }
+                                                    ui.close();
+                                                }
+                                            });
+                                            ui.painter().line_segment(
+                                                [row_rect.left_bottom(), row_rect.right_bottom()],
+                                                Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
+                                            );
+                                            ui.painter().line_segment(
+                                                [
+                                                    Pos2::new(row_rect.left() + ws_name_w, row_rect.top()),
+                                                    Pos2::new(row_rect.left() + ws_name_w, row_rect.bottom()),
+                                                ],
+                                                Stroke::new(1.0, style.div_col),
+                                            );
+                                        }
+                                    });
+                            } else {
+                                // column widths
+                                let name_w = avail_w * 0.40;
+                                let pos_w = avail_w * 0.30;
+                                let count_w = avail_w - name_w - pos_w;
+
+                                // column headers
+                                let (hdr_rect, _) = ui.allocate_exact_size(
+                                    Vec2::new(avail_w, header_h),
+                                    Sense::hover(),
+                                );
+                                ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
+                                for (label, offset) in [
+                                    ("Name", 0.0_f32),
+                                    ("Position", name_w),
+                                    ("Ref count", name_w + pos_w),
+                                ] {
+                                    ui.painter().text(
+                                        Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        label,
+                                        font_hdr.clone(),
+                                        style.text_col,
+                                    );
+                                }
+                                ui.painter().line_segment(
+                                    [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
+                                    Stroke::new(1.0, style.div_col),
+                                );
+                                for offset in [name_w, name_w + pos_w] {
+                                    ui.painter().line_segment(
+                                        [
+                                            Pos2::new(hdr_rect.left() + offset, hdr_rect.top()),
+                                            Pos2::new(hdr_rect.left() + offset, hdr_rect.bottom()),
+                                        ],
+                                        Stroke::new(1.0, style.div_col),
+                                    );
+                                }
+
+                                let table_h = ui.available_height();
+                                ScrollArea::vertical()
+                                    .id_salt("cells_scroll")
+                                    .auto_shrink([false; 2])
+                                    .max_height(table_h)
+                                    .show(ui, |ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+
+                                        if cell_entries.is_empty() {
+                                            let (row_rect, _) = ui.allocate_exact_size(
+                                                Vec2::new(avail_w, row_h),
+                                                Sense::hover(),
+                                            );
+                                            ui.painter().rect_filled(row_rect, 0.0, style.dark_bg);
+                                            ui.painter().text(
+                                                Pos2::new(row_rect.left() + 6.0, row_rect.center().y),
+                                                egui::Align2::LEFT_CENTER,
+                                                "No loaded cells",
+                                                font_row.clone(),
+                                                style.dim_col,
+                                            );
+                                            for offset in [name_w, name_w + pos_w] {
+                                                ui.painter().line_segment(
+                                                    [
+                                                        Pos2::new(row_rect.left() + offset, row_rect.top()),
+                                                        Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                    ],
+                                                    Stroke::new(1.0, style.div_col),
+                                                );
                                             }
-                                            if ui.button("Rename").clicked() {
+                                        }
+
+                                        for (idx, (coord, name, count)) in
+                                            cell_entries.iter().enumerate()
+                                        {
+                                            let is_selected = selected_cell == Some(*coord);
+                                            let is_renaming = renaming_cell == Some(*coord);
+
+                                            let (row_rect, row_resp) = ui.allocate_exact_size(
+                                                Vec2::new(avail_w, row_h),
+                                                Sense::click(),
+                                            );
+
+                                            if row_resp.clicked() && !is_renaming {
+                                                selected_cell = Some(*coord);
+                                            }
+                                            if row_resp.double_clicked() {
                                                 renaming_cell = Some(*coord);
                                                 cell_rename_buf = name.clone();
                                                 cell_rename_focus = true;
-                                                ui.close();
                                             }
-                                        });
 
-                                        ui.painter().line_segment(
-                                            [row_rect.left_bottom(), row_rect.right_bottom()],
-                                            Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
-                                        );
-                                        for offset in [name_w, name_w + pos_w] {
-                                            ui.painter().line_segment(
-                                                [
-                                                    Pos2::new(rl + offset, row_rect.top()),
-                                                    Pos2::new(rl + offset, row_rect.bottom()),
-                                                ],
-                                                Stroke::new(1.0, style.div_col),
-                                            );
-                                        }
-                                    }
+                                            let bg = if is_selected && !is_renaming {
+                                                style.sel_bg
+                                            } else if row_resp.hovered() || is_renaming {
+                                                style.hover_bg
+                                            } else if idx % 2 == 0 {
+                                                style.dark_bg
+                                            } else {
+                                                style.row_alt
+                                            };
+                                            ui.painter().rect_filled(row_rect, 0.0, bg);
 
-                                    // filler rows
-                                    let rows_drawn = cell_entries.len();
-                                    let remaining = (ui.available_height() / row_h).ceil() as usize;
-                                    for i in 0..remaining {
-                                        let idx = rows_drawn + i;
-                                        let bg = if idx.is_multiple_of(2) {
-                                            style.dark_bg
-                                        } else {
-                                            style.row_alt
-                                        };
-                                        let (row_rect, _) = ui.allocate_exact_size(
-                                            Vec2::new(avail_w, row_h),
-                                            Sense::hover(),
-                                        );
-                                        ui.painter().rect_filled(row_rect, 0.0, bg);
-                                        ui.painter().line_segment(
-                                            [row_rect.left_bottom(), row_rect.right_bottom()],
-                                            Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
-                                        );
-                                        for offset in [name_w, name_w + pos_w] {
+                                            let rl = row_rect.left();
+                                            let cy = row_rect.center().y;
+                                            if is_renaming {
+                                                let edit_rect = Rect::from_min_size(
+                                                    Pos2::new(rl + 2.0, row_rect.top() + 1.0),
+                                                    Vec2::new(name_w - 4.0, row_h - 2.0),
+                                                );
+                                                let te =
+                                                    egui::TextEdit::singleline(&mut cell_rename_buf)
+                                                        .font(font_row.clone());
+                                                let te_resp = ui.put(edit_rect, te);
+                                                if cell_rename_focus {
+                                                    te_resp.request_focus();
+                                                    cell_rename_focus = false;
+                                                }
+                                                let escape =
+                                                    ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                                let enter =
+                                                    ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                                if (te_resp.lost_focus() && !escape) || enter {
+                                                    pending_cell_rename = Some((
+                                                        *coord,
+                                                        cell_rename_buf.trim().to_string(),
+                                                    ));
+                                                    renaming_cell = None;
+                                                } else if escape {
+                                                    renaming_cell = None;
+                                                }
+                                            } else {
+                                                let text_col = if is_selected {
+                                                    style.text_col
+                                                } else {
+                                                    style.dim_col
+                                                };
+                                                let display_name = if name.is_empty() {
+                                                    "Wilderness".to_string()
+                                                } else {
+                                                    name.clone()
+                                                };
+                                                paint_clipped(
+                                                    ui,
+                                                    Pos2::new(rl + 6.0, cy),
+                                                    name_w - 12.0,
+                                                    &display_name,
+                                                    font_row.clone(),
+                                                    text_col,
+                                                );
+                                                paint_clipped(
+                                                    ui,
+                                                    Pos2::new(rl + name_w + 6.0, cy),
+                                                    pos_w - 12.0,
+                                                    &format!("({}, {})", coord.x, coord.z),
+                                                    font_row.clone(),
+                                                    style.dim_col,
+                                                );
+                                                paint_clipped(
+                                                    ui,
+                                                    Pos2::new(rl + name_w + pos_w + 6.0, cy),
+                                                    count_w - 12.0,
+                                                    &count.to_string(),
+                                                    font_row.clone(),
+                                                    style.dim_col,
+                                                );
+                                            }
+
+                                            row_resp.context_menu(|ui| {
+                                                ui.set_min_width(120.0);
+                                                if ui.button("Go to cell").clicked() {
+                                                    pending_goto_cell = Some(*coord);
+                                                    ui.close();
+                                                }
+                                                if ui.button("Rename").clicked() {
+                                                    renaming_cell = Some(*coord);
+                                                    cell_rename_buf = name.clone();
+                                                    cell_rename_focus = true;
+                                                    ui.close();
+                                                }
+                                            });
+
                                             ui.painter().line_segment(
-                                                [
-                                                    Pos2::new(row_rect.left() + offset, row_rect.top()),
-                                                    Pos2::new(row_rect.left() + offset, row_rect.bottom()),
-                                                ],
-                                                Stroke::new(1.0, style.div_col),
+                                                [row_rect.left_bottom(), row_rect.right_bottom()],
+                                                Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
                                             );
+                                            for offset in [name_w, name_w + pos_w] {
+                                                ui.painter().line_segment(
+                                                    [
+                                                        Pos2::new(rl + offset, row_rect.top()),
+                                                        Pos2::new(rl + offset, row_rect.bottom()),
+                                                    ],
+                                                    Stroke::new(1.0, style.div_col),
+                                                );
+                                            }
                                         }
-                                    }
-                                });
+
+                                        // filler rows
+                                        let rows_drawn = cell_entries.len();
+                                        let remaining = (ui.available_height() / row_h).ceil() as usize;
+                                        for i in 0..remaining {
+                                            let idx = rows_drawn + i;
+                                            let bg = if idx.is_multiple_of(2) {
+                                                style.dark_bg
+                                            } else {
+                                                style.row_alt
+                                            };
+                                            let (row_rect, _) = ui.allocate_exact_size(
+                                                Vec2::new(avail_w, row_h),
+                                                Sense::hover(),
+                                            );
+                                            ui.painter().rect_filled(row_rect, 0.0, bg);
+                                            ui.painter().line_segment(
+                                                [row_rect.left_bottom(), row_rect.right_bottom()],
+                                                Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
+                                            );
+                                            for offset in [name_w, name_w + pos_w] {
+                                                ui.painter().line_segment(
+                                                    [
+                                                        Pos2::new(row_rect.left() + offset, row_rect.top()),
+                                                        Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                    ],
+                                                    Stroke::new(1.0, style.div_col),
+                                                );
+                                            }
+                                        }
+                                    });
+                            }
                         });
 
                     let gap = total_w - frame.response.rect.size().x;
@@ -834,6 +1062,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.renaming_cell = renaming_cell;
         s.cell_rename_buf = cell_rename_buf;
         s.cell_rename_focus = cell_rename_focus;
+        s.show_worldspaces = show_worldspaces;
     }
 
     if let Some(response) = window {
@@ -901,7 +1130,99 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         goto_cell(world, coord);
     }
 
+    if world.get_resource::<CellSearchState>()?.create_ws_open {
+        let mut ws_name = world.get_resource::<CellSearchState>()?.create_ws_name.clone();
+        let mut is_interior = world.get_resource::<CellSearchState>()?.create_ws_interior;
+        let ctx_clone = ctx.clone();
+        let mut open = true;
+        Window::new("Create Worldspace")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(&ctx_clone, |ui| {
+                ui.label("Name:");
+                ui.text_edit_singleline(&mut ws_name);
+                ui.checkbox(&mut is_interior, "Interior");
+                ui.horizontal(|ui| {
+                    if ui.button("Create").clicked() && !ws_name.trim().is_empty() {
+                        let name = ws_name.trim().to_string();
+                        let scenes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
+                        let path = scenes_dir.join(format!("{}.yaml", name));
+                        let mut doc = serde_yaml::Mapping::new();
+                        doc.insert("name".into(), name.clone().into());
+                        doc.insert("namespace".into(), "game".into());
+                        doc.insert("class".into(), "worldspace".into());
+                        doc.insert("is_interior".into(), is_interior.into());
+                        doc.insert("cells".into(), serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+                        let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(doc)).unwrap();
+                        let _ = std::fs::write(&path, yaml);
+                        if let Ok(am) = world.get_resource_mut::<AssetManager>() {
+                            let _ = am.load_file(&path);
+                        }
+                        ow_scene_load_internal(world, &name);
+                        if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                            s.create_ws_open = false;
+                        }
+                        ui.close();
+                    }
+                    if ui.button("Cancel").clicked() {
+                        if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                            s.create_ws_open = false;
+                        }
+                        ui.close();
+                    }
+                });
+            });
+        if !open {
+            world.get_resource_mut::<CellSearchState>()?.create_ws_open = false;
+        } else {
+            world.get_resource_mut::<CellSearchState>()?.create_ws_name = ws_name;
+            world.get_resource_mut::<CellSearchState>()?.create_ws_interior = is_interior;
+        }
+    }
+
     Ok(())
+}
+
+fn ow_scene_load_internal(world: &mut World, name: &str) {
+    let scene_value: Option<serde_yaml::Value> = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
+        .and_then(|l| l.registry.read().ok()?.worldspaces.get(name).cloned());
+
+    if let Some(value) = scene_value {
+        EditorPreferences::save_last_scene(name);
+        let _ = load_worldspace(world, &value, &["EditorCamera"]);
+        if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+            s.selected_obj = None;
+        }
+    }
+}
+
+fn ow_scene_delete_internal(world: &mut World, name: &str) {
+    let registry_arc = world
+        .get_resource::<AssetManager>()
+        .ok()
+        .and_then(|am| am.get_loader::<WorldspaceLoader>())
+        .map(|l| Arc::clone(&l.registry));
+
+    if let Some(arc) = registry_arc {
+        if let Ok(mut reg) = arc.write() {
+            reg.worldspaces.remove(name);
+        }
+    }
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("res/worldspaces")
+        .join(format!("{}.yaml", name));
+    let _ = std::fs::remove_file(&path);
+
+    let prefs = EditorPreferences::load();
+    if prefs.last_scene == name {
+        EditorPreferences::save_last_scene("");
+    }
 }
 
 /// Moves the editor camera to the center of cell on the X & Z planes
