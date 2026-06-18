@@ -1,41 +1,33 @@
 keybinds:
-  TerrainMode:
-    key: KeyH
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Left:
-    key: KeyA
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Reload Shaders:
-    key: F5
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Save:
+  TerrainSmooth:
     key: KeyS
     action: Press
     modifiers:
       ctrl: false
-      shift: true
+      shift: false
       alt: false
     context: null
-  ShiftModifier:
-    key: ShiftLeft
+  Jump:
+    key: Space
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Right:
+    key: KeyD
     action: Hold
     modifiers:
       ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Undo:
+    key: KeyZ
+    action: Press
+    modifiers:
+      ctrl: true
       shift: false
       alt: false
     context: null
@@ -55,11 +47,75 @@ keybinds:
       shift: false
       alt: false
     context: null
+  TerrainMode:
+    key: KeyH
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Save:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: true
+      alt: false
+    context: null
+  ReloadShaders:
+    key: F1
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Downwards:
+    key: KeyQ
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  GizmoRotate:
+    key: KeyR
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  ShiftModifier:
+    key: ShiftLeft
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
   Redo:
     key: KeyY
     action: Press
     modifiers:
       ctrl: true
+      shift: false
+      alt: false
+    context: null
+  TerrainFlatten:
+    key: KeyF
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Toggle Profiler:
+    key: F3
+    action: Press
+    modifiers:
+      ctrl: false
       shift: false
       alt: false
     context: null
@@ -79,72 +135,16 @@ keybinds:
       shift: false
       alt: false
     context: null
-  Jump:
-    key: Space
+  Reload Shaders:
+    key: F5
     action: Press
     modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
-  TerrainSmooth:
-    key: KeyS
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Copy:
-    key: KeyC
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  GizmoTranslate:
-    key: KeyG
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: viewport
-  GizmoRotate:
-    key: KeyR
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: viewport
-  Forwards:
-    key: KeyW
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  ReloadShaders:
-    key: F1
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  GizmoScale:
-    key: KeyS
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: viewport
-  Downwards:
-    key: KeyQ
+  SnapModifier:
+    key: ShiftLeft
     action: Hold
     modifiers:
       ctrl: false
@@ -159,6 +159,30 @@ keybinds:
       shift: false
       alt: false
     context: null
+  Copy:
+    key: KeyC
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  GizmoScale:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  GizmoTranslate:
+    key: KeyG
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
   SaveAs:
     key: KeyS
     action: Press
@@ -167,41 +191,17 @@ keybinds:
       shift: true
       alt: false
     context: null
-  Toggle Profiler:
-    key: F3
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Undo:
-    key: KeyZ
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  Right:
-    key: KeyD
+  Left:
+    key: KeyA
     action: Hold
     modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
-  SnapModifier:
-    key: ShiftLeft
+  Forwards:
+    key: KeyW
     action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  TerrainFlatten:
-    key: KeyF
-    action: Press
     modifiers:
       ctrl: false
       shift: false
@@ -216,9 +216,9 @@ mousebinds:
       shift: false
       alt: false
     context: null
-  RightMousePress:
-    key: Right
-    action: Press
+  MiddleMouseClick:
+    key: Middle
+    action: Hold
     modifiers:
       ctrl: false
       shift: false
@@ -232,9 +232,9 @@ mousebinds:
       shift: false
       alt: false
     context: null
-  MiddleMouseClick:
-    key: Middle
-    action: Hold
+  RightMousePress:
+    key: Right
+    action: Press
     modifiers:
       ctrl: false
       shift: false
