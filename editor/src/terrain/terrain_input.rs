@@ -42,6 +42,10 @@ pub fn terrain_init_input(world: &mut World) -> Result<()> {
         "TerrainFlatten",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
     );
+    inputs.register_default_keybind(
+        "TerrainColorEdit",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press),
+    );
     Ok(())
 }
 
@@ -88,6 +92,7 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
     let shift_pressed = input.is_keybind_active("ShiftModifier");
     let toggle_smooth = input.is_keybind_active("TerrainSmooth");
     let toggle_flatten = input.is_keybind_active("TerrainFlatten");
+    let toggle_color_edit = input.is_keybind_active("TerrainColorEdit");
 
     if let Ok(state) = world.get_resource_mut::<TerrainToolState>()
         && !middle_mouse
@@ -106,6 +111,10 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
             } else {
                 state.tool = TerrainTool::Smooth;
             }
+        }
+
+        if toggle_color_edit {
+            state.is_vertex_painting = !state.is_vertex_painting;
         }
     }
 
@@ -669,6 +678,24 @@ fn apply_brush(
                 continue;
             }
             let weight = gaussian_weight(dist, radius) * strength;
+
+            // Vertex color painting takes priority; skip height/texture branches.
+            if state.is_vertex_painting {
+                let target = if right_click_pressed {
+                    state.vertex_color_b
+                } else {
+                    state.vertex_color_a
+                };
+                let t = (gaussian_weight(dist, radius) * state.vertex_strength).clamp(0.0, 1.0);
+                let idx = x + z * (r + 1);
+                if let Some(c) = chunk.vertex_colors.get_mut(idx) {
+                    for k in 0..3 {
+                        c[k] = c[k] * (1.0 - t) + target[k] * t;
+                    }
+                }
+                continue;
+            }
+
             let h = chunk.height_at_mut(x, z);
 
             if !right_click_pressed {

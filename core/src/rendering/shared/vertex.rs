@@ -11,9 +11,12 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub tex_coord: [f32; 2],
-    /// 6 blend weights for terrain splatting (used by terrain shader).
-    /// Unused by GLTF meshes (set to 0).
-    pub weights: [f32; 6],
+    /// 32 blend weights for terrain.
+    /// Passed as 8 × vec4 vertex attributes.
+    pub weights: [f32; 32],
+    /// Per-vertex RGB tint color. Multiplied over albedo in the terrain shader.
+    /// Defaults to white [1,1,1] (no tint).
+    pub color: [f32; 3],
 }
 
 impl VertexDefinition for Vertex {
@@ -44,37 +47,53 @@ impl VertexDefinition for Vertex {
                 .location(2)
                 .format(vk::Format::R32G32_SFLOAT)
                 .offset(24),
-            // Weights — locations 3 through 8
+            // Weights — 8 × vec4, locations 3–10, offsets 32–144
             vk::VertexInputAttributeDescription::default()
                 .binding(0)
                 .location(3)
-                .format(vk::Format::R32_SFLOAT)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
                 .offset(32),
             vk::VertexInputAttributeDescription::default()
                 .binding(0)
                 .location(4)
-                .format(vk::Format::R32_SFLOAT)
-                .offset(36),
-            vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(5)
-                .format(vk::Format::R32_SFLOAT)
-                .offset(40),
-            vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(6)
-                .format(vk::Format::R32_SFLOAT)
-                .offset(44),
-            vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(7)
-                .format(vk::Format::R32_SFLOAT)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
                 .offset(48),
             vk::VertexInputAttributeDescription::default()
                 .binding(0)
+                .location(5)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(64),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(6)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(80),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(7)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(96),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
                 .location(8)
-                .format(vk::Format::R32_SFLOAT)
-                .offset(52),
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(112),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(9)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(128),
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(10)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .offset(144),
+            // Color (RGB tint) — location 11, offset 160
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(11)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(160),
         ]
     }
 }

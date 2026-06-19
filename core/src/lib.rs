@@ -929,7 +929,10 @@ impl Core {
                                 cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
                             // Fill in per-chunk active layer IDs for the splatting shader.
                             if let Ok(chunk) = object.get_component::<TerrainChunk>() {
-                                terrain_push.active_layer_ids = chunk.active_layer_ids;
+                                terrain_push.active_layer_ids_packed = ModelPushConstants::pack_layer_ids(
+                                    &chunk.active_layer_ids,
+                                    chunk.active_layer_count,
+                                );
                                 terrain_push.layer_count = chunk.active_layer_count as u32;
                             }
                             if let Err(e) = renderer.render(

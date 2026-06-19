@@ -2,12 +2,15 @@
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in float inWeight0;
-layout(location = 4) in float inWeight1;
-layout(location = 5) in float inWeight2;
-layout(location = 6) in float inWeight3;
-layout(location = 7) in float inWeight4;
-layout(location = 8) in float inWeight5;
+layout(location = 3) in vec4 inWeights0;
+layout(location = 4) in vec4 inWeights1;
+layout(location = 5) in vec4 inWeights2;
+layout(location = 6) in vec4 inWeights3;
+layout(location = 7) in vec4 inWeights4;
+layout(location = 8) in vec4 inWeights5;
+layout(location = 9) in vec4 inWeights6;
+layout(location = 10) in vec4 inWeights7;
+layout(location = 11) in vec3 inColor;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -20,12 +23,15 @@ layout(push_constant) uniform PushConstants {
 layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragWorldPos;
-layout(location = 3) out float fragWeight0;
-layout(location = 4) out float fragWeight1;
-layout(location = 5) out float fragWeight2;
-layout(location = 6) out float fragWeight3;
-layout(location = 7) out float fragWeight4;
-layout(location = 8) out float fragWeight5;
+layout(location = 3) out vec4 fragWeights0;
+layout(location = 4) out vec4 fragWeights1;
+layout(location = 5) out vec4 fragWeights2;
+layout(location = 6) out vec4 fragWeights3;
+layout(location = 7) out vec4 fragWeights4;
+layout(location = 8) out vec4 fragWeights5;
+layout(location = 9) out vec4 fragWeights6;
+layout(location = 10) out vec4 fragWeights7;
+layout(location = 11) out vec3 fragColor;
 
 void main() {
     vec3 worldPos = inPosition;
@@ -34,10 +40,13 @@ void main() {
     fragNormal   = normalize(inNormal);
     fragTexCoord = inTexCoord;
     fragWorldPos = worldPos;
-    fragWeight0  = inWeight0;
-    fragWeight1  = inWeight1;
-    fragWeight2  = inWeight2;
-    fragWeight3  = inWeight3;
-    fragWeight4  = inWeight4;
-    fragWeight5  = inWeight5;
+    fragWeights0 = inWeights0;
+    fragWeights1 = inWeights1;
+    fragWeights2 = inWeights2;
+    fragWeights3 = inWeights3;
+    fragWeights4 = inWeights4;
+    fragWeights5 = inWeights5;
+    fragWeights6 = inWeights6;
+    fragWeights7 = inWeights7;
+    fragColor    = inColor;
 }

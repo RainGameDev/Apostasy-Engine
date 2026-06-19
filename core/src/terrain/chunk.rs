@@ -7,7 +7,7 @@ use crate::{
     rendering::shared::model::GpuMesh,
 };
 
-pub const MAX_ACTIVE_LAYERS: u8 = 6;
+pub const MAX_ACTIVE_LAYERS: u8 = 32;
 
 /// Heightmap data for a single terrain cell.
 #[derive(Debug, Inspect, Component, Clone)]
@@ -21,11 +21,14 @@ pub struct TerrainChunk {
     /// Active texture layer global IDs for this chunk (indices into TerrainSettings.texture_layers).
     /// 0 = unused slot. Sorted so slot 0 is always the base layer.
     pub active_layer_ids: [u32; MAX_ACTIVE_LAYERS as usize],
-    /// How many of the 6 slots are active.
+    /// How many of the 32 slots are active.
     pub active_layer_count: u8,
     /// Per-vertex weights for each active layer. Always sums to 1.0 per vertex.
-    /// Length is (resolution+1)^2, each entry is [f32; 6].
+    /// Length is (resolution+1)^2, each entry is [f32; 32].
     pub vertex_weights: Vec<[f32; MAX_ACTIVE_LAYERS as usize]>,
+    /// Per-vertex RGB tint color. Multiplied over the splat texture in the shader.
+    /// Default is white [1,1,1] (no tint). Length is (resolution+1)^2.
+    pub vertex_colors: Vec<[f32; 3]>,
 }
 
 impl Default for TerrainChunk {
@@ -38,14 +41,17 @@ impl TerrainChunk {
     pub fn new(cell_coord: CellCoord, resolution: u32) -> Self {
         let side = (resolution + 1) as usize;
         let count = side * side;
-        let weights = vec![[1.0f32, 0.0, 0.0, 0.0, 0.0, 0.0]; count];
+        let mut default_weights = [0.0f32; MAX_ACTIVE_LAYERS as usize];
+        default_weights[0] = 1.0;
+        let weights = vec![default_weights; count];
         Self {
             cell_coord,
             resolution,
             heights: vec![0.0; count],
-            active_layer_ids: [0, 0, 0, 0, 0, 0],
+            active_layer_ids: [0; MAX_ACTIVE_LAYERS as usize],
             active_layer_count: 1,
             vertex_weights: weights,
+            vertex_colors: vec![[1.0, 1.0, 1.0]; count],
         }
     }
 

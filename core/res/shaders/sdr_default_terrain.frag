@@ -3,12 +3,15 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
-layout(location = 3) in float fragWeight0;
-layout(location = 4) in float fragWeight1;
-layout(location = 5) in float fragWeight2;
-layout(location = 6) in float fragWeight3;
-layout(location = 7) in float fragWeight4;
-layout(location = 8) in float fragWeight5;
+layout(location = 3) in vec4 fragWeights0;
+layout(location = 4) in vec4 fragWeights1;
+layout(location = 5) in vec4 fragWeights2;
+layout(location = 6) in vec4 fragWeights3;
+layout(location = 7) in vec4 fragWeights4;
+layout(location = 8) in vec4 fragWeights5;
+layout(location = 9) in vec4 fragWeights6;
+layout(location = 10) in vec4 fragWeights7;
+layout(location = 11) in vec3 fragColor;
 
 layout(set = 1, binding = 0) uniform sampler2DArray terrainTex;
 
@@ -19,7 +22,9 @@ layout(push_constant) uniform PushConstants {
     vec3 scale;
     vec4 rotation;
     vec4 colorModifier;
-    int  activeLayerIds[6];
+    // 32 layer IDs packed as 4 u8s per uint (little-endian).
+    // Layer i: (activeLayerIdsPacked[i/4] >> ((i%4)*8)) & 0xFF
+    uint activeLayerIdsPacked[8];
     uint layerCount;
 } pc;
 
@@ -161,12 +166,19 @@ void main() {
     float tileScale = 16.0 / 128.0;
     vec2 uv = fragWorldPos.xz * tileScale;
 
-    // Accumulate weighted texture samples from all active layers.
-    float weights[6] = float[](
-        fragWeight0, fragWeight1, fragWeight2,
-        fragWeight3, fragWeight4, fragWeight5
+    // Unpack 32 blend weights from the 8 vec4 inputs.
+    float weights[32] = float[](
+        fragWeights0.x, fragWeights0.y, fragWeights0.z, fragWeights0.w,
+        fragWeights1.x, fragWeights1.y, fragWeights1.z, fragWeights1.w,
+        fragWeights2.x, fragWeights2.y, fragWeights2.z, fragWeights2.w,
+        fragWeights3.x, fragWeights3.y, fragWeights3.z, fragWeights3.w,
+        fragWeights4.x, fragWeights4.y, fragWeights4.z, fragWeights4.w,
+        fragWeights5.x, fragWeights5.y, fragWeights5.z, fragWeights5.w,
+        fragWeights6.x, fragWeights6.y, fragWeights6.z, fragWeights6.w,
+        fragWeights7.x, fragWeights7.y, fragWeights7.z, fragWeights7.w
     );
 
+    // Accumulate weighted texture samples from all active layers.
     vec3  albedo = vec3(0.0);
     float weightSum = 0.0;
 
@@ -175,15 +187,15 @@ void main() {
         float w = weights[i];
         if (w <= 0.001) continue;
 
-        int layerId = pc.activeLayerIds[i];
-        if (layerId < 0) continue;
+        // Unpack layer ID: 4 u8 IDs per uint, little-endian.
+        uint layerId = (pc.activeLayerIdsPacked[i / 4u] >> ((i % 4u) * 8u)) & 0xFFu;
 
-        albedo += texture(terrainTex, vec3(uv, layerId)).rgb * w;
+        albedo += texture(terrainTex, vec3(uv, float(layerId))).rgb * w;
         weightSum += w;
     }
 
     // Normalize to guard against floating-point drift.
     vec4 baseColor = vec4(albedo / max(weightSum, 0.0001), 1.0);
 
-    outColor = vec4(baseColor.rgb * max(lighting, vec3(0.05)), 1.0);
+    outColor = vec4(baseColor.rgb * fragColor * max(lighting, vec3(0.05)), 1.0);
 }

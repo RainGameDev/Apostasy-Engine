@@ -51,9 +51,51 @@ impl Default for TerrainToolState {
             paint_layer: 0,
             dragging: false,
             is_vertex_painting: false,
-            vertex_strength: 0.0,
-            vertex_color_a: [0.0, 0.0, 0.0],
-            vertex_color_b: [0.0, 0.0, 0.0],
+            vertex_strength: 1.0,
+            vertex_color_a: [1.0, 1.0, 1.0],
+            vertex_color_b: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
+/// Persisted vertex color brush settings, saved to / loaded from disk.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct TerrainVertexColorSettings {
+    #[serde(default)]
+    pub vertex_color_a: [f32; 3],
+    #[serde(default)]
+    pub vertex_color_b: [f32; 3],
+    #[serde(default)]
+    pub vertex_strength: f32,
+}
+
+impl Default for TerrainVertexColorSettings {
+    fn default() -> Self {
+        Self {
+            vertex_color_a: [1.0, 1.0, 1.0],
+            vertex_color_b: [1.0, 1.0, 1.0],
+            vertex_strength: 1.0,
+        }
+    }
+}
+
+impl TerrainVertexColorSettings {
+    pub const PATH: &'static str = "res/.editor/terrain_vertex_colors.yaml";
+
+    pub fn load() -> Self {
+        std::fs::read_to_string(Self::PATH)
+            .ok()
+            .and_then(|s| serde_yaml::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        let path = std::path::Path::new(Self::PATH);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(yaml) = serde_yaml::to_string(self) {
+            let _ = std::fs::write(path, yaml);
         }
     }
 }

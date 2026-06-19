@@ -740,7 +740,7 @@ impl RenderingAPI for VulkanRenderer {
         .push_constant_ranges(&[vk::PushConstantRange::default()
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
             .offset(0)
-            .size(220)])
+            .size(228)])
         .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
     None,
 )?;

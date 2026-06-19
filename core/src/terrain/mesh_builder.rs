@@ -76,12 +76,14 @@ pub fn build_terrain_mesh(
 
             // Copy per-vertex weights directly from chunk data.
             // The shader will blend using chunk.active_layer_ids via push constants.
-            let get_weights = |gi: usize| -> [f32; 6] {
-                chunk
-                    .vertex_weights
-                    .get(gi)
-                    .copied()
-                    .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            let get_weights = |gi: usize| -> [f32; 32] {
+                let mut default = [0.0f32; 32];
+                default[0] = 1.0;
+                chunk.vertex_weights.get(gi).copied().unwrap_or(default)
+            };
+
+            let get_color = |gi: usize| -> [f32; 3] {
+                chunk.vertex_colors.get(gi).copied().unwrap_or([1.0, 1.0, 1.0])
             };
 
             // Triangle 1: tl, bl, tr
@@ -91,6 +93,7 @@ pub fn build_terrain_mesh(
                     normal: grid_normals[gi],
                     tex_coord: [0.0; 2],
                     weights: get_weights(gi),
+                    color: get_color(gi),
                 });
             }
 
@@ -101,6 +104,7 @@ pub fn build_terrain_mesh(
                     normal: grid_normals[gi],
                     tex_coord: [0.0; 2],
                     weights: get_weights(gi),
+                    color: get_color(gi),
                 });
             }
         }

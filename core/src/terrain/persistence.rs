@@ -14,7 +14,9 @@ use crate::{
 };
 
 const FILE_MAGIC: u32 = 0x41525448; // "TRHA"
-const FILE_VERSION: u32 = 2;
+const FILE_VERSION: u32 = 4;
+/// Layer count used in the v2 binary format (before the 32-layer expansion).
+const V2_ACTIVE_LAYERS: usize = 6;
 
 #[derive(Serialize, Deserialize)]
 struct TextureLayerList {
@@ -203,9 +205,9 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Binary format (version 2):
+// Binary format (version 4):
 // u32  magic      = "TRHA"
-// u32  version    = 2
+// u32  version    = 4
 // u32  resolution
 // u32  layer_count
 // [for each layer:]
@@ -213,8 +215,9 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
 //   u8[path_len] path (UTF-8)
 // f32  heights[(resolution+1)^2]
 // u32  active_layer_count
-// u32  active_layer_ids[6]
-// f32  vertex_weights[(resolution+1)^2][6]
+// u32  active_layer_ids[32]
+// f32  vertex_weights[(resolution+1)^2][32]
+// f32  vertex_colors[(resolution+1)^2][3]   <-- added in v4
 
 fn write_terrain_cell(chunk: &TerrainChunk, texture_layers: &[String], path: &Path) -> Result<()> {
     let count = ((chunk.resolution + 1) as usize).pow(2);
@@ -224,7 +227,8 @@ fn write_terrain_cell(chunk: &TerrainChunk, texture_layers: &[String], path: &Pa
 
     let mut bytes: Vec<u8> = Vec::with_capacity(
         4 + 4 + 4 + 4 + layers_bytes + count * 4 // heights
-        + 4 + 6 * 4 + count * 6 * 4, // weights
+        + 4 + MAX_ACTIVE_LAYERS as usize * 4 + count * MAX_ACTIVE_LAYERS as usize * 4 // weights
+        + count * 3 * 4, // vertex colors
     );
 
     bytes.extend_from_slice(&FILE_MAGIC.to_le_bytes());
@@ -250,9 +254,16 @@ fn write_terrain_cell(chunk: &TerrainChunk, texture_layers: &[String], path: &Pa
         bytes.extend_from_slice(&id.to_le_bytes());
     }
 
-    // Vertex weights (flat array: count * 6 floats)
+    // Vertex weights
     for w in &chunk.vertex_weights {
         for &v in w {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+
+    // Vertex colors (RGB per vertex)
+    for c in &chunk.vertex_colors {
+        for &v in c {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
     }
@@ -273,17 +284,108 @@ fn read_terrain_cell(path: &Path, coord: CellCoord) -> Result<(TerrainChunk, Vec
         let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         match version {
             1 => read_v1_format(&bytes, coord),
-            _ => read_v2_format(&bytes, coord),
+            2 => read_v2_format(&bytes, coord),
+            3 => read_v3_format(&bytes, coord),
+            _ => read_v4_format(&bytes, coord),
         }
     } else {
         read_old_format(&bytes, coord)
     }
 }
 
-/// Version 2: vertex_weights with active_layer_ids
+/// Version 2: 6-layer format — read with the old V2_ACTIVE_LAYERS count and expand to 32.
 fn read_v2_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
     if bytes.len() < 12 {
         anyhow::bail!("v2 terrain file too small");
+    }
+    let resolution = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+    let side = (resolution + 1) as usize;
+    let count = side * side;
+
+    let mut offset = 12;
+
+    let layer_count = u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ]);
+    offset += 4;
+
+    let mut texture_layers = Vec::with_capacity(layer_count as usize);
+    for _ in 0..layer_count {
+        if offset + 2 > bytes.len() {
+            anyhow::bail!("truncated layer path length");
+        }
+        let path_len = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        offset += 2;
+        if offset + path_len > bytes.len() {
+            anyhow::bail!("truncated layer path data");
+        }
+        let path = String::from_utf8_lossy(&bytes[offset..offset + path_len]).into_owned();
+        offset += path_len;
+        texture_layers.push(path);
+    }
+
+    // Heights
+    let expected_heights = count * 4;
+    if offset + expected_heights > bytes.len() {
+        anyhow::bail!("truncated height data");
+    }
+    let mut heights = vec![0.0f32; count];
+    for i in 0..count {
+        let o = offset + i * 4;
+        heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+    offset += count * 4;
+
+    // Active layer count + IDs (v2 stores exactly V2_ACTIVE_LAYERS u32s)
+    if offset + 4 > bytes.len() {
+        anyhow::bail!("truncated layer count");
+    }
+    let active_layer_count = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+    offset += 4;
+
+    let mut active_layer_ids = [0u32; MAX_ACTIVE_LAYERS as usize];
+    for i in 0..V2_ACTIVE_LAYERS {
+        if offset + 4 > bytes.len() {
+            anyhow::bail!("truncated layer IDs");
+        }
+        active_layer_ids[i] = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+        offset += 4;
+    }
+
+    // Vertex weights (v2 stores V2_ACTIVE_LAYERS floats per vertex)
+    let expected_weights = count * V2_ACTIVE_LAYERS * 4;
+    if offset + expected_weights > bytes.len() {
+        anyhow::bail!("truncated weight data");
+    }
+    let mut vertex_weights = vec![[0.0f32; MAX_ACTIVE_LAYERS as usize]; count];
+    for i in 0..count {
+        for j in 0..V2_ACTIVE_LAYERS {
+            let o = offset + (i * V2_ACTIVE_LAYERS + j) * 4;
+            vertex_weights[i][j] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+        }
+    }
+
+    Ok((
+        TerrainChunk {
+            cell_coord: coord,
+            resolution,
+            heights,
+            active_layer_ids,
+            active_layer_count: active_layer_count as u8,
+            vertex_weights,
+            vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+        },
+        texture_layers,
+    ))
+}
+
+/// Version 3: 32-layer format.
+fn read_v3_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
+    if bytes.len() < 12 {
+        anyhow::bail!("v3 terrain file too small");
     }
     let resolution = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
     let side = (resolution + 1) as usize;
@@ -363,6 +465,109 @@ fn read_v2_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_ids,
             active_layer_count: active_layer_count as u8,
             vertex_weights,
+            vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+        },
+        texture_layers,
+    ))
+}
+
+/// Version 4: 32-layer format + vertex colors.
+fn read_v4_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
+    if bytes.len() < 12 {
+        anyhow::bail!("v4 terrain file too small");
+    }
+    let resolution = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+    let side = (resolution + 1) as usize;
+    let count = side * side;
+
+    let mut offset = 12;
+
+    let layer_count = u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ]);
+    offset += 4;
+
+    let mut texture_layers = Vec::with_capacity(layer_count as usize);
+    for _ in 0..layer_count {
+        if offset + 2 > bytes.len() {
+            anyhow::bail!("truncated layer path length");
+        }
+        let path_len = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        offset += 2;
+        if offset + path_len > bytes.len() {
+            anyhow::bail!("truncated layer path data");
+        }
+        let path = String::from_utf8_lossy(&bytes[offset..offset + path_len]).into_owned();
+        offset += path_len;
+        texture_layers.push(path);
+    }
+
+    // Heights
+    let expected_heights = count * 4;
+    if offset + expected_heights > bytes.len() {
+        anyhow::bail!("truncated height data");
+    }
+    let mut heights = vec![0.0f32; count];
+    for i in 0..count {
+        let o = offset + i * 4;
+        heights[i] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    }
+    offset += count * 4;
+
+    // Active layer count + IDs
+    if offset + 4 > bytes.len() {
+        anyhow::bail!("truncated layer count");
+    }
+    let active_layer_count = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+    offset += 4;
+
+    let mut active_layer_ids = [0u32; MAX_ACTIVE_LAYERS as usize];
+    for i in 0..MAX_ACTIVE_LAYERS as usize {
+        if offset + 4 > bytes.len() {
+            anyhow::bail!("truncated layer IDs");
+        }
+        active_layer_ids[i] = u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
+        offset += 4;
+    }
+
+    // Vertex weights
+    let expected_weights = count * MAX_ACTIVE_LAYERS as usize * 4;
+    if offset + expected_weights > bytes.len() {
+        anyhow::bail!("truncated weight data");
+    }
+    let mut vertex_weights = vec![[0.0f32; MAX_ACTIVE_LAYERS as usize]; count];
+    for i in 0..count {
+        for j in 0..MAX_ACTIVE_LAYERS as usize {
+            let o = offset + (i * MAX_ACTIVE_LAYERS as usize + j) * 4;
+            vertex_weights[i][j] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+        }
+    }
+    offset += expected_weights;
+
+    // Vertex colors (RGB per vertex)
+    let expected_colors = count * 3 * 4;
+    let mut vertex_colors = vec![[1.0f32; 3]; count];
+    if offset + expected_colors <= bytes.len() {
+        for i in 0..count {
+            for j in 0..3 {
+                let o = offset + (i * 3 + j) * 4;
+                vertex_colors[i][j] = f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+            }
+        }
+    }
+
+    Ok((
+        TerrainChunk {
+            cell_coord: coord,
+            resolution,
+            heights,
+            active_layer_ids,
+            active_layer_count: active_layer_count as u8,
+            vertex_weights,
+            vertex_colors,
         },
         texture_layers,
     ))
@@ -452,6 +657,7 @@ fn read_v1_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_ids,
             active_layer_count: active_count as u8,
             vertex_weights,
+            vertex_colors: vec![[1.0, 1.0, 1.0]; count],
         },
         texture_layers,
     ))
@@ -510,6 +716,7 @@ fn read_old_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<
             active_layer_ids,
             active_layer_count: 1,
             vertex_weights,
+            vertex_colors: vec![[1.0, 1.0, 1.0]; count],
         },
         Vec::new(),
     ))

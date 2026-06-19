@@ -15,7 +15,7 @@ use apostasy_core::{
 use apostasy_macros::Resource;
 
 use crate::{
-    terrain::{TerrainTool, TerrainToolState},
+    terrain::{TerrainTool, TerrainToolState, TerrainVertexColorSettings},
     ui::EditorStyle,
 };
 
@@ -77,7 +77,12 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         .unwrap_or_default();
 
     if !world.has_resource::<TerrainToolState>() {
-        world.insert_resource(TerrainToolState::default());
+        let mut state = TerrainToolState::default();
+        let saved = TerrainVertexColorSettings::load();
+        state.vertex_color_a = saved.vertex_color_a;
+        state.vertex_color_b = saved.vertex_color_b;
+        state.vertex_strength = saved.vertex_strength;
+        world.insert_resource(state);
     }
     if !world.has_resource::<EditingTexturePath>() {
         world.insert_resource(EditingTexturePath(None));
@@ -481,14 +486,14 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
             let button_size = egui::vec2(width * 1.5, 30.0);
 
             ui.horizontal(|ui| {
-                ui.horizontal(|ui| {
-                    let id = ui.id().with("texture_buttons");
-                    let last_width: f32 = ui.memory(|mem| mem.data.get_temp(id)).unwrap_or(0.0);
-                    let available = ui.available_width();
-                    if last_width < available {
-                        ui.add_space((available - last_width) / 2.0);
-                    }
+                let id = ui.id().with("texture_buttons");
+                let last_width: f32 = ui.memory(|mem| mem.data.get_temp(id)).unwrap_or(0.0);
+                let available = ui.available_width();
+                if last_width < available {
+                    ui.add_space((available - last_width) / 2.0);
+                }
 
+                let inner = ui.scope(|ui| {
                     let add_resp = ui.scope(|ui| {
                         ui.spacing_mut().interact_size = button_size;
                         ui.button("Add Texture")
@@ -499,88 +504,86 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
                         ui.spacing_mut().interact_size = button_size;
                         if ui.button("Show Preview").clicked() {}
                     });
-
-                    if add_resp.clicked() {
-                        picker_state.open = !picker_state.open;
-                        if picker_state.open {
-                            picker_state.search.clear();
-                        }
-                    }
-
-                    if picker_state.open {
-                        let anchor = add_resp.rect.left_bottom();
-
-                        let area_resp = egui::Area::new(ui.id().with("texture_picker"))
-                            .order(egui::Order::Foreground)
-                            .fixed_pos(anchor)
-                            .show(ui.ctx(), |ui| {
-                                egui::Frame::popup(&ui.style())
-                                    .fill(style.dark_bg)
-                                    .show(ui, |ui| {
-                                        ui.set_width(260.0);
-
-                                        let search_resp =
-                                            ui.text_edit_singleline(&mut picker_state.search);
-                                        search_resp.request_focus();
-                                        ui.add_space(4.0);
-
-                                        let query = picker_state.search.to_lowercase();
-
-                                        egui::ScrollArea::vertical()
-                                            .max_height(240.0)
-                                            .show(ui, |ui| {
-                                                let mut any_shown = false;
-
-                                                for tex in &available_textures {
-                                                    let file_name = Path::new(tex)
-                                                        .file_name()
-                                                        .and_then(|s| s.to_str())
-                                                        .unwrap_or(tex);
-
-                                                    if !query.is_empty()
-                                                        && !file_name
-                                                            .to_lowercase()
-                                                            .contains(&query)
-                                                    {
-                                                        continue;
-                                                    }
-
-                                                    let resp =
-                                                        ui.selectable_label(false, file_name);
-                                                    if resp.clicked() {
-                                                        texture_to_add =
-                                                            Some((*tex).clone());
-                                                        picker_state.open = false;
-                                                    }
-                                                    any_shown = true;
-                                                }
-
-                                                if !any_shown {
-                                                    ui.label(
-                                                        egui::RichText::new(
-                                                            "No textures available",
-                                                        )
-                                                        .italics()
-                                                        .weak(),
-                                                    );
-                                                }
-                                            });
-                                    });
-                            });
-
-                        if ui.input(|i| i.key_pressed(egui::Key::Escape))
-                            || (!add_resp.clicked()
-                                && picker_state.open
-                                && ui.input(|i| i.pointer.any_click())
-                                && !area_resp.response.hovered())
-                        {
-                            picker_state.open = false;
-                        }
-                    }
-                    ui.memory_mut(|mem| mem.data.insert_temp(id, add_resp.rect.width()));
+                    add_resp
                 });
 
-                // ui.horizontal(|ui| {});
+                let add_resp = inner.inner;
+                ui.memory_mut(|mem| mem.data.insert_temp(id, inner.response.rect.width()));
+
+                if add_resp.clicked() {
+                    picker_state.open = !picker_state.open;
+                    if picker_state.open {
+                        picker_state.search.clear();
+                    }
+                }
+
+                if picker_state.open {
+                    let anchor = add_resp.rect.left_bottom();
+
+                    let area_resp = egui::Area::new(ui.id().with("texture_picker"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(anchor)
+                        .show(ui.ctx(), |ui| {
+                            egui::Frame::popup(&ui.style())
+                                .fill(style.dark_bg)
+                                .show(ui, |ui| {
+                                    ui.set_width(260.0);
+
+                                    let search_resp =
+                                        ui.text_edit_singleline(&mut picker_state.search);
+                                    search_resp.request_focus();
+                                    ui.add_space(4.0);
+
+                                    let query = picker_state.search.to_lowercase();
+
+                                    egui::ScrollArea::vertical()
+                                        .max_height(240.0)
+                                        .show(ui, |ui| {
+                                            let mut any_shown = false;
+
+                                            for tex in &available_textures {
+                                                let file_name = Path::new(tex)
+                                                    .file_name()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or(tex);
+
+                                                if !query.is_empty()
+                                                    && !file_name
+                                                        .to_lowercase()
+                                                        .contains(&query)
+                                                {
+                                                    continue;
+                                                }
+
+                                                let resp =
+                                                    ui.selectable_label(false, file_name);
+                                                if resp.clicked() {
+                                                    texture_to_add = Some((*tex).clone());
+                                                    picker_state.open = false;
+                                                }
+                                                any_shown = true;
+                                            }
+
+                                            if !any_shown {
+                                                ui.label(
+                                                    egui::RichText::new("No textures available")
+                                                        .italics()
+                                                        .weak(),
+                                                );
+                                            }
+                                        });
+                                });
+                        });
+
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        || (!add_resp.clicked()
+                            && picker_state.open
+                            && ui.input(|i| i.pointer.any_click())
+                            && !area_resp.response.hovered())
+                    {
+                        picker_state.open = false;
+                    }
+                }
             });
 
             ui.separator();
@@ -809,7 +812,18 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
     }
 
     if let Ok(s) = world.get_resource_mut::<TerrainToolState>() {
+        let colors_changed = s.vertex_color_a != state.vertex_color_a
+            || s.vertex_color_b != state.vertex_color_b
+            || s.vertex_strength != state.vertex_strength;
         *s = state;
+        if colors_changed {
+            TerrainVertexColorSettings {
+                vertex_color_a: s.vertex_color_a,
+                vertex_color_b: s.vertex_color_b,
+                vertex_strength: s.vertex_strength,
+            }
+            .save();
+        }
     }
 
     if textures_changed {

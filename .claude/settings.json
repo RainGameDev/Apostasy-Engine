@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo run --manifest-path editor/Cargo.toml:*)",
+      "Bash(cargo run --manifest-path game/Cargo.toml:*)",
+      "Bash(cargo run --manifest-path voxel_game/Cargo.toml:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo nextest:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo tree:*)"
+    ]
+  }
+}
