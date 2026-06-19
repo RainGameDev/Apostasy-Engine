@@ -98,7 +98,7 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
         // Still try to load standalone texture list even without terrain dir.
         let saved = load_terrain_settings(dir);
         if !saved.is_empty()
-            && let Ok(mut settings) = world.get_resource_mut::<TerrainSettings>()
+            && let Ok(settings) = world.get_resource_mut::<TerrainSettings>()
         {
             settings.texture_layers = saved;
             world.insert_resource(TerrainAtlasNeedsRebuild);

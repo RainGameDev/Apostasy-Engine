@@ -42,7 +42,7 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     if !world.has_resource::<TerrainToolState>() {
         world.insert_resource(TerrainToolState::default());
     }
-    let mut state = world.get_resource::<TerrainToolState>()?.clone();
+    let state = world.get_resource::<TerrainToolState>()?.clone();
 
     let is_object_focused = world.has_resource::<IsObjectFocused>();
 

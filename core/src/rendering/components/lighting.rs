@@ -4,15 +4,14 @@ use anyhow::Result;
 use apostasy_macros::{Component, update};
 use cgmath::Vector3;
 use egui::ComboBox;
-use rand::{RngExt, random_range, rng};
+use rand::{RngExt, rng};
 use serde_yaml::Value;
 
 use crate::{
-    log,
     objects::{
         component::Inspect,
         systems::DeltaTime,
-        world::{self, World},
+        world::World,
     },
     ui::LABEL_WIDTH,
 };

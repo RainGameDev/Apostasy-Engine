@@ -11,7 +11,7 @@ use apostasy_core::objects::cell_streaming::CellMigrations;
 use apostasy_core::objects::components::transform::Transform;
 use apostasy_core::objects::resources::input_manager::InputManager;
 use apostasy_core::objects::world::World;
-use apostasy_core::objects::worldspace_serializer::{load_worldspace, save_worldspace};
+use apostasy_core::objects::worldspace_serializer::load_worldspace;
 use apostasy_core::objects::{Object, fmt_key};
 use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::terrain::chunk::TerrainChunk;
@@ -411,7 +411,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 }
                                                 ui.separator();
                                                 if ui.button("New Worldspace...").clicked() {
-                                                    if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                                                    if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                                                         s.create_ws_open = true;
                                                         s.create_ws_name.clear();
                                                         s.create_ws_interior = false;
@@ -451,7 +451,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             row_resp.context_menu(|ui| {
                                                 ui.set_min_width(120.0);
                                                 if ui.button("New Worldspace...").clicked() {
-                                                    if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                                                    if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                                                         s.create_ws_open = true;
                                                         s.create_ws_name.clear();
                                                         s.create_ws_interior = false;
@@ -1161,13 +1161,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let _ = am.load_file(&path);
                         }
                         ow_scene_load_internal(world, &name);
-                        if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                        if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                             s.create_ws_open = false;
                         }
                         ui.close();
                     }
                     if ui.button("Cancel").clicked() {
-                        if let Ok(mut s) = world.get_resource_mut::<CellSearchState>() {
+                        if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
                             s.create_ws_open = false;
                         }
                         ui.close();

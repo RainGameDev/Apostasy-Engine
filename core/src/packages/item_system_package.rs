@@ -34,7 +34,9 @@ pub(crate) fn add_item_system_package(world: &mut World) {
                 )))
                 .unwrap();
 
-            asset_manager.load_directory(Path::new("res/")).unwrap();
+            if Path::new("res/").is_dir() {
+                asset_manager.load_directory(Path::new("res/")).unwrap();
+            }
         }
     }
 }

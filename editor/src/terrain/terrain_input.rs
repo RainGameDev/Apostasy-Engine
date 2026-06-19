@@ -1,5 +1,3 @@
-use std::os::linux::raw::stat;
-
 use anyhow::Result;
 use apostasy_core::{
     cgmath::{SquareMatrix, Vector3, Vector4},

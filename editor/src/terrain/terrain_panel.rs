@@ -5,7 +5,7 @@ use anyhow::Result;
 use apostasy_core::{
     assets::texture::list_available_textures,
     egui::{
-        self, Color32, DragValue, Margin, Pos2, RichText, ScrollArea, Slider, Vec2, Window, vec2,
+        self, Color32, DragValue, Margin, Pos2, RichText, ScrollArea, Slider, Vec2, Window,
     },
     objects::world::World,
     terrain::{TerrainAtlasNeedsRebuild, TerrainSettings, load_terrain_texture},
@@ -22,6 +22,7 @@ use crate::{
 /// Cache of egui texture handles for terrain layer thumbnails.
 #[derive(Clone, Resource, Default)]
 struct ThumbnailCache {
+    #[allow(dead_code)]
     handles: HashMap<String, egui::TextureHandle>,
 }
 
@@ -786,7 +787,7 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
 
     // Apply texture picker addition
     if let Some(path) = texture_to_add {
-        if let Ok(mut settings) = world.get_resource_mut::<TerrainSettings>() {
+        if let Ok(settings) = world.get_resource_mut::<TerrainSettings>() {
             if !settings.texture_layers.contains(&path) {
                 settings.texture_layers.push(path);
             }
@@ -794,7 +795,7 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
         textures_changed = true;
     }
 
-    if let Ok(mut ps) = world.get_resource_mut::<TexturePickerState>() {
+    if let Ok(ps) = world.get_resource_mut::<TexturePickerState>() {
         *ps = picker_state;
     }
 
@@ -837,6 +838,7 @@ pub fn terrain_panel(world: &mut World) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn load_thumbnail(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
     let img = load_terrain_texture(path);
     let rgba = img.to_rgba8();

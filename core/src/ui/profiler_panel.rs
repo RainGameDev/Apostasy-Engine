@@ -359,7 +359,7 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
     }
 
     {
-        let mut state = world.get_resource_mut::<ProfilerPanelState>()?;
+        let state = world.get_resource_mut::<ProfilerPanelState>()?;
         state.skip_counter += 1;
     }
 

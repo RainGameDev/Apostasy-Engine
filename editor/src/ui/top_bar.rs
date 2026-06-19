@@ -1,3 +1,7 @@
+use std::path::Path;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
@@ -17,9 +21,9 @@ use crate::ui::assets_panel::ObjectWindowState;
 use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::{EditorPreferences, PreferencesState};
-use apostasy_core::ui::ProfilerPanelState;
 use crate::ui::shared::{EditorLayouts, WindowLayout, save_layouts};
 use crate::ui::viewport_panel::ViewportInfo;
+use apostasy_core::ui::ProfilerPanelState;
 
 #[derive(Resource, Clone, Default)]
 pub struct SaveAsDialog {
@@ -31,6 +35,32 @@ pub struct SaveAsDialog {
 pub struct SaveLayoutDialog {
     pub open: bool,
     pub name_buf: String,
+}
+
+#[derive(Resource, Clone, Default)]
+pub struct GameProcess(Arc<Mutex<Option<std::process::Child>>>);
+
+impl GameProcess {
+    fn is_running(&self) -> bool {
+        let mut guard = self.0.lock().unwrap();
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return true,
+                _ => *guard = None,
+            }
+        }
+        false
+    }
+
+    fn start(&self, child: std::process::Child) {
+        *self.0.lock().unwrap() = Some(child);
+    }
+
+    fn stop(&self) {
+        if let Some(mut child) = self.0.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+    }
 }
 
 fn terrain_dir() -> std::path::PathBuf {
@@ -113,6 +143,14 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let mut load_scene_name: Option<String> = None;
     let mut load_layout_name: Option<String> = None;
     let mut open_save_layout = false;
+    let mut play_pressed = false;
+    let mut stop_pressed = false;
+
+    if !world.has_resource::<GameProcess>() {
+        world.insert_resource(GameProcess::default());
+    }
+    let game_process = world.get_resource::<GameProcess>().unwrap().clone();
+    let game_running = game_process.is_running();
 
     if save_as_pressed {
         open_save_as = true;
@@ -156,6 +194,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                             ui.separator();
                             ui.add_space(offset);
                             ui.horizontal(|ui| {
+                                ui.set_min_width(screen_width - 16.0);
                                 ui.menu_button("Files", |ui| {
                                     ui.set_min_width(160.0);
 
@@ -232,10 +271,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                         toggle_asset_editor = true;
                                         ui.close();
                                     }
-                                    if ui
-                                        .selectable_label(profiler_open, "Profiler")
-                                        .clicked()
-                                    {
+                                    if ui.selectable_label(profiler_open, "Profiler").clicked() {
                                         toggle_profiler = true;
                                         ui.close();
                                     }
@@ -271,6 +307,25 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                         }
                                     });
                                 });
+                                if game_running {
+                                    if ui
+                                        .button(
+                                            egui::RichText::new("  ■  Stop  ")
+                                                .color(egui::Color32::from_rgb(220, 80, 80)),
+                                        )
+                                        .clicked()
+                                    {
+                                        stop_pressed = true;
+                                    }
+                                } else if ui
+                                    .button(
+                                        egui::RichText::new("  ▶  Play  ")
+                                            .color(egui::Color32::from_rgb(120, 220, 120)),
+                                    )
+                                    .clicked()
+                                {
+                                    play_pressed = true;
+                                }
                             });
                             ui.separator();
                         });
@@ -474,7 +529,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         if let Ok(s) = world.get_resource_mut::<ProfilerPanelState>() {
             s.open = !s.open;
         } else {
-            world.insert_resource(ProfilerPanelState { open: true, skip_counter: 0 });
+            world.insert_resource(ProfilerPanelState {
+                open: true,
+                skip_counter: 0,
+            });
         }
     }
 
@@ -545,12 +603,12 @@ pub fn top_bar(world: &mut World) -> Result<()> {
 
     if let Some(name) = confirm_save_layout {
         let layout = world.get_resource::<WindowLayout>().ok().cloned();
-        if let Ok(mut layouts) = world.get_resource_mut::<EditorLayouts>()
+        if let Ok(layouts) = world.get_resource_mut::<EditorLayouts>()
             && let Some(layout) = layout
         {
             layouts.layouts.insert(name.clone(), layout);
             layouts.current = name;
-            save_layouts(&layouts);
+            save_layouts(layouts);
         }
         world.insert_resource(SaveLayoutDialog::default());
     }
@@ -559,34 +617,60 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         world.insert_resource(SaveLayoutDialog::default());
     }
 
+    if stop_pressed {
+        game_process.stop();
+    }
+
+    if play_pressed {
+        let name = if current_scene.is_empty() {
+            "default".to_string()
+        } else {
+            current_scene.clone()
+        };
+        do_save(world, &name);
+
+        let editor_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = editor_dir.parent().unwrap_or(editor_dir);
+        let game_manifest = workspace.join("game/Cargo.toml");
+        let game_dir = game_manifest.parent().unwrap_or(workspace);
+
+        if let Ok(child) = Command::new("cargo")
+            .args(["run", "--manifest-path", &game_manifest.to_string_lossy()])
+            .current_dir(game_dir)
+            .spawn()
+        {
+            game_process.start(child);
+        }
+    }
+
     if let Some(ref layout_name) = load_layout_name {
         let new_layout = world
             .get_resource::<EditorLayouts>()
             .ok()
             .and_then(|l| l.layouts.get(layout_name).cloned());
-        if let Ok(mut layouts) = world.get_resource_mut::<EditorLayouts>() {
+        if let Ok(layouts) = world.get_resource_mut::<EditorLayouts>() {
             layouts.current = layout_name.clone();
         }
         if let Some(layout) = new_layout {
-            if let Ok(mut viewport) = world.get_resource_mut::<ViewportInfo>() {
+            if let Ok(viewport) = world.get_resource_mut::<ViewportInfo>() {
                 viewport.open = layout.viewport_open;
             }
-            if let Ok(mut obj) = world.get_resource_mut::<ObjectWindowState>() {
+            if let Ok(obj) = world.get_resource_mut::<ObjectWindowState>() {
                 obj.open = layout.object_window_open;
             }
-            if let Ok(mut cell) = world.get_resource_mut::<CellSearchState>() {
+            if let Ok(cell) = world.get_resource_mut::<CellSearchState>() {
                 cell.open = layout.cell_open;
             }
-            if let Ok(mut insp) = world.get_resource_mut::<InspectorPanelState>() {
+            if let Ok(insp) = world.get_resource_mut::<InspectorPanelState>() {
                 insp.visible = layout.inspector_visible;
             }
-            if let Ok(mut ae) = world.get_resource_mut::<AssetEditorState>() {
+            if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
                 ae.open = layout.asset_editor_open;
             }
             world.insert_resource(layout);
         }
         if let Ok(layouts) = world.get_resource::<EditorLayouts>() {
-            save_layouts(&layouts);
+            save_layouts(layouts);
         }
     }
 

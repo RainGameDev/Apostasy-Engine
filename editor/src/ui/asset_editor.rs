@@ -324,7 +324,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                 })
                 .and_then(|id| find_asset_file(&id))
                 .map(|(_, yaml)| yaml);
-            if let Ok(mut s) = world.get_resource_mut::<AssetEditorState>() {
+            if let Ok(s) = world.get_resource_mut::<AssetEditorState>() {
                 s.precomputed_example = example.clone();
                 s.cached_class_idx = current_new_class_idx;
             }

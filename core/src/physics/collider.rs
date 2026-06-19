@@ -1239,6 +1239,7 @@ fn closest_points_segment_triangle(
     best
 }
 
+#[allow(dead_code)]
 fn closest_point_on_segment(a: Vector3<f32>, b: Vector3<f32>, p: Vector3<f32>) -> Vector3<f32> {
     let ab = b - a;
     let t = (p - a).dot(ab) / ab.magnitude2().max(1e-10);

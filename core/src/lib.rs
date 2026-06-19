@@ -86,6 +86,7 @@ pub mod objects;
 pub mod packages;
 pub mod physics;
 pub mod rendering;
+pub mod scripting;
 pub mod states;
 pub mod terrain;
 pub mod ui;
@@ -262,6 +263,17 @@ impl Core {
                         active_with_ids.first().map(|(id, _)| *id)
                     };
                     let Some(camera_id) = camera_id else {
+                        // No camera yet. Still run a minimal frame so the window is presented
+                        // (required on Wayland — a window that never calls present stays invisible).
+                        world.prerender();
+                        if renderer.begin_frame().is_ok() {
+                            renderer.begin_ui();
+                            world.update();
+                            world.fixed_update();
+                            let _ = renderer.end_ui();
+                            let _ = renderer.end_frame();
+                            world.late_update();
+                        }
                         return;
                     };
                     let Some(camera) = world.get_object(camera_id) else {
