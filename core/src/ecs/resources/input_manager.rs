@@ -12,7 +12,7 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-use crate::{log, log_warn, objects::world::World};
+use crate::{log, log_warn, ecs::world::World};
 
 /// Enum that describes how an input is activated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    objects::{
+    ecs::{
         Object,
         cell::{CellCoord, ObjectId},
         cell_streaming::CellMigrations,

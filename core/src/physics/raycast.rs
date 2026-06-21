@@ -1,6 +1,6 @@
-use crate::objects::cell::ObjectId;
-use crate::objects::components::transform::Transform;
-use crate::objects::world::World;
+use crate::ecs::cell::ObjectId;
+use crate::ecs::components::transform::Transform;
+use crate::ecs::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::camera::Camera;
 use crate::rendering::shared::model::Bvh;

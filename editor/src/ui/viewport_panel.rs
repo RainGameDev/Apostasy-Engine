@@ -2,7 +2,7 @@ use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
     egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
-    objects::{
+    ecs::{
         cell::ObjectId, components::transform::Transform, resources::input_manager::InputManager,
         world::World,
     },
@@ -46,7 +46,7 @@ impl Default for ViewportInfo {
 
 use super::EditorStyle;
 use crate::{
-    objects::editor_camera::EditorCameraSettings,
+    ecs::editor_camera::EditorCameraSettings,
     systems::object_focus::IsObjectFocused,
     terrain::TerrainToolState,
     ui::{

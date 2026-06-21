@@ -3,7 +3,7 @@ use apostasy_macros::{Component, update};
 use cgmath::{Deg, Euler, InnerSpace, Matrix3, Quaternion, Rotation, Rotation3, Vector3};
 
 use crate::{
-    objects::{cell::ObjectId, component::Inspect, world::World},
+    ecs::{cell::ObjectId, component::Inspect, world::World},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -221,100 +221,82 @@ impl Inspect for Transform {
 
 #[update(mode = "all", priority = 1)]
 pub fn transform_update(world: &mut World) -> Result<()> {
-    for cell in world.worldspace.cells.values_mut() {
-        let coord = cell.coord;
+    // Phase 1: update local->global for all entities with no parent (or parent will be handled)
+    let all_ids = world.get_all_ids();
+    for id in &all_ids {
+        let id = *id;
+        let Some(transform) = world.get_component_mut::<Transform>(id) else {
+            continue;
+        };
 
-        for (_, object) in cell.objects.iter_mut() {
-            let Some(transform) = object
-                .components
-                .iter_mut()
-                .find_map(|c| c.as_any_mut().downcast_mut::<Transform>())
-            else {
-                continue;
-            };
+        transform.local_rotation = Quaternion::from(Euler {
+            x: Deg(0.0),
+            y: Deg(transform.local_euler_angles.y),
+            z: Deg(0.0),
+        }) * Quaternion::from(Euler {
+            x: Deg(transform.local_euler_angles.x),
+            y: Deg(0.0),
+            z: Deg(0.0),
+        }) * Quaternion::from(Euler {
+            x: Deg(0.0),
+            y: Deg(0.0),
+            z: Deg(transform.local_euler_angles.z),
+        });
+        transform.global_rotation = transform.local_rotation;
+        transform.global_position = transform.local_position;
+        transform.global_scale = transform.local_scale;
+        transform.global_euler_angles = transform.local_euler_angles;
+    }
 
-            transform.local_rotation = Quaternion::from(Euler {
-                x: Deg(0.0),
-                y: Deg(transform.local_euler_angles.y),
-                z: Deg(0.0),
-            }) * Quaternion::from(Euler {
-                x: Deg(transform.local_euler_angles.x),
-                y: Deg(0.0),
-                z: Deg(0.0),
-            }) * Quaternion::from(Euler {
-                x: Deg(0.0),
-                y: Deg(0.0),
-                z: Deg(transform.local_euler_angles.z),
-            });
-            transform.global_rotation = transform.local_rotation;
-            transform.global_position = transform.local_position;
-            transform.global_scale = transform.local_scale;
-            transform.global_euler_angles = transform.local_euler_angles;
+    // Phase 2: propagate parent transforms down the hierarchy
+    for id in &all_ids {
+        let id = *id;
+        let ancestors = world.get_ancestors(id);
+        if ancestors.is_empty() {
+            continue;
         }
 
-        let ids: Vec<ObjectId> = cell
-            .objects
-            .keys()
-            .map(|key| ObjectId { cell: coord, key })
-            .collect();
+        let parent_global = ancestors.iter().rev().find_map(|&ancestor_id| {
+            let t = world.get_component::<Transform>(ancestor_id)?;
+            Some((
+                t.global_position,
+                t.global_rotation,
+                t.global_scale,
+                t.global_euler_angles,
+            ))
+        });
 
-        for id in ids {
-            let ancestors = cell.get_ancestors(id);
+        let Some((parent_pos, parent_rot, parent_scale, parent_euler)) = parent_global else {
+            continue;
+        };
 
-            let parent_global = ancestors.iter().rev().find_map(|&ancestor_id| {
-                let obj = cell.objects.get(ancestor_id.key)?;
-                let t = obj
-                    .components
-                    .iter()
-                    .find_map(|c| c.as_any().downcast_ref::<Transform>())?;
-                Some((
-                    t.global_position,
-                    t.global_rotation,
-                    t.global_scale,
-                    t.global_euler_angles,
-                ))
-            });
+        let Some(transform) = world.get_component_mut::<Transform>(id) else {
+            continue;
+        };
 
-            let Some((parent_pos, parent_rot, parent_scale, parent_euler)) = parent_global else {
-                continue;
-            };
+        transform.global_position =
+            parent_pos + parent_rot.rotate_vector(transform.local_position);
 
-            let Some(obj) = cell.objects.get_mut(id.key) else {
-                continue;
-            };
+        transform.global_euler_angles = parent_euler + transform.local_euler_angles;
+        transform.global_rotation = Quaternion::from(Euler {
+            x: Deg(0.0),
+            y: Deg(transform.global_euler_angles.y),
+            z: Deg(0.0),
+        }) * Quaternion::from(Euler {
+            x: Deg(transform.global_euler_angles.x),
+            y: Deg(0.0),
+            z: Deg(0.0),
+        }) * Quaternion::from(Euler {
+            x: Deg(0.0),
+            y: Deg(0.0),
+            z: Deg(transform.global_euler_angles.z),
+        });
 
-            let Some(transform) = obj
-                .components
-                .iter_mut()
-                .find_map(|c| c.as_any_mut().downcast_mut::<Transform>())
-            else {
-                continue;
-            };
-
-            transform.global_position =
-                parent_pos + parent_rot.rotate_vector(transform.local_position);
-
-            transform.global_euler_angles = parent_euler + transform.local_euler_angles;
-            transform.global_rotation = Quaternion::from(Euler {
-                x: Deg(0.0),
-                y: Deg(transform.global_euler_angles.y),
-                z: Deg(0.0),
-            }) * Quaternion::from(Euler {
-                x: Deg(transform.global_euler_angles.x),
-                y: Deg(0.0),
-                z: Deg(0.0),
-            }) * Quaternion::from(Euler {
-                x: Deg(0.0),
-                y: Deg(0.0),
-                z: Deg(transform.global_euler_angles.z),
-            });
-
-            transform.global_scale = Vector3::new(
-                parent_scale.x * transform.local_scale.x,
-                parent_scale.y * transform.local_scale.y,
-                parent_scale.z * transform.local_scale.z,
-            );
-        }
+        transform.global_scale = Vector3::new(
+            parent_scale.x * transform.local_scale.x,
+            parent_scale.y * transform.local_scale.y,
+            parent_scale.z * transform.local_scale.z,
+        );
     }
 
     Ok(())

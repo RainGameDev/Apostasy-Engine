@@ -8,7 +8,7 @@ use rand::{RngExt, rng};
 use serde_yaml::Value;
 
 use crate::{
-    objects::{
+    ecs::{
         component::Inspect,
         systems::DeltaTime,
         world::World,

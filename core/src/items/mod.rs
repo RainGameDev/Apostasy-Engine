@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use hashbrown::HashMap;
 
-use crate::objects::component::BoxedComponent;
+use crate::ecs::component::BoxedComponent;
 
 pub mod container;
 pub mod voxel_component;

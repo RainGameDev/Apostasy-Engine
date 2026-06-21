@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use apostasy_core::noise::Perlin;
-use apostasy_core::objects::Object;
-use apostasy_core::objects::components::transform::FORWARD;
+use apostasy_core::ecs::Object;
+use apostasy_core::ecs::components::transform::FORWARD;
 use apostasy_core::rand::{RngExt, rng};
 use apostasy_core::voxels::biome::{CONTINENTAL_NOISE, HUMIDITY_NOISE, NOISE, TEMPERATURE_NOISE};
 use apostasy_core::voxels::chunk::{ChunkGenQueue, GeneratedChunkData};
@@ -12,7 +12,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
     log,
-    objects::{components::transform::Transform, scene::ObjectId, tags::Player, world::World},
+    ecs::{components::transform::Transform, scene::ObjectId, tags::Player, world::World},
     voxels::{
         VoxelTransform, biome::BiomeRegistry, chunk::Chunk, meshes::NeedsRemeshing,
         structure::StructureRegistry, voxel::VoxelRegistry,

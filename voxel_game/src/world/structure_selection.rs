@@ -4,7 +4,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, Zero},
     log, log_warn,
-    objects::{
+    ecs::{
         Object, components::transform::Transform, resources::input_manager::InputManager,
         tags::Player, world::World,
     },

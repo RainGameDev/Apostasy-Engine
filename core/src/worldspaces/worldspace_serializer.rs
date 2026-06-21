@@ -5,7 +5,7 @@ use cgmath::Vector3;
 use hashbrown::HashMap;
 
 use crate::{
-    objects::{
+    ecs::{
         Object,
         cell::{CellCoord, ObjectId},
         component::{BoxedComponent, get_component_registration},

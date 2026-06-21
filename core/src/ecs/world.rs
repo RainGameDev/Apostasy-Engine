@@ -1,24 +1,24 @@
 use std::cmp::Reverse;
 
 use anyhow::Result;
+use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::{
-    EngineMode,
-    objects::{
-        Object,
-        cell::ObjectId,
-        component::Component,
-        resource::{Resource, ResourceMap},
-        systems::{
-            DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
-            LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
-        },
-        tag::Tag,
-        worldspace::Worldspace,
+use crate::EngineMode;
+use crate::ecs::{
+    components::Component,
+    resources::{Resource, ResourceMap},
+    systems::{
+        DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
+        LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
     },
-    utils::flatten::flatten,
-    voxels::{VoxelTransform, chunk::Chunk, meshes::NeedsRemeshing, voxel::VoxelId},
+    tags::Tag,
+};
+use crate::utils::flatten::flatten;
+use crate::voxels::{VoxelTransform, chunk::Chunk, meshes::NeedsRemeshing, voxel::VoxelId};
+use crate::worldspaces::{
+    cell::{CellCoord, ObjectId},
+    worldspace::Worldspace,
 };
 
 #[derive(Default)]
@@ -36,9 +36,9 @@ pub struct World {
 
 #[allow(unused)]
 impl World {
-    // ========== ========== Systems ========== ==========
+    // ========== Systems ==========
 
-    /// Collects and caches all systems
+    /// Collects and sorts all registered systems by mode and priority.
     pub fn build_systems(&mut self) {
         let engine_mode = self
             .get_resource::<EngineMode>()
@@ -62,13 +62,12 @@ impl World {
         self.insert_resource(DeltaTime(0.0));
     }
 
-    /// Collects and sorts the Iterator
     fn collect_sorted<T: HasPriority + HasMode + Copy + 'static>(
         iter: impl Iterator<Item = &'static T>,
         engine_mode: EngineMode,
     ) -> Vec<T> {
         let mut systems: Vec<T> = iter
-            .filter(|system| system.mode().matches(engine_mode))
+            .filter(|s| s.mode().matches(engine_mode))
             .copied()
             .collect();
         systems.sort_by_key(|s| Reverse(s.priority()));
@@ -87,7 +86,6 @@ impl World {
             mode: EngineMode::All,
         });
         self.update_systems.sort_by_key(|s| Reverse(s.priority));
-
         self
     }
 
@@ -104,13 +102,11 @@ impl World {
         });
         self.fixed_update_systems
             .sort_by_key(|s| Reverse(s.priority));
-
         self
     }
 
     pub fn register_late_update_system(
         &mut self,
-
         func: fn(&mut World) -> Result<()>,
         priority: u32,
     ) -> &mut Self {
@@ -122,13 +118,11 @@ impl World {
         });
         self.late_update_systems
             .sort_by_key(|s| Reverse(s.priority));
-
         self
     }
 
     pub fn register_prerender_system(
         &mut self,
-
         func: fn(&mut World) -> Result<()>,
         priority: u32,
     ) -> &mut Self {
@@ -139,13 +133,11 @@ impl World {
             mode: EngineMode::Game,
         });
         self.prerender_systems.sort_by_key(|s| Reverse(s.priority));
-
         self
     }
 
     pub fn register_start_system(
         &mut self,
-
         func: fn(&mut World) -> Result<()>,
         priority: u32,
     ) -> &mut Self {
@@ -156,15 +148,13 @@ impl World {
             mode: EngineMode::Game,
         });
         self.start_systems.sort_by_key(|s| Reverse(s.priority));
-
         self
     }
 
-    /// Runs all start systems
     pub(crate) fn start(&mut self) {
         let systems = std::mem::take(&mut self.start_systems);
         for system in &systems {
-            (system.func)(self);
+            (system.func)(self).unwrap();
         }
     }
 
@@ -181,7 +171,6 @@ impl World {
     }
 
     pub(crate) fn update(&mut self) -> Vec<(&'static str, u64)> {
-        // update delta time
         {
             let timer = self.get_resource_mut::<FixedUpdateTimer>().unwrap();
             let now = std::time::Instant::now();
@@ -191,16 +180,12 @@ impl World {
             };
             timer.last_time = Some(now);
             timer.accumulator += delta;
-
             timer.accumulator = timer.accumulator.min(timer.fixed_timestep * 5.0);
-
             let engine_timer = self.get_resource_mut::<EngineTimer>().unwrap();
             engine_timer.0 += delta;
-
             let dt = self.get_resource_mut::<DeltaTime>().unwrap();
             dt.0 = delta;
         }
-
         let systems = std::mem::take(&mut self.update_systems);
         let mut timings = Vec::with_capacity(systems.len());
         for system in &systems {
@@ -222,21 +207,17 @@ impl World {
                     timer.fixed_timestep,
                 )
             };
-
             if !should_run {
                 break;
             }
-
             self.get_resource_mut::<FixedUpdateTimer>()
                 .unwrap()
                 .accumulator -= timestep;
-
             let systems = std::mem::take(&mut self.fixed_update_systems);
             for system in &systems {
                 let start = std::time::Instant::now();
                 (system.func)(self, timestep).unwrap();
                 let elapsed = start.elapsed().as_nanos() as u64;
-                // Accumulate across possible multiple fixed-step iterations
                 if let Some((_, existing)) = timings.iter_mut().find(|(n, _)| *n == system.name) {
                     *existing += elapsed;
                 } else {
@@ -248,136 +229,120 @@ impl World {
         timings
     }
 
-    /// Runs all late update systems
     pub(crate) fn late_update(&mut self) -> Vec<(&'static str, u64)> {
         let systems = std::mem::take(&mut self.late_update_systems);
         let mut timings = Vec::with_capacity(systems.len());
         for system in &systems {
             let start = std::time::Instant::now();
-            (system.func)(self);
+            (system.func)(self).unwrap();
             timings.push((system.name, start.elapsed().as_nanos() as u64));
         }
         self.late_update_systems = systems;
         timings
-    } // ========== ========== Objects ========== ==========
-
-    /// Adds a new Object to the world
-    pub fn add_new_object(&mut self) -> ObjectId {
-        self.worldspace.add_new_object()
     }
 
-    /// Adds an Object to the world
-    pub fn add_object(&mut self, object: Object) -> ObjectId {
-        self.worldspace.add_object(object)
+    // ========== Entity Lifecycle ==========
+
+    /// Spawns a new entity in cell (0, 0, 0).
+    pub fn spawn(&mut self) -> ObjectId {
+        self.worldspace.spawn()
     }
 
-    /// Adds a child Object under `parent_id`, in the parent's cell
-    pub fn add_child_object(&mut self, parent_id: ObjectId, child: Object) -> Result<ObjectId> {
-        self.worldspace.add_child_object(parent_id, child)
+    /// Spawns a new entity in the cell containing `position`.
+    pub fn spawn_at_position(&mut self, position: Vector3<f32>) -> ObjectId {
+        self.worldspace.spawn_at_position(position)
     }
 
-    /// Adds a root Object directly into a specific cell, creating the cell if needed
-    pub fn add_object_to_cell(
-        &mut self,
-        coord: cgmath::Vector3<i32>,
-        object: Object,
-    ) -> ObjectId {
-        self.worldspace.get_or_create_cell(coord).add_object(object)
+    /// Spawns a new entity in a specific cell.
+    pub fn spawn_in_cell(&mut self, coord: CellCoord) -> ObjectId {
+        self.worldspace.spawn_in_cell(coord)
     }
 
-    /// Read-only access to the active worldspace
-    pub fn worldspace(&self) -> &Worldspace {
-        &self.worldspace
+    /// Despawns an entity and all its descendants.
+    pub fn despawn(&mut self, id: ObjectId) {
+        self.worldspace.despawn(id);
     }
 
-    /// Mutable access to the active worldspace
-    pub fn worldspace_mut(&mut self) -> &mut Worldspace {
-        &mut self.worldspace
+    pub fn is_alive(&self, id: ObjectId) -> bool {
+        self.worldspace.is_alive(id)
     }
 
-    pub fn replace_worldspace(&mut self, ws: Worldspace) {
-        self.worldspace = ws;
+    // ========== Names ==========
+
+    pub fn set_name(&mut self, id: ObjectId, name: &str) {
+        self.worldspace.set_name(id, name);
     }
 
-    /// Removes an Object from the world
-    pub fn remove_object(&mut self, id: ObjectId) {
-        self.worldspace.remove_object(id);
+    pub fn get_name(&self, id: ObjectId) -> Option<&str> {
+        self.worldspace.get_name(id)
     }
 
-    pub fn debug_objects(&self) {
-        self.worldspace.debug_objects();
+    // ========== Components ==========
+
+    pub fn add_component<T: Component + Clone + 'static>(&mut self, id: ObjectId, component: T) {
+        self.worldspace.add_component(id, component);
     }
 
-    pub fn object_count(&self) -> usize {
-        self.worldspace.object_count()
+    pub fn get_component<T: Component + 'static>(&self, id: ObjectId) -> Option<&T> {
+        self.worldspace.get_component(id)
     }
 
-    pub fn get_object(&self, id: ObjectId) -> Option<&Object> {
-        self.worldspace.get_object(id)
+    pub fn get_component_mut<T: Component + 'static>(&mut self, id: ObjectId) -> Option<&mut T> {
+        self.worldspace.get_component_mut(id)
     }
 
-    pub fn get_object_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
-        self.worldspace.get_object_mut(id)
+    pub fn remove_component<T: Component + 'static>(&mut self, id: ObjectId) {
+        self.worldspace.remove_component::<T>(id);
     }
 
-    pub fn get_objects_with_component_with_ids<T: Component + 'static>(
-        &self,
-    ) -> Vec<(ObjectId, &Object)> {
-        self.worldspace.get_objects_with_component_with_ids::<T>()
+    pub fn has_component<T: Component + 'static>(&self, id: ObjectId) -> bool {
+        self.worldspace.has_component::<T>(id)
     }
 
-    pub fn get_objects_with_component<T: Component + 'static>(&self) -> Vec<&Object> {
-        self.worldspace.get_objects_with_component::<T>()
+    /// Returns all entity IDs across all cells that have component T.
+    pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<ObjectId> {
+        self.worldspace.get_entities_with_component::<T>()
     }
 
-    pub fn get_objects_with_component_mut<T: Component + 'static>(&mut self) -> Vec<&mut Object> {
-        self.worldspace.get_objects_with_component_mut::<T>()
+    // ========== Tags ==========
+
+    pub fn add_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
+        self.worldspace.add_tag::<T>(id);
     }
 
-    pub fn get_object_with_tag<T: Tag + 'static>(&self) -> Result<&Object> {
-        self.worldspace.get_object_with_tag::<T>()
+    pub fn remove_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
+        self.worldspace.remove_tag::<T>(id);
     }
 
-    pub fn get_object_with_tag_mut<T: Tag + 'static>(&mut self) -> Result<&mut Object> {
-        self.worldspace.get_object_with_tag_mut::<T>()
+    pub fn has_tag<T: Tag + 'static>(&self, id: ObjectId) -> bool {
+        self.worldspace.has_tag::<T>(id)
     }
 
-    pub fn get_objects_with_tag<T: Tag + 'static>(&self) -> Vec<&Object> {
-        self.worldspace.get_objects_with_tag::<T>()
+    /// Returns the first entity across all cells with tag T.
+    pub fn get_entity_with_tag<T: Tag + 'static>(&self) -> Result<ObjectId> {
+        self.worldspace.get_entity_with_tag::<T>()
     }
 
-    pub fn get_objects_with_tag_mut<T: Tag + 'static>(&mut self) -> Vec<&mut Object> {
-        self.worldspace.get_objects_with_tag_mut::<T>()
-    }
-    pub fn get_objects_with_tag_with_ids<T: Tag + 'static>(&self) -> Vec<(ObjectId, &Object)> {
-        self.worldspace.get_objects_with_tag_with_ids::<T>()
+    /// Returns all entities across all cells with tag T.
+    pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<ObjectId> {
+        self.worldspace.get_entities_with_tag::<T>()
     }
 
-    // ========== ========== Hierarchy ========== ==========
+    // ========== Hierarchy ==========
 
-    /// Reparents an object. Pass `None` to make it a root object.
     pub fn set_parent(&mut self, child_id: ObjectId, parent_id: Option<ObjectId>) -> Result<()> {
         self.worldspace.set_parent(child_id, parent_id)
     }
 
-    /// Detaches an object from its parent, making it a root object
     pub fn detach(&mut self, id: ObjectId) -> Result<()> {
         self.worldspace.detach_from_parent(id)
-    }
-
-    pub fn get_parent(&self, id: ObjectId) -> Option<&Object> {
-        self.worldspace.get_parent(id)
     }
 
     pub fn get_parent_id(&self, id: ObjectId) -> Option<ObjectId> {
         self.worldspace.get_parent_id(id)
     }
 
-    pub fn get_children(&self, id: ObjectId) -> Vec<&Object> {
-        self.worldspace.get_children(id)
-    }
-
-    pub fn get_children_ids(&self, id: ObjectId) -> &[ObjectId] {
+    pub fn get_children_ids(&self, id: ObjectId) -> Vec<ObjectId> {
         self.worldspace.get_children_ids(id)
     }
 
@@ -393,48 +358,62 @@ impl World {
         self.worldspace.is_ancestor_of(ancestor_id, descendant_id)
     }
 
-    pub fn get_root_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.worldspace.get_root_objects()
-    }
-    pub fn get_all_objects(&self) -> Vec<(ObjectId, &Object)> {
-        self.worldspace.get_all_objects()
+    pub fn get_all_ids(&self) -> Vec<ObjectId> {
+        self.worldspace.get_all_ids()
     }
 
-    // ========== ========== Resources ========== ==========
+    pub fn get_root_ids(&self) -> Vec<ObjectId> {
+        self.worldspace.get_root_ids()
+    }
 
-    /// Insert a new resource into the map
+    pub fn object_count(&self) -> usize {
+        self.worldspace.object_count()
+    }
+
+    pub fn replace_worldspace(&mut self, ws: Worldspace) {
+        self.worldspace = ws;
+    }
+
+    pub fn worldspace(&self) -> &Worldspace {
+        &self.worldspace
+    }
+
+    pub fn worldspace_mut(&mut self) -> &mut Worldspace {
+        &mut self.worldspace
+    }
+
+    pub fn debug_entities(&self) {
+        self.worldspace.debug_entities();
+    }
+
+    // ========== Resources ==========
+
     pub fn insert_resource<T: Resource + 'static>(&mut self, resource: T) -> &mut Self {
         self.resources.insert(resource);
         self
     }
 
-    /// Get a resource from the map
     pub fn get_resource<T: Resource + 'static>(&self) -> Result<&T> {
         self.resources.get::<T>()
     }
 
-    // Does the map have a resource
     pub fn has_resource<T: Resource + 'static>(&self) -> bool {
         self.resources.get::<T>().is_ok()
     }
 
-    /// Get a resource mutably from the map
     pub fn get_resource_mut<T: Resource + 'static>(&mut self) -> Result<&mut T> {
         self.resources.get_mut::<T>()
     }
 
-    /// Remove a resource from the map
     pub fn remove_resource<T: Resource + 'static>(&mut self) -> &mut Self {
         self.resources.remove::<T>();
         self
     }
 
-    // ========== ========== Voxel Specific ========== ==========
+    // ========== Voxel-specific ==========
 
     pub fn register_chunk(&mut self, id: ObjectId) {
-        if let Some(obj) = self.worldspace.get_object(id)
-            && let Ok(t) = obj.get_component::<VoxelTransform>()
-        {
+        if let Some(t) = self.worldspace.get_component::<VoxelTransform>(id) {
             self.chunk_position_index
                 .insert((t.position.x, t.position.y, t.position.z), id);
         }
@@ -443,19 +422,20 @@ impl World {
     pub fn unregister_chunk(&mut self, id: ObjectId) {
         self.chunk_position_index.retain(|_, &mut oid| oid != id);
     }
+
     #[inline]
     pub fn get_voxel(&self, wx: i32, wy: i32, wz: i32) -> Option<VoxelId> {
         let key = (wx.div_euclid(32), wy.div_euclid(32), wz.div_euclid(32));
         let id = self.chunk_position_index.get(&key)?;
-        let obj = self.worldspace.get_object(*id)?;
-        let chunk = obj.get_component::<Chunk>().ok()?;
+        let chunk = self.worldspace.get_component::<Chunk>(*id)?;
         let lx = wx.rem_euclid(32) as u32;
         let ly = wy.rem_euclid(32) as u32;
         let lz = wz.rem_euclid(32) as u32;
         Some(chunk.voxels[flatten(lx, ly, lz, 32)])
     }
+
     #[inline]
-    pub fn set_voxel(&mut self, wx: i32, wy: i32, wz: i32, id: VoxelId) -> bool {
+    pub fn set_voxel(&mut self, wx: i32, wy: i32, wz: i32, voxel_id: VoxelId) -> bool {
         let key = (wx.div_euclid(32), wy.div_euclid(32), wz.div_euclid(32));
         let Some(&oid) = self.chunk_position_index.get(&key) else {
             return false;
@@ -463,11 +443,10 @@ impl World {
         let lx = wx.rem_euclid(32) as u32;
         let ly = wy.rem_euclid(32) as u32;
         let lz = wz.rem_euclid(32) as u32;
-        let obj = self.worldspace.get_object_mut(oid).unwrap();
-        if let Ok(chunk) = obj.get_component_mut::<Chunk>() {
-            chunk.voxels[flatten(lx, ly, lz, 32)] = id;
+        if let Some(chunk) = self.worldspace.get_component_mut::<Chunk>(oid) {
+            chunk.voxels[flatten(lx, ly, lz, 32)] = voxel_id;
         }
-        obj.add_tag(NeedsRemeshing);
+        self.worldspace.add_tag::<NeedsRemeshing>(oid);
         true
     }
 
@@ -477,14 +456,14 @@ impl World {
         self.chunk_position_index
             .iter()
             .filter_map(|(&pos, &id)| {
-                let obj = self.worldspace.get_object(id)?;
-                let chunk = obj.get_component::<Chunk>().ok()?;
+                let chunk = self.worldspace.get_component::<Chunk>(id)?;
                 Some((pos, chunk.voxels.as_ref() as *const _))
             })
             .collect()
     }
 
-    /// SAFETY: chunk must still be alive (no add/remove between build and query)
+    /// # Safety
+    /// The chunk must still be alive - no add/remove between `build_raw_chunk_lookup` and this call.
     #[inline(always)]
     pub unsafe fn get_voxel_raw(
         map: &HashMap<(i32, i32, i32), *const [VoxelId; 32 * 32 * 32]>,

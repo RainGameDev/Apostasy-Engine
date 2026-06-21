@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     egui,
-    objects::{tags::Player, world::World},
+    ecs::{tags::Player, world::World},
     start,
     ui::ui_context::EguiContext,
     update,

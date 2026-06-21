@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     init_core,
-    objects::{
+    ecs::{
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
         world::World,
     },

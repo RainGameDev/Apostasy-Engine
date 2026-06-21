@@ -6,7 +6,7 @@ use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
 use egui::{ComboBox, DragAndDrop};
 
 use crate::{
-    objects::{cell::ObjectId, component::Inspect, components::transform::Transform, world::World},
+    ecs::{cell::ObjectId, component::Inspect, components::transform::Transform, world::World},
     physics::velocity::Velocity,
     rendering::shared::model::Bvh,
     ui::{DRAG_SIZE, LABEL_WIDTH},

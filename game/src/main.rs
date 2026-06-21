@@ -2,7 +2,7 @@ use apostasy_core::{
     anyhow::Result,
     egui::{self, Color32, LayerId, Rect},
     init_core,
-    objects::world::World,
+    ecs::world::World,
     rendering::RenderingBackend,
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
     update,

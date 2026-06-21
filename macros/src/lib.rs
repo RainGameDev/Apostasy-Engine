@@ -17,7 +17,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
     let output = quote! {
-        impl #impl_generics apostasy_core::objects::component::Component for #struct_name #type_generics
+        impl #impl_generics apostasy_core::ecs::components::Component for #struct_name #type_generics
             #where_clause
         {
             fn name() -> &'static str where Self: Sized {
@@ -30,7 +30,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
             }
         }
         inventory::submit! {
-            apostasy_core::objects::component::ComponentRegistration {
+            apostasy_core::ecs::components::ComponentRegistration {
                 type_name: #struct_name_str,
                 create: || Box::new(#struct_name::default()),
                 deserialize: |component, value| {
@@ -43,11 +43,11 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
             }
         }
         inventory::submit! {
-            apostasy_core::objects::component::InspectEntry {
+            apostasy_core::ecs::components::InspectEntry {
                 type_id: || std::any::TypeId::of::<#struct_name>(),
                 inspect_fn: |any, ui: &mut apostasy_core::egui::Ui| {
                     if let Some(c) = any.downcast_mut::<#struct_name>() {
-                        apostasy_core::objects::component::Inspect::inspect(c, ui);
+                        apostasy_core::ecs::components::Inspect::inspect(c, ui);
                     }
                 },
             }
@@ -62,7 +62,7 @@ pub fn inspect_derive(input: TokenStream) -> TokenStream {
     let struct_name = &ast.ident;
     let (impl_generics, type_generics, where_clause) = ast.generics.split_for_impl();
     let output = quote! {
-        impl #impl_generics apostasy_core::objects::component::Inspect for #struct_name #type_generics #where_clause {}
+        impl #impl_generics apostasy_core::ecs::components::Inspect for #struct_name #type_generics #where_clause {}
     };
     output.into()
 }
@@ -80,7 +80,7 @@ pub fn resource_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
     let output = quote! {
-        impl #impl_generics apostasy_core::objects::resource::Resource for #struct_name #type_generics
+        impl #impl_generics apostasy_core::ecs::resources::Resource for #struct_name #type_generics
             #where_clause
 
         {
@@ -114,7 +114,7 @@ pub fn tag_derive(input: TokenStream) -> TokenStream {
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 
     let output = quote! {
-        impl #impl_generics apostasy_core::objects::tag::Tag for #struct_name #type_generics
+        impl #impl_generics apostasy_core::ecs::tags::Tag for #struct_name #type_generics
             #where_clause
 
         {
@@ -205,7 +205,7 @@ pub fn start(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
         inventory::submit! {
-            apostasy_core::objects::systems::StartSystem{
+            apostasy_core::ecs::systems::StartSystem{
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
@@ -233,7 +233,7 @@ pub fn prerender(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
         inventory::submit! {
-            apostasy_core::objects::systems::PreRenderSystem{
+            apostasy_core::ecs::systems::PreRenderSystem{
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
@@ -261,7 +261,7 @@ pub fn update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
         inventory::submit! {
-            apostasy_core::objects::systems::UpdateSystem{
+            apostasy_core::ecs::systems::UpdateSystem{
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
@@ -289,7 +289,7 @@ pub fn fixed_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
         inventory::submit! {
-            apostasy_core::objects::systems::FixedUpdateSystem{
+            apostasy_core::ecs::systems::FixedUpdateSystem{
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,
@@ -317,7 +317,7 @@ pub fn late_update(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input_fn
         inventory::submit! {
-            apostasy_core::objects::systems::LateUpdateSystem{
+            apostasy_core::ecs::systems::LateUpdateSystem{
                 name: stringify!(#fn_name),
                 func: #fn_name,
                 priority: #priority,

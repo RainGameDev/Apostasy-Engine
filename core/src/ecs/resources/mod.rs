@@ -1,3 +1,7 @@
+pub mod cursor_manager;
+pub mod input_manager;
+pub mod window_manager;
+
 use std::any::{Any, TypeId, type_name};
 
 use anyhow::{Result, anyhow};

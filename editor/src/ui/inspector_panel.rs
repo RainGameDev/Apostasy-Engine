@@ -4,7 +4,7 @@ use anyhow::Result;
 use apostasy_core::{
     egui::{self, Margin, Rect, Stroke, Window},
     log_warn,
-    objects::{
+    ecs::{
         component::{BoxedComponent, Component, InspectorRegistry},
         fmt_key,
         tag::TagRegistration,
@@ -97,7 +97,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
 
     // Collect all registered component names once
     let all_component_names: Vec<&'static str> =
-        inventory::iter::<apostasy_core::objects::component::ComponentRegistration>()
+        inventory::iter::<apostasy_core::ecs::component::ComponentRegistration>()
             .map(|r| r.type_name)
             .collect();
 

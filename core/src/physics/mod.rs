@@ -5,7 +5,7 @@ use apostasy_macros::{Component, Inspect, fixed_update, update};
 
 use crate::{
     assets::asset_manager::AssetManager,
-    objects::{cell::ObjectId, components::transform::Transform, world::World},
+    ecs::{cell::ObjectId, components::transform::Transform, world::World},
     physics::{collider::{Collider, ColliderShape}, velocity::Velocity},
     rendering::shared::model::Bvh,
 };

@@ -1,6 +1,6 @@
 use apostasy_core::{init_core_with_mode, packages::Packages, rendering::RenderingBackend, EngineMode};
 
-pub mod objects;
+pub mod ecs;
 pub mod terrain;
 pub mod ui;
 pub mod systems;

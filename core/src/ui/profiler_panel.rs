@@ -3,8 +3,8 @@ use apostasy_macros::{Resource, start, update};
 use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::objects::resources::input_manager::{InputManager, KeyAction, KeyBind};
-use crate::objects::world::World;
+use crate::ecs::resources::input_manager::{InputManager, KeyAction, KeyBind};
+use crate::ecs::world::World;
 use crate::ui::ui_context::EguiContext;
 use crate::utils::profiler::{FrameSample, Profiler, SystemTiming};
 

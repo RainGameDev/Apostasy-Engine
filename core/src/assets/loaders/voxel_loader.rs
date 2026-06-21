@@ -8,7 +8,7 @@ use anyhow::{Error, Result};
 use crate::{
     assets::loader::YamlAssetLoader,
     log_warn,
-    objects::component::{BoxedComponent, get_component_registration},
+    ecs::component::{BoxedComponent, get_component_registration},
     voxels::{
         texture_atlas::AtlasBuilder,
         voxel::{VoxelDefinition, VoxelId, VoxelRegistry, VoxelTextures},

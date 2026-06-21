@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
-    objects::{resources::input_manager::InputManager, world::World},
+    ecs::{resources::input_manager::InputManager, world::World},
     ui::ui_context::EguiContext,
     update,
 };

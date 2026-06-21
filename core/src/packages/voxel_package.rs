@@ -14,7 +14,7 @@ use crate::{
         },
     },
     log,
-    objects::world::World,
+    ecs::world::World,
     physics::collision_system::voxel_collision_system,
     rendering::shared::push_constants::VoxelPushConstants,
     voxels::{

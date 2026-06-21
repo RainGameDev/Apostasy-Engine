@@ -1,3 +1,17 @@
+use apostasy_macros::Tag;
+
+pub mod skips_serilization;
+
+#[derive(Tag, Clone)]
+pub struct Player;
+
+inventory::submit!(crate::ecs::tag::TagRegistration {
+    type_name: "Player",
+    singleton: false,
+    hidden: false,
+    create: || Box::new(Player),
+});
+
 use std::any::Any;
 
 /// A trait that defines a tag that can be attached to an object.

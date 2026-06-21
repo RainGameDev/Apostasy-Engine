@@ -1,6 +1,6 @@
 use apostasy_core::{
     egui,
-    objects::resources::input_manager::{InputManager, KeyAction, KeyBind, ModifierKeys},
+    ecs::resources::input_manager::{InputManager, KeyAction, KeyBind, ModifierKeys},
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 

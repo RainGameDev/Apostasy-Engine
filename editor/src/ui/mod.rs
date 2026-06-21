@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    objects::world::World,
+    ecs::world::World,
     rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing, shadow_settings::ShadowDistance},
     start,
     ui::{FontRegistry, ui_context::ViewportSize},
@@ -74,7 +74,7 @@ pub fn init(world: &mut World) -> Result<()> {
         reg.set_active(prefs.active_font);
     }
 
-    use crate::objects::editor_camera::EditorCameraSettings;
+    use crate::ecs::editor_camera::EditorCameraSettings;
     world.insert_resource(EditorCameraSettings {
         move_speed: prefs.camera_speed,
     });

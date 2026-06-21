@@ -5,7 +5,7 @@ use apostasy_core::{
     egui, fixed_update,
     items::{ItemRegistry, container::Container, voxel_component::Voxel},
     log_warn,
-    objects::{
+    ecs::{
         Object, components::transform::Transform, resources::input_manager::InputManager,
         tags::Player, world::World,
     },

@@ -11,7 +11,7 @@ use apostasy_core::{
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
-    objects::{
+    ecs::{
         Object,
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},

@@ -2,7 +2,7 @@ use anyhow::Result;
 use apostasy_macros::{Resource, late_update};
 use hashbrown::HashMap;
 
-use crate::objects::{
+use crate::ecs::{
     cell::{CellCoord, ObjectId, world_to_cell},
     components::transform::Transform,
     world::World,

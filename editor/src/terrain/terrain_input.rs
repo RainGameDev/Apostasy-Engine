@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     cgmath::{SquareMatrix, Vector3, Vector4},
-    objects::{
+    ecs::{
         cell::{CELL_SIZE, CellCoord, ObjectId, world_to_cell},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
@@ -204,7 +204,7 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
 
 fn compute_ray(world: &World) -> Option<(Vector3<f32>, Vector3<f32>)> {
     let input = world
-        .get_resource::<apostasy_core::objects::resources::input_manager::InputManager>()
+        .get_resource::<apostasy_core::ecs::resources::input_manager::InputManager>()
         .ok()?;
     let viewport = world.get_resource::<ViewportSize>().ok()?;
 
@@ -365,7 +365,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
         return;
     }
 
-    let mut obj = apostasy_core::objects::Object::default();
+    let mut obj = apostasy_core::ecs::Object::default();
     obj.name = format!("Terrain ({},{})", cell.x, cell.z);
     let chunk = TerrainChunk::new(cell, resolution);
     obj.add_component(chunk);

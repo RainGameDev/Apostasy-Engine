@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, num_traits::clamp},
-    objects::{
+    ecs::{
         components::transform::Transform, resources::input_manager::InputManager,
         systems::DeltaTime, world::World,
     },

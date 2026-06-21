@@ -2,7 +2,7 @@ use apostasy_macros::Component;
 
 use crate::{
     egui::{self, DragAndDrop, StrokeKind},
-    objects::component::Inspect,
+    ecs::component::Inspect,
     rendering::shared::model::GpuModel,
     ui::LABEL_WIDTH,
 };

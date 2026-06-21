@@ -3,7 +3,7 @@ use apostasy_macros::{Resource, late_update};
 use hashbrown::{HashMap, HashSet};
 
 use crate::{
-    objects::{
+    ecs::{
         cell::{CellCoord, world_to_cell},
         components::transform::Transform,
         world::World,
@@ -120,8 +120,8 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::objects::cell_streaming::cell_streaming_system;
-    use crate::objects::{Object, components::transform::Transform};
+    use crate::ecs::cell_streaming::cell_streaming_system;
+    use crate::ecs::{Object, components::transform::Transform};
     use crate::rendering::components::camera::ActiveCamera;
     use cgmath::{Vector3, Zero};
 

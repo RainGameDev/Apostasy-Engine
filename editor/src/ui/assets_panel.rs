@@ -3,12 +3,12 @@ use super::shared::WindowLayout;
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
-use apostasy_core::objects::worldspace_serializer::load_worldspace;
+use apostasy_core::ecs::worldspace_serializer::load_worldspace;
 use apostasy_core::{
     egui::{
         self, Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
     },
-    objects::world::World,
+    ecs::world::World,
     ui::ui_context::EguiContext,
     update,
 };

@@ -2,7 +2,7 @@ use anyhow::Result;
 use apostasy_core::{
     assets::asset_manager::AssetManager,
     egui::{self, Color32, DragAndDrop, Margin, ScrollArea, Stroke, Window},
-    objects::world::World,
+    ecs::world::World,
     ui::ui_context::EguiContext,
     update,
 };
@@ -616,7 +616,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                             .id_salt("comp_picker_scroll")
                                             .max_height(140.0)
                                             .show(ui, |ui| {
-                                                use apostasy_core::objects::component::ComponentRegistration;
+                                                use apostasy_core::ecs::component::ComponentRegistration;
                                                 let mut any = false;
                                                 for reg in inventory::iter::<ComponentRegistration>() {
                                                     let name = reg.type_name;
@@ -1004,7 +1004,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                             .id_salt("new_comp_picker_scroll")
                                             .max_height(140.0)
                                             .show(ui, |ui| {
-                                                use apostasy_core::objects::component::ComponentRegistration;
+                                                use apostasy_core::ecs::component::ComponentRegistration;
                                                 let mut any = false;
                                                 for reg in
                                                     inventory::iter::<ComponentRegistration>()

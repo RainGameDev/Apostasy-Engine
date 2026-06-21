@@ -1,7 +1,7 @@
 use apostasy_macros::Resource;
 use hashbrown::HashMap;
 
-use crate::objects::cell::{CellCoord, ObjectId};
+use crate::ecs::cell::{CellCoord, ObjectId};
 
 pub mod chunk;
 pub mod mesh_builder;

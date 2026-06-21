@@ -1,7 +1,7 @@
 use apostasy_core::{
     cgmath::{InnerSpace, Matrix3, Matrix4, Rotation3, Vector3, Vector4},
     egui::{self, Color32, Pos2, Stroke, Vec2},
-    objects::{cell::ObjectId, components::transform::Transform},
+    ecs::{cell::ObjectId, components::transform::Transform},
     physics::collider::{Collider, ColliderShape},
     rendering::components::lighting::LightType,
 };

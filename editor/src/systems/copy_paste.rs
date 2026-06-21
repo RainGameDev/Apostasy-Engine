@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    objects::{
+    ecs::{
         Object,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,

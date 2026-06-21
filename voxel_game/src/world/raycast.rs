@@ -7,7 +7,7 @@ use apostasy_core::{
         container::{Container, ContainerItem},
     },
     log, log_error,
-    objects::{
+    ecs::{
         resources::input_manager::InputManager, scene::ObjectId, tags::Player, world::World,
     },
     utils::flatten::flatten,

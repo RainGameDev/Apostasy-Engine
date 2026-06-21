@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
-    objects::{components::transform::Transform, world::World},
+    ecs::{components::transform::Transform, world::World},
     update,
     voxels::voxel_raycast::{Direction, voxel_raycast},
 };

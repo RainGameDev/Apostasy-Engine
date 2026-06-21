@@ -4,7 +4,7 @@ use apostasy_macros::Resource;
 use cgmath::{Matrix4, Quaternion, SquareMatrix, Vector3, Zero};
 
 use crate::{
-    objects::{Object, components::transform::Transform},
+    ecs::components::transform::Transform,
     rendering::components::camera::{Camera, get_perspective_projection, get_view_matrix},
 };
 
@@ -38,9 +38,7 @@ impl PushConstants {
         }
     }
 
-    pub fn set_camera_constants(&mut self, camera: Object, aspect: f32) {
-        let transform = camera.get_component::<Transform>().unwrap();
-        let cam = camera.get_component::<Camera>().unwrap();
+    pub fn set_camera_constants(&mut self, transform: &Transform, cam: &Camera, aspect: f32) {
         self.view_matrix = get_view_matrix(transform);
         self.projection_matrix = get_perspective_projection(cam, aspect);
         self.model_matrix = Matrix4::identity();

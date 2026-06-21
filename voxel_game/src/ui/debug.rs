@@ -6,7 +6,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::{InnerSpace, Vector3},
     egui,
-    objects::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
+    ecs::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     physics::velocity::Velocity,
     rendering::shared::frustrum::ObjectsDrawing,
     start,

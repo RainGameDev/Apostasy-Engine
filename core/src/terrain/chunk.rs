@@ -3,7 +3,7 @@ use ash::vk;
 use cgmath::Vector3;
 
 use crate::{
-    objects::cell::{CELL_SIZE, CellCoord},
+    ecs::cell::{CELL_SIZE, CellCoord},
     rendering::shared::model::GpuMesh,
 };
 

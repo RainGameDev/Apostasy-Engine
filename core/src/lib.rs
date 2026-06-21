@@ -25,14 +25,14 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
-use crate::objects::component::InspectorRegistry;
-use crate::objects::components::transform::Transform;
-use crate::objects::resources::cursor_manager::CursorManager;
-use crate::objects::resources::input_manager::InputManager;
-use crate::objects::resources::input_manager::KeyAction;
-use crate::objects::resources::input_manager::KeyBind;
-use crate::objects::resources::window_manager::WindowManager;
-use crate::objects::systems::EngineTimer;
+use crate::ecs::component::InspectorRegistry;
+use crate::ecs::components::transform::Transform;
+use crate::ecs::resources::cursor_manager::CursorManager;
+use crate::ecs::resources::input_manager::InputManager;
+use crate::ecs::resources::input_manager::KeyAction;
+use crate::ecs::resources::input_manager::KeyBind;
+use crate::ecs::resources::window_manager::WindowManager;
+use crate::ecs::systems::EngineTimer;
 use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::WindowInfo;
@@ -75,14 +75,14 @@ use crate::voxels::texture_atlas::PendingAtlas;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use crate::voxels::texture_atlas::upload_atlas;
 use crate::{
-    objects::world::World,
+    ecs::world::World,
     rendering::{RenderingBackend, RenderingInfo},
 };
 use winit::application::ApplicationHandler;
 
 pub mod assets;
 pub mod items;
-pub mod objects;
+pub mod ecs;
 pub mod packages;
 pub mod physics;
 pub mod rendering;
@@ -92,6 +92,7 @@ pub mod terrain;
 pub mod ui;
 pub mod utils;
 pub mod voxels;
+pub mod worldspaces;
 
 #[derive(Clone, Resource, Default)]
 pub struct ReloadShadersRequest(pub bool);

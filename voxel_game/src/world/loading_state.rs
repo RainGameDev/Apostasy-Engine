@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
-    objects::{tags::Player, world::World},
+    ecs::{tags::Player, world::World},
     update,
 };
 use apostasy_macros::Resource;

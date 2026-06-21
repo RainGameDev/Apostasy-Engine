@@ -2,7 +2,7 @@ use apostasy_macros::{Component, Tag};
 use cgmath::{Deg, Matrix4, PerspectiveFov, Point3};
 
 use crate::{
-    objects::{component::Inspect, components::transform::Transform},
+    ecs::{component::Inspect, components::transform::Transform},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -113,7 +113,7 @@ pub fn get_view_matrix(transform: &Transform) -> Matrix4<f32> {
 #[derive(Tag, Clone)]
 pub struct GameCamera;
 
-inventory::submit!(crate::objects::tag::TagRegistration {
+inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "GameCamera",
     singleton: false,
     hidden: false,
@@ -123,7 +123,7 @@ inventory::submit!(crate::objects::tag::TagRegistration {
 #[derive(Tag, Clone)]
 pub struct EditorCamera;
 
-inventory::submit!(crate::objects::tag::TagRegistration {
+inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "EditorCamera",
     singleton: true,
     hidden: true,
@@ -133,7 +133,7 @@ inventory::submit!(crate::objects::tag::TagRegistration {
 #[derive(Tag, Clone)]
 pub struct ActiveCamera;
 
-inventory::submit!(crate::objects::tag::TagRegistration {
+inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "ActiveCamera",
     singleton: true,
     hidden: false,

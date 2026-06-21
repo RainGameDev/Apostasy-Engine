@@ -9,9 +9,9 @@ use hashbrown::HashMap;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::biome_loader::BiomeLoader;
-use crate::objects::Object;
-use crate::objects::cell::ObjectId;
-use crate::objects::world::World;
+use crate::ecs::Object;
+use crate::ecs::cell::ObjectId;
+use crate::ecs::world::World;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::vertex::VertexDefinition;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;

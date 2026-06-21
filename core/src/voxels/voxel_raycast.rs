@@ -1,9 +1,9 @@
-use crate::objects::world::World;
+use crate::ecs::world::World;
 use crate::physics::raycast::{Direction, Ray, get_camera_ray};
 use crate::rendering::components::camera::Camera;
 use crate::voxels::voxel::{VoxelId, VoxelRegistry};
 use crate::{
-    objects::components::transform::Transform, voxels::voxel_components::is_solid::IsSolid,
+    ecs::components::transform::Transform, voxels::voxel_components::is_solid::IsSolid,
 };
 use anyhow::Result;
 use apostasy_macros::Resource;

@@ -1,5 +1,5 @@
 use crate::{
-    objects::world::World,
+    ecs::world::World,
     terrain::{TerrainChunkMap, TerrainSettings, discover_terrain_textures},
 };
 

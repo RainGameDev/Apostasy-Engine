@@ -2,7 +2,7 @@ use apostasy_core::{
     Component,
     anyhow::Result,
     cgmath::{self, InnerSpace, Vector3, Zero},
-    objects::{Object, components::transform::Transform, world::World},
+    ecs::{Object, components::transform::Transform, world::World},
     physics::{Gravity, collider::Collider, velocity::Velocity},
     rand::{RngExt, rng},
     serde_yaml::Value,

@@ -1,7 +1,7 @@
 use apostasy_macros::Resource;
 use winit::window::CursorGrabMode;
 
-use crate::objects::resources::window_manager::WindowManager;
+use crate::ecs::resources::window_manager::WindowManager;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorLockMode {

@@ -2,7 +2,7 @@ use anyhow::Result;
 use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
-    objects::{
+    ecs::{
         components::transform::Transform, cell::ObjectId, systems::DeltaTime, world::World,
     },
     physics::{collider::Collider, velocity::Velocity},

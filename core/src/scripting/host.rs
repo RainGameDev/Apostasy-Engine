@@ -2,14 +2,14 @@ use anyhow::Result;
 use cgmath::Vector3;
 use wasmtime::{Caller, Linker};
 
-use crate::objects::{
+use crate::ecs::{
     cell::ObjectId,
     components::transform::Transform,
     world::World,
 };
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::model_renderer::ModelRenderer;
-use crate::objects::systems::{DeltaTime, EngineTimer};
+use crate::ecs::systems::{DeltaTime, EngineTimer};
 
 /// Host state threaded through each wasmtime Store for the duration of one script call.
 pub struct HostState {

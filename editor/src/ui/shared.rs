@@ -1,5 +1,5 @@
 use anyhow::Result;
-use apostasy_core::{egui::{self, Pos2, Vec2}, objects::world::World};
+use apostasy_core::{egui::{self, Pos2, Vec2}, ecs::world::World};
 use apostasy_macros::{Resource, late_update};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

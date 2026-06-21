@@ -7,7 +7,7 @@ use apostasy_macros::Resource;
 use parking_lot::Mutex;
 use wasmtime::{Config, Engine, Linker, Module, Store};
 
-use crate::objects::world::World;
+use crate::ecs::world::World;
 
 use super::host::{HostState, register_host_fns};
 

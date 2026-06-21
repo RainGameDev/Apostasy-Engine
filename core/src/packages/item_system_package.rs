@@ -7,7 +7,7 @@ use crate::{
     assets::{asset_manager::AssetManager, loaders::item_loader::ItemLoader},
     items::ItemRegistry,
     log,
-    objects::world::World,
+    ecs::world::World,
 };
 
 pub(crate) fn add_item_system_package(world: &mut World) {

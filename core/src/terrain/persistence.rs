@@ -6,7 +6,7 @@ use cgmath::Vector3;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    objects::{Object, cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
+    ecs::{Object, cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
     terrain::{
         TerrainAtlasNeedsRebuild, TerrainChunkMap, TerrainSettings,
         chunk::{NeedsTerrainRebuild, TerrainChunk, MAX_ACTIVE_LAYERS},

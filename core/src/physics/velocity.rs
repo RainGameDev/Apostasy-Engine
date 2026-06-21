@@ -4,7 +4,7 @@ use cgmath::{InnerSpace, Quaternion, Rotation3, Vector3, Zero};
 
 use crate::{
     log,
-    objects::{
+    ecs::{
         component::Inspect, components::transform::Transform, systems::DeltaTime, tags::Player,
         world::World,
     },

@@ -3,7 +3,7 @@ use ash::vk;
 use cgmath::Vector3;
 
 use crate::{
-    objects::world::World,
+    ecs::world::World,
     rendering::vulkan::rendering_context::VulkanRenderingContext,
     terrain::TerrainChunkMap,
 };

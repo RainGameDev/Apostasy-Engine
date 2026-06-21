@@ -5,7 +5,7 @@ pub mod runtime;
 use anyhow::Result;
 use apostasy_macros::{start, update};
 
-use crate::objects::world::World;
+use crate::ecs::world::World;
 
 use self::runtime::{ScriptRuntime, discover_script_paths};
 
