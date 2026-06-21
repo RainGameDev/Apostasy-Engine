@@ -12,7 +12,6 @@ use apostasy_core::{
     },
     cgmath::{SquareMatrix, Vector3, Zero},
     ecs::{
-        Object,
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind, MouseBind},
         tags::Player,
@@ -104,18 +103,16 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
 
 #[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
-    let camera = Object::new()
-        .set_name("Camera")
-        .add_component(Camera::default())
-        .add_component(Transform {
-            local_position: Vector3::new(0.0, 2.0, 20.0),
-            ..Default::default()
-        })
-        .add_component(Velocity::default())
-        .add_tag(ActiveCamera)
-        .add_tag(EditorCamera);
-
-    world.add_object(camera);
+    let camera_id = world.spawn();
+    world.set_name(camera_id, "Camera");
+    world.add_component(camera_id, Camera::default());
+    world.add_component(camera_id, Transform {
+        local_position: Vector3::new(0.0, 2.0, 20.0),
+        ..Default::default()
+    });
+    world.add_component(camera_id, Velocity::default());
+    world.add_tag::<ActiveCamera>(camera_id);
+    world.add_tag::<EditorCamera>(camera_id);
 
     // Seed cell streaming with the saved render distance so far cells unload/reload
     // around the camera. load_worldspace preserves this setting when it runs.
@@ -149,77 +146,70 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         let _ = load_terrain_cells(world, &terrain_dir);
         EditorPreferences::save_last_scene(&scene_name);
     } else {
-        let floor = Object::new()
-            .set_name("Floor")
-            .add_component(Transform {
-                local_scale: Vector3::new(15.0, 1.0, 15.0),
-                ..Default::default()
-            })
-            .add_component(ModelRenderer::default())
-            .add_component(Velocity::static_object())
-            .add_component(Collider::new_static(
-                ColliderShape::Cuboid {
-                    size: Vector3::new(1.0, 1.0, 1.0),
-                },
-                Vector3::zero(),
-            ));
-        world.add_object(floor);
+        let floor_id = world.spawn();
+        world.set_name(floor_id, "Floor");
+        world.add_component(floor_id, Transform {
+            local_scale: Vector3::new(15.0, 1.0, 15.0),
+            ..Default::default()
+        });
+        world.add_component(floor_id, ModelRenderer::default());
+        world.add_component(floor_id, Velocity::static_object());
+        world.add_component(floor_id, Collider::new_static(
+            ColliderShape::Cuboid { size: Vector3::new(1.0, 1.0, 1.0) },
+            Vector3::zero(),
+        ));
 
-        let cube = Object::new()
-            .set_name("Cube")
-            .add_component(Transform {
-                local_position: Vector3::new(4.0, 10.0, 0.0),
-                ..Default::default()
-            })
-            .add_component(ModelRenderer::default())
-            .add_component(Velocity::default())
-            .add_component(Gravity::default())
-            .add_component(Collider::default());
-        world.add_object(cube);
+        let cube_id = world.spawn();
+        world.set_name(cube_id, "Cube");
+        world.add_component(cube_id, Transform {
+            local_position: Vector3::new(4.0, 10.0, 0.0),
+            ..Default::default()
+        });
+        world.add_component(cube_id, ModelRenderer::default());
+        world.add_component(cube_id, Velocity::default());
+        world.add_component(cube_id, Gravity::default());
+        world.add_component(cube_id, Collider::default());
 
-        let cube = Object::new()
-            .set_name("Cube")
-            .add_component(Transform {
-                local_position: Vector3::new(-4.0, 15.0, 0.0),
-                ..Default::default()
-            })
-            .add_component(ModelRenderer::default())
-            .add_component(Velocity::default())
-            .add_component(Gravity::default())
-            .add_component(Collider::default());
-        world.add_object(cube);
+        let cube2_id = world.spawn();
+        world.set_name(cube2_id, "Cube");
+        world.add_component(cube2_id, Transform {
+            local_position: Vector3::new(-4.0, 15.0, 0.0),
+            ..Default::default()
+        });
+        world.add_component(cube2_id, ModelRenderer::default());
+        world.add_component(cube2_id, Velocity::default());
+        world.add_component(cube2_id, Gravity::default());
+        world.add_component(cube2_id, Collider::default());
 
-        let sphere = Object::new()
-            .set_name("Sphere")
-            .add_component(Transform {
-                local_position: Vector3::new(1.0, 8.0, 0.0),
-                ..Default::default()
-            })
-            .add_component(ModelRenderer::from_path("sphere"))
-            .add_component(Velocity::default_sphere())
-            .add_component(Gravity::default())
-            .add_component(Collider::new(
-                ColliderShape::Sphere { radius: 1.0 },
-                Vector3::zero(),
-            ))
-            .add_tag(Player);
-        world.add_object(sphere);
+        let sphere_id = world.spawn();
+        world.set_name(sphere_id, "Sphere");
+        world.add_component(sphere_id, Transform {
+            local_position: Vector3::new(1.0, 8.0, 0.0),
+            ..Default::default()
+        });
+        world.add_component(sphere_id, ModelRenderer::from_path("sphere"));
+        world.add_component(sphere_id, Velocity::default_sphere());
+        world.add_component(sphere_id, Gravity::default());
+        world.add_component(sphere_id, Collider::new(
+            ColliderShape::Sphere { radius: 1.0 },
+            Vector3::zero(),
+        ));
+        world.add_tag::<Player>(sphere_id);
 
-        let sphere = Object::new()
-            .set_name("Sphere")
-            .add_component(Transform {
-                local_position: Vector3::new(0.0, 8.0, 0.0),
-                ..Default::default()
-            })
-            .add_component(ModelRenderer::from_path("sphere"))
-            .add_component(Velocity::default_sphere())
-            .add_component(Gravity::default())
-            .add_component(Collider::new(
-                ColliderShape::Sphere { radius: 1.0 },
-                Vector3::zero(),
-            ))
-            .add_tag(Player);
-        world.add_object(sphere);
+        let sphere2_id = world.spawn();
+        world.set_name(sphere2_id, "Sphere");
+        world.add_component(sphere2_id, Transform {
+            local_position: Vector3::new(0.0, 8.0, 0.0),
+            ..Default::default()
+        });
+        world.add_component(sphere2_id, ModelRenderer::from_path("sphere"));
+        world.add_component(sphere2_id, Velocity::default_sphere());
+        world.add_component(sphere2_id, Gravity::default());
+        world.add_component(sphere2_id, Collider::new(
+            ColliderShape::Sphere { radius: 1.0 },
+            Vector3::zero(),
+        ));
+        world.add_tag::<Player>(sphere2_id);
 
         let _ = load_terrain_cells(world, &terrain_dir);
     }
@@ -297,21 +287,14 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
     let right_click = inputs.is_mousebind_active("RightMousePress");
 
     if left_click {
-        let camera_transform = world
-            .get_objects_with_component::<Camera>()
-            .first()
-            .unwrap()
-            .get_component::<Transform>()
-            .unwrap()
-            .clone();
-
-        let camera_view = world
-            .get_objects_with_component::<Camera>()
-            .first()
-            .unwrap()
-            .get_component::<Camera>()
-            .unwrap()
-            .clone();
+        let cam_ids = world.get_entities_with_component::<Camera>();
+        let first_cam = cam_ids.first().copied();
+        let camera_transform = first_cam
+            .and_then(|id| world.get_component::<Transform>(id).cloned())
+            .unwrap();
+        let camera_view = first_cam
+            .and_then(|id| world.get_component::<Camera>(id).cloned())
+            .unwrap();
         let viewport_size = world.get_resource::<ViewportSize>().unwrap();
 
         let aspect = viewport_size.logical_width / viewport_size.logical_height;
@@ -368,20 +351,14 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             world.insert_resource(ViewportContextMenu::default());
         }
 
-        let camera_transform = world
-            .get_objects_with_component::<Camera>()
-            .first()
-            .unwrap()
-            .get_component::<Transform>()
-            .unwrap()
-            .clone();
-        let camera_view = world
-            .get_objects_with_component::<Camera>()
-            .first()
-            .unwrap()
-            .get_component::<Camera>()
-            .unwrap()
-            .clone();
+        let cam_ids2 = world.get_entities_with_component::<Camera>();
+        let first_cam2 = cam_ids2.first().copied();
+        let camera_transform = first_cam2
+            .and_then(|id| world.get_component::<Transform>(id).cloned())
+            .unwrap();
+        let camera_view = first_cam2
+            .and_then(|id| world.get_component::<Camera>(id).cloned())
+            .unwrap();
 
         let (vp_x, vp_y, vp_w, vp_h) = {
             let vp = world.get_resource::<ViewportSize>().unwrap();

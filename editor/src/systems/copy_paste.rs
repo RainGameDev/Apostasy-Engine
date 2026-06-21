@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     ecs::{
-        Object,
+        cell::EntityBlob,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
     },
@@ -84,12 +84,14 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
     let do_paste = !wants_keyboard && inputs.is_keybind_active("Paste");
     let do_duplicate = !wants_keyboard && inputs.is_keybind_active("Duplicate");
 
-    let clipboard = world.get_resource::<CellSearchState>()?.copied_obj.clone();
+    let clipboard: Option<EntityBlob> = world.get_resource::<CellSearchState>()?.copied_obj.clone();
     let selected_id = world.get_resource::<CellSearchState>()?.selected_obj;
-    let selected_obj: Option<Object> = selected_id.and_then(|id| world.get_object(id).cloned());
+    let selected_blob: Option<EntityBlob> = selected_id.and_then(|id| world.capture_entity(id));
 
-    if do_copy && let Some(obj) = selected_obj.clone() {
-        world.get_resource_mut::<CellSearchState>()?.copied_obj = Some(obj);
+    if do_copy {
+        if let Some(blob) = selected_blob.clone() {
+            world.get_resource_mut::<CellSearchState>()?.copied_obj = Some(blob);
+        }
     }
 
     if do_paste {
@@ -100,12 +102,14 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
                 .get_resource_mut::<crate::systems::history::History>()?
                 .push(cmd);
         }
-    } else if do_duplicate && let Some(obj) = selected_obj {
-        let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
-        cmd.execute(world)?;
-        world
-            .get_resource_mut::<crate::systems::history::History>()?
-            .push(cmd);
+    } else if do_duplicate {
+        if let Some(blob) = selected_blob {
+            let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(blob, None));
+            cmd.execute(world)?;
+            world
+                .get_resource_mut::<crate::systems::history::History>()?
+                .push(cmd);
+        }
     }
 
     Ok(())

@@ -6,13 +6,12 @@ use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::cgmath::Vector3;
 use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
-use apostasy_core::ecs::cell::{CELL_SIZE, ObjectId, world_to_cell};
-use apostasy_core::ecs::cell_streaming::CellMigrations;
+use apostasy_core::ecs::cell::{CELL_SIZE, EntityBlob, ObjectId, world_to_cell};
 use apostasy_core::ecs::components::transform::Transform;
 use apostasy_core::ecs::resources::input_manager::InputManager;
 use apostasy_core::ecs::world::World;
 use apostasy_core::ecs::worldspace_serializer::load_worldspace;
-use apostasy_core::ecs::{Object, fmt_key};
+use apostasy_core::worldspaces::cell_streaming::CellMigrations;
 use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::terrain::chunk::TerrainChunk;
 use apostasy_core::ui::ui_context::EguiContext;
@@ -40,7 +39,7 @@ pub struct CellSearchState {
     pub obj_entries: Vec<ObjectRefEntry>,
     pub selected_obj: Option<ObjectId>,
     pub clicked_obj: Option<ObjectId>,
-    pub copied_obj: Option<Object>,
+    pub copied_obj: Option<EntityBlob>,
     pub renaming_obj: Option<ObjectId>,
     pub rename_buf: String,
     pub rename_request_focus: bool,
@@ -123,23 +122,23 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     // Track camera's current cell
-    if let Ok(camera) = world.get_object_with_tag::<EditorCamera>()
-        && let Ok(transform) = camera.get_component::<Transform>()
+    if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>()
+        && let Some(transform) = world.get_component::<Transform>(cam_id)
     {
         let cam_cell = world_to_cell(transform.global_position);
         world.get_resource_mut::<CellSearchState>()?.selected_cell = Some(cam_cell);
     }
 
     let obj_entries: Vec<ObjectRefEntry> = world
-        .get_all_objects()
+        .get_all_ids()
         .iter()
-        .filter(|(_, obj)| {
-            !obj.has_component::<TerrainChunk>() && !obj.has_tag::<EditorCamera>()
+        .filter(|&&id| {
+            !world.has_component::<TerrainChunk>(id) && !world.has_tag::<EditorCamera>(id)
         })
-        .map(|(id, obj)| ObjectRefEntry {
-            obj_name: obj.name.clone(),
-            id: fmt_key(*id),
-            object_id: *id,
+        .map(|&id| ObjectRefEntry {
+            obj_name: world.get_name(id).unwrap_or("Entity").to_string(),
+            id: format!("{:?}", id),
+            object_id: id,
         })
         .collect();
     world.get_resource_mut::<CellSearchState>()?.obj_entries = obj_entries;
@@ -167,7 +166,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         world.get_resource::<CellSearchState>()?.obj_filter.clone();
     let mut pending_delete: Option<ObjectId> = None;
     let mut pending_add = false;
-    let mut object_to_copy: Option<Object> = None;
+    let mut object_to_copy: Option<EntityBlob> = None;
     let mut renaming_id: Option<ObjectId> = world.get_resource::<CellSearchState>()?.renaming_obj;
     let mut rename_buf: String = world.get_resource::<CellSearchState>()?.rename_buf.clone();
     let mut rename_request_focus: bool = world
@@ -898,21 +897,11 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ui.close();
                                             }
                                             if ui.button("Copy Object").clicked() {
-                                                object_to_copy = Some(
-                                                    world
-                                                        .get_object(entry.object_id)
-                                                        .unwrap()
-                                                        .clone(),
-                                                );
+                                                object_to_copy = world.capture_entity(entry.object_id);
                                                 ui.close();
                                             }
                                             if ui.button("Cut Object").clicked() {
-                                                object_to_copy = Some(
-                                                    world
-                                                        .get_object(entry.object_id)
-                                                        .unwrap()
-                                                        .clone(),
-                                                );
+                                                object_to_copy = world.capture_entity(entry.object_id);
                                                 pending_delete = Some(entry.object_id);
                                                 ui.close();
                                             }
@@ -920,8 +909,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 let s = world
                                                     .get_resource::<CellSearchState>()
                                                     .unwrap();
-                                                if let Some(obj) = s.copied_obj.clone() {
-                                                    world.add_object(obj);
+                                                if let Some(blob) = s.copied_obj.clone() {
+                                                    world.spawn_from_blob(&blob);
                                                 }
                                                 ui.close();
                                             }
@@ -1021,8 +1010,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 let s = world
                                                     .get_resource::<CellSearchState>()
                                                     .unwrap();
-                                                if let Some(obj) = s.copied_obj.clone() {
-                                                    world.add_object(obj);
+                                                if let Some(blob) = s.copied_obj.clone() {
+                                                    world.spawn_from_blob(&blob);
                                                 }
                                                 ui.close();
                                             }
@@ -1073,10 +1062,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if let Some((id, new_name)) = pending_rename {
-        let old_name = world
-            .get_object(id)
-            .map(|o| o.name.clone())
-            .unwrap_or_default();
+        let old_name = world.get_name(id).unwrap_or_default().to_string();
         let mut cmd = Box::new(crate::systems::history::RenameObjectCmd {
             id,
             old_name,
@@ -1112,14 +1098,24 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if pending_add {
-        let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(
-            Object::default(),
-            selected_cell,
-        ));
-        cmd.execute(world)?;
-        world
-            .get_resource_mut::<crate::systems::history::History>()?
-            .push(cmd);
+        // Spawn a fresh blank entity blob
+        let blank_id = match selected_cell {
+            Some(coord) => world.spawn_in_cell(coord),
+            None => world.spawn(),
+        };
+        world.set_name(blank_id, "Entity");
+        // Capture it as a blob for the undo command
+        if let Some(blob) = world.capture_entity(blank_id) {
+            // We already spawned it; set the history cmd to track it
+            let mut cmd = Box::new(crate::systems::history::AddObjectCmd {
+                blob,
+                cell: selected_cell,
+                added_id: Some(blank_id),
+            });
+            world
+                .get_resource_mut::<crate::systems::history::History>()?
+                .push(cmd);
+        }
     }
 
     if let Some((coord, new_name)) = pending_cell_rename {
@@ -1227,8 +1223,8 @@ fn ow_scene_delete_internal(world: &mut World, name: &str) {
 
 /// Moves the editor camera to the center of cell on the X & Z planes
 fn goto_cell(world: &mut World, coord: Vector3<i32>) {
-    if let Ok(camera) = world.get_object_with_tag_mut::<EditorCamera>()
-        && let Ok(transform) = camera.get_component_mut::<Transform>()
+    if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>()
+        && let Some(transform) = world.get_component_mut::<Transform>(cam_id)
     {
         let size = CELL_SIZE as f32;
         transform.local_position.x = coord.x as f32 * size + size / 2.0;

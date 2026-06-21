@@ -42,16 +42,15 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
 
     // Collect unresolved mesh colliders — can't hold object borrow while reading resources
     let unresolved: Vec<ObjectId> = world
-        .get_objects_with_component_with_ids::<Collider>()
+        .get_entities_with_component::<Collider>()
         .into_iter()
-        .filter_map(|(id, obj)| {
-            let col = obj.get_component::<Collider>().ok()?;
-            if let ColliderShape::Mesh { bvh, model_path, .. } = &col.shape {
-                if bvh.nodes.is_empty() && !model_path.is_empty() {
-                    return Some(id);
+        .filter(|&id| {
+            if let Some(col) = world.get_component::<Collider>(id) {
+                if let ColliderShape::Mesh { bvh, model_path, .. } = &col.shape {
+                    return bvh.nodes.is_empty() && !model_path.is_empty();
                 }
             }
-            None
+            false
         })
         .collect();
 
@@ -70,9 +69,14 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
 
     for id in unresolved {
         let (model_path, scale) = {
-            let obj = world.get_object(id).unwrap();
-            let col = obj.get_component::<Collider>().unwrap();
-            let t = obj.get_component::<Transform>().unwrap();
+            let col = match world.get_component::<Collider>(id) {
+                Some(c) => c,
+                None => continue,
+            };
+            let t = match world.get_component::<Transform>(id) {
+                Some(t) => t,
+                None => continue,
+            };
             let path = match &col.shape {
                 ColliderShape::Mesh { model_path, .. } => model_path.clone(),
                 _ => continue,
@@ -96,12 +100,10 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
                 let world_bvh = Arc::new(Bvh::build(scaled_triangles.clone()));
                 let triangles = Arc::new(scaled_triangles);
 
-                if let Some(obj) = world.get_object_mut(id) {
-                    if let Ok(col) = obj.get_component_mut::<Collider>() {
-                        if let ColliderShape::Mesh { bvh: b, triangles: t, .. } = &mut col.shape {
-                            *b = world_bvh;
-                            *t = triangles;
-                        }
+                if let Some(col) = world.get_component_mut::<Collider>(id) {
+                    if let ColliderShape::Mesh { bvh: b, triangles: t, .. } = &mut col.shape {
+                        *b = world_bvh;
+                        *t = triangles;
                     }
                 }
             }
@@ -113,21 +115,23 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
 
 #[fixed_update(priority = 10)]
 pub fn apply_gravity(world: &mut World, delta: f32) -> Result<()> {
-    for object in world.get_objects_with_component_mut::<Velocity>() {
-        if let Ok(gravity) = object.get_component::<Gravity>().cloned() {
-            let velocity = object.get_component_mut::<Velocity>()?;
-            if velocity.is_grounded {
-                if velocity.linear_velocity.y < 0.0 {
-                    velocity.linear_velocity.y = 0.0;
+    let ids = world.get_entities_with_component::<Velocity>();
+    for id in ids {
+        let gravity_strength = world.get_component::<Gravity>(id).map(|g| g.strength);
+        if let Some(gravity) = gravity_strength {
+            if let Some(velocity) = world.get_component_mut::<Velocity>(id) {
+                if velocity.is_grounded {
+                    if velocity.linear_velocity.y < 0.0 {
+                        velocity.linear_velocity.y = 0.0;
+                    }
+                } else {
+                    let mut fall_accel = gravity;
+                    if velocity.linear_velocity.y < 0.0 {
+                        fall_accel *= 1.8;
+                    }
+                    velocity.linear_velocity.y -= fall_accel * delta;
+                    velocity.linear_velocity.y = velocity.linear_velocity.y.max(-50.0);
                 }
-            } else {
-                let gravity = gravity.strength;
-                let mut fall_accel = gravity;
-                if velocity.linear_velocity.y < 0.0 {
-                    fall_accel *= 1.8;
-                }
-                velocity.linear_velocity.y -= fall_accel * delta;
-                velocity.linear_velocity.y = velocity.linear_velocity.y.max(-50.0);
             }
         }
     }

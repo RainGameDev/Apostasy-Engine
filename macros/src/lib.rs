@@ -40,6 +40,11 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                         Ok(())
                     }
                 },
+                add_to_world: |world, id, component| {
+                    if let Some(c) = component.as_any().downcast_ref::<#struct_name>() {
+                        world.add_component(id, c.clone());
+                    }
+                },
             }
         }
         inventory::submit! {
@@ -110,6 +115,45 @@ pub fn tag_derive(input: TokenStream) -> TokenStream {
         .push(parse_quote! { Self: Clone + Send + Sync + 'static });
 
     let struct_name = &ast.ident;
+
+    let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
+
+    let output = quote! {
+        impl #impl_generics apostasy_core::ecs::tags::Tag for #struct_name #type_generics
+            #where_clause
+
+        {
+            fn name() -> &'static str where Self: Sized {
+                std::any::type_name::<#struct_name>()
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn type_name(&self) -> &'static str {
+                std::any::type_name::<Self>()
+            }
+
+            fn type_name_static() -> &'static str {
+                std::any::type_name::<Self>()
+            }
+        }
+    };
+    output.into()
+}
+
+#[proc_macro_derive(TagWithInventory)]
+pub fn tag_with_inventory_derive(input: TokenStream) -> TokenStream {
+    let mut ast = parse_macro_input!(input as DeriveInput);
+    ast.generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote! { Self: Clone + Send + Sync + 'static });
+
+    let struct_name = &ast.ident;
+    let struct_name_str = struct_name.to_string();
 
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
 

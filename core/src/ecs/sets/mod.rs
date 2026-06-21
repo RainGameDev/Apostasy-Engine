@@ -9,6 +9,16 @@ pub struct SparseSet<T> {
     pub dense_entities: Vec<Entity>,
 }
 
+impl<T: Clone> Clone for SparseSet<T> {
+    fn clone(&self) -> Self {
+        Self {
+            sparse: self.sparse.clone(),
+            dense: self.dense.clone(),
+            dense_entities: self.dense_entities.clone(),
+        }
+    }
+}
+
 impl<T> Default for SparseSet<T> {
     fn default() -> Self {
         Self {

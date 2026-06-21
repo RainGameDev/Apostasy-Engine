@@ -1,15 +1,14 @@
 use anyhow::Result;
 use apostasy_core::{
     ecs::{
-        Object,
-        cell::{CellCoord, ObjectId},
-        cell_streaming::CellMigrations,
+        cell::{CellCoord, EntityBlob, ObjectId},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
     },
     start, ui::ui_context::EguiContext, update,
     winit::keyboard::{KeyCode, PhysicalKey},
+    worldspaces::cell_streaming::CellMigrations,
 };
 use apostasy_macros::Resource;
 
@@ -53,22 +52,22 @@ impl History {
 
 #[derive(Clone)]
 pub struct AddObjectCmd {
-    pub object: Object,
+    pub blob: EntityBlob,
     pub cell: Option<CellCoord>,
-    added_id: Option<ObjectId>,
+    pub(crate) added_id: Option<ObjectId>,
 }
 
 impl AddObjectCmd {
-    pub fn new(object: Object, cell: Option<CellCoord>) -> Self {
-        Self { object, cell, added_id: None }
+    pub fn new(blob: EntityBlob, cell: Option<CellCoord>) -> Self {
+        Self { blob, cell, added_id: None }
     }
 }
 
 impl EditorCommand for AddObjectCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
         let id = match self.cell {
-            Some(coord) => world.add_object_to_cell(coord, self.object.clone()),
-            None => world.add_object(self.object.clone()),
+            Some(coord) => world.spawn_from_blob_in_cell(&self.blob, coord),
+            None => world.spawn_from_blob(&self.blob),
         };
         self.added_id = Some(id);
         Ok(())
@@ -76,7 +75,7 @@ impl EditorCommand for AddObjectCmd {
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
         if let Some(id) = self.added_id.take() {
-            world.remove_object(id);
+            world.despawn(id);
         }
         Ok(())
     }
@@ -92,27 +91,25 @@ impl EditorCommand for AddObjectCmd {
 
 #[derive(Clone)]
 pub struct RemoveObjectCmd {
-    pub object: Object,
-    // Tracks the live ObjectId: starts as the original, updated each time undo re-adds the object.
-    // Slotmap assigns a new key on every insertion, so we must follow it across undo/redo cycles.
+    pub blob: EntityBlob,
     current_id: ObjectId,
 }
 
 impl RemoveObjectCmd {
     pub fn new(id: ObjectId, world: &World) -> Option<Self> {
-        let object = world.get_object(id)?.clone();
-        Some(Self { object, current_id: id })
+        let blob = world.capture_entity(id)?;
+        Some(Self { blob, current_id: id })
     }
 }
 
 impl EditorCommand for RemoveObjectCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        world.remove_object(self.current_id);
+        world.despawn(self.current_id);
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        self.current_id = world.add_object(self.object.clone());
+        self.current_id = world.spawn_from_blob(&self.blob);
         Ok(())
     }
 
@@ -132,16 +129,12 @@ pub struct RenameObjectCmd {
 
 impl EditorCommand for RenameObjectCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            obj.name = self.new_name.clone();
-        }
+        world.set_name(self.id, &self.new_name);
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            obj.name = self.old_name.clone();
-        }
+        world.set_name(self.id, &self.old_name);
         Ok(())
     }
 
@@ -161,19 +154,15 @@ pub struct MoveObjectCmd {
 
 impl EditorCommand for MoveObjectCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = self.new_transform.clone();
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(self.id) {
+            *t = self.new_transform.clone();
         }
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = self.old_transform.clone();
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(self.id) {
+            *t = self.old_transform.clone();
         }
         Ok(())
     }

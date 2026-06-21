@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use apostasy_core::{
     cgmath::Vector3,
     ecs::{
@@ -37,38 +37,35 @@ pub fn object_focus(world: &mut World) -> Result<()> {
         }
         if inputs.is_keybind_active("FocusObject") {
             world.insert_resource(IsObjectFocused);
-            let selected_obj = world.get_object(selected_obj).unwrap().clone();
-            if !selected_obj.has_component::<Transform>() {
+            if !world.has_component::<Transform>(selected_obj) {
                 return Ok(());
             }
-            let selected_transform = selected_obj.get_component::<Transform>()?;
-            let editor_camera = world.get_object_with_tag_mut::<EditorCamera>()?;
-            let transform = editor_camera.get_component_mut::<Transform>()?;
-
-            transform.local_position = selected_transform.global_position
-                - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
-            transform.global_position = transform.local_position;
-
-            transform.look_at(selected_transform.global_position);
+            let selected_global_pos = world.get_component::<Transform>(selected_obj)
+                .map(|t| t.global_position);
+            if let Some(sel_pos) = selected_global_pos {
+                let cam_id = world.get_entity_with_tag::<EditorCamera>()?;
+                let transform = world.get_component_mut::<Transform>(cam_id)
+                    .ok_or_else(|| anyhow::anyhow!("EditorCamera has no Transform"))?;
+                transform.local_position = sel_pos
+                    - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
+                transform.global_position = transform.local_position;
+                transform.look_at(sel_pos);
+            }
         }
 
         if world.has_resource::<IsObjectFocused>() && middle_click {
-            let selected_obj = world.get_object(selected_obj).unwrap().clone();
-            let selected_transform = selected_obj.get_component::<Transform>()?;
-
-            let editor_camera = world.get_object_with_tag_mut::<EditorCamera>()?;
-            let transform = editor_camera.get_component_mut::<Transform>()?;
-
-            let pivot = selected_transform.global_position;
-            let sensitivity = 0.3_f32;
-
-            transform.rotate_around(pivot, transform::UP, delta.0 as f32 * sensitivity);
-
-            // local_rotation is updated by the yaw rotate_around above, so calculate_right() is current
-            let right = transform.calculate_right();
-            transform.rotate_around(pivot, right, delta.1 as f32 * sensitivity);
-
-            transform.look_at(pivot);
+            let sel_pos = world.get_component::<Transform>(selected_obj)
+                .map(|t| t.global_position);
+            if let Some(pivot) = sel_pos {
+                let cam_id = world.get_entity_with_tag::<EditorCamera>()?;
+                let transform = world.get_component_mut::<Transform>(cam_id)
+                    .ok_or_else(|| anyhow::anyhow!("EditorCamera has no Transform"))?;
+                let sensitivity = 0.3_f32;
+                transform.rotate_around(pivot, transform::UP, delta.0 as f32 * sensitivity);
+                let right = transform.calculate_right();
+                transform.rotate_around(pivot, right, delta.1 as f32 * sensitivity);
+                transform.look_at(pivot);
+            }
         }
     }
 

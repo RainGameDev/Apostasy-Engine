@@ -24,17 +24,10 @@ pub fn rebuild_dirty_terrain(
     command_pool: vk::CommandPool,
     _graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
 ) -> Result<()> {
-    let ids: Vec<_> = world
-        .get_objects_with_tag_with_ids::<NeedsTerrainRebuild>()
-        .iter()
-        .map(|(id, _)| *id)
-        .collect();
+    let ids = world.get_entities_with_tag::<NeedsTerrainRebuild>();
 
     for id in ids {
-        let chunk = match world
-            .get_object(id)
-            .and_then(|o| o.get_component::<TerrainChunk>().ok().cloned())
-        {
+        let chunk = match world.get_component::<TerrainChunk>(id).cloned() {
             Some(c) => c,
             None => continue,
         };
@@ -42,20 +35,20 @@ pub fn rebuild_dirty_terrain(
         let neighbors = gather_neighbors(world, &chunk);
         let new_mesh = build_terrain_mesh(&chunk, &neighbors, context, command_pool)?;
 
-        if let Some(obj) = world.get_object_mut(id) {
-            // Queue old gpu buffers for deferred destruction.
-            if let Ok(old) = obj.get_component::<TerrainMesh>() {
-                queue_old_buffers(_graveyard, old);
-            }
-
-            if obj.has_component::<TerrainMesh>() {
-                *obj.get_component_mut::<TerrainMesh>().unwrap() = new_mesh;
-            } else {
-                obj.add_component(new_mesh);
-            }
-
-            obj.remove_tag::<NeedsTerrainRebuild>();
+        // Queue old gpu buffers for deferred destruction.
+        if let Some(old) = world.get_component::<TerrainMesh>(id) {
+            queue_old_buffers(_graveyard, old);
         }
+
+        if world.has_component::<TerrainMesh>(id) {
+            if let Some(mesh) = world.get_component_mut::<TerrainMesh>(id) {
+                *mesh = new_mesh;
+            }
+        } else {
+            world.add_component(id, new_mesh);
+        }
+
+        world.remove_tag::<NeedsTerrainRebuild>(id);
     }
 
     Ok(())
@@ -74,23 +67,19 @@ fn gather_neighbors(world: &World, chunk: &TerrainChunk) -> NeighborBorders {
     // Sample one step *inside* each neighbor so both chunks produce the same central
     // difference gradient at their shared border vertex. See NeighborBorders doc.
     let left_col = map.0.get(&Vector3::new(coord.x - 1, 0, coord.z))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .and_then(|&id| world.get_component::<TerrainChunk>(id))
         .map(|c| (0..side).map(|z| c.heights[r.saturating_sub(1) + z * side]).collect::<Vec<_>>());
 
     let right_col = map.0.get(&Vector3::new(coord.x + 1, 0, coord.z))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .and_then(|&id| world.get_component::<TerrainChunk>(id))
         .map(|c| (0..side).map(|z| c.heights[1.min(r) + z * side]).collect::<Vec<_>>());
 
     let top_row = map.0.get(&Vector3::new(coord.x, 0, coord.z - 1))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .and_then(|&id| world.get_component::<TerrainChunk>(id))
         .map(|c| (0..side).map(|x| c.heights[x + r.saturating_sub(1) * side]).collect::<Vec<_>>());
 
     let bottom_row = map.0.get(&Vector3::new(coord.x, 0, coord.z + 1))
-        .and_then(|&id| world.get_object(id))
-        .and_then(|o| o.get_component::<TerrainChunk>().ok())
+        .and_then(|&id| world.get_component::<TerrainChunk>(id))
         .map(|c| (0..side).map(|x| c.heights[x + 1.min(r) * side]).collect::<Vec<_>>());
 
     NeighborBorders { left_col, right_col, top_row, bottom_row }

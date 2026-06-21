@@ -1,3 +1,4 @@
+use std::any::{Any, TypeId};
 use std::cmp::Reverse;
 
 use anyhow::Result;
@@ -6,18 +7,18 @@ use hashbrown::HashMap;
 
 use crate::EngineMode;
 use crate::ecs::{
-    components::Component,
+    components::{Component, BoxedComponent, ComponentRegistration},
     resources::{Resource, ResourceMap},
     systems::{
         DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
         LateUpdateSystem, PreRenderSystem, StartSystem, UpdateSystem,
     },
-    tags::Tag,
+    tags::{Tag, TagRegistration},
 };
 use crate::utils::flatten::flatten;
 use crate::voxels::{VoxelTransform, chunk::Chunk, meshes::NeedsRemeshing, voxel::VoxelId};
 use crate::worldspaces::{
-    cell::{CellCoord, ObjectId},
+    cell::{CellCoord, EntityBlob, ObjectId},
     worldspace::Worldspace,
 };
 
@@ -387,6 +388,96 @@ impl World {
     }
 
     // ========== Resources ==========
+
+    // ========== Entity Blob / Capture / Restore ==========
+
+    /// Non-destructively captures an entity's full state into an [`EntityBlob`].
+    pub fn capture_entity(&self, id: ObjectId) -> Option<EntityBlob> {
+        self.worldspace.capture_entity(id)
+    }
+
+    /// Spawns a new entity from an [`EntityBlob`] (in the blob's original cell) and returns its ID.
+    pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> ObjectId {
+        self.worldspace.spawn_from_blob(blob)
+    }
+
+    /// Spawns a new entity from an [`EntityBlob`] into a specific cell and returns its ID.
+    pub fn spawn_from_blob_in_cell(&mut self, blob: &EntityBlob, coord: CellCoord) -> ObjectId {
+        let mut blob2 = blob.clone();
+        blob2.cell = coord;
+        self.worldspace.spawn_from_blob(&blob2)
+    }
+
+    // ========== Inspector / Editor helpers ==========
+
+    /// Returns the entity name as a mutable reference for inline editing.
+    pub fn get_name_mut(&mut self, id: ObjectId) -> Option<&mut String> {
+        self.worldspace.get_name_mut(id)
+    }
+
+    /// Returns all component TypeIds present on the given entity.
+    pub fn get_entity_component_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.worldspace.get_entity_component_type_ids(id)
+    }
+
+    /// Returns all tag TypeIds present on the given entity.
+    pub fn get_entity_tag_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.worldspace.get_entity_tag_type_ids(id)
+    }
+
+    /// Removes a component identified by TypeId from the given entity.
+    pub fn remove_component_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
+        self.worldspace.remove_component_by_type_id(id, type_id);
+    }
+
+    /// Returns the type name string for a component TypeId on the given entity.
+    pub fn get_component_type_name(&self, id: ObjectId, type_id: TypeId) -> Option<&'static str> {
+        self.worldspace.get_component_type_name(id, type_id)
+    }
+
+    /// Calls `f` with mutable `dyn Any` access to a component identified by TypeId.
+    pub fn with_component_any_mut(
+        &mut self,
+        id: ObjectId,
+        type_id: TypeId,
+        f: impl FnOnce(&mut dyn Any),
+    ) -> bool {
+        self.worldspace.with_component_any_mut(id, type_id, f)
+    }
+
+    /// Adds a boxed component to the given entity using the registration's `add_to_world` fn.
+    pub fn add_boxed_component(&mut self, id: ObjectId, comp: BoxedComponent) {
+        let type_name = comp.type_name();
+        if let Some(reg) = inventory::iter::<ComponentRegistration>()
+            .find(|r| r.type_name == type_name)
+        {
+            (reg.add_to_world)(self, id, comp);
+        }
+    }
+
+    /// Adds a component to the given entity by its registered type name.
+    pub fn add_component_by_name(&mut self, id: ObjectId, name: &str) -> Result<()> {
+        let reg = inventory::iter::<ComponentRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+            .ok_or_else(|| anyhow::anyhow!("No component registered as '{}'", name))?;
+        let comp = (reg.create)();
+        (reg.add_to_world)(self, id, comp);
+        Ok(())
+    }
+
+    /// Adds a tag to the given entity by its registered type name.
+    pub fn add_tag_by_name(&mut self, id: ObjectId, name: &str) -> Result<()> {
+        let reg = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+            .ok_or_else(|| anyhow::anyhow!("No tag registered as '{}'", name))?;
+        (reg.add_to_world)(self, id);
+        Ok(())
+    }
+
+    /// Removes a tag from the given entity by its registered type name.
+    pub fn remove_tag_by_name(&mut self, id: ObjectId, name: &str) {
+        self.worldspace.remove_tag_by_name(id, name);
+    }
 
     pub fn insert_resource<T: Resource + 'static>(&mut self, resource: T) -> &mut Self {
         self.resources.insert(resource);

@@ -42,6 +42,8 @@ pub struct ComponentRegistration {
     pub type_name: &'static str,
     pub create: fn() -> BoxedComponent,
     pub deserialize: fn(&mut BoxedComponent, &serde_yaml::Value) -> anyhow::Result<()>,
+    /// Downcast the boxed component and insert it into the world at the given entity.
+    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::ObjectId, BoxedComponent),
 }
 
 inventory::collect!(ComponentRegistration);
@@ -93,11 +95,25 @@ pub trait ComponentStorage: Any + Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     /// Returns true if this storage holds a component for the given entity.
     fn contains_entity(&self, entity: Entity) -> bool;
+    /// Returns the component for the given entity as `&dyn Any`, if present.
+    fn get_entity_any(&self, entity: Entity) -> Option<&dyn Any>;
+    /// Returns the component for the given entity as `&mut dyn Any`, if present.
+    fn get_entity_any_mut(&mut self, entity: Entity) -> Option<&mut dyn Any>;
     /// Clones the component at `src` into `dst_storage` at `dst_entity`.
     /// Both storages must be of the same concrete type.
     fn clone_entity_into(&self, src: Entity, dst_entity: Entity, dst: &mut dyn ComponentStorage);
     /// Creates an empty storage of the same component type.
     fn make_empty(&self) -> Box<dyn ComponentStorage>;
+    /// Creates a deep clone of this entire storage.
+    fn clone_storage(&self) -> Box<dyn ComponentStorage>;
+    /// Returns the type name of the component stored in this storage.
+    fn component_type_name(&self) -> &'static str;
+}
+
+impl Clone for Box<dyn ComponentStorage> {
+    fn clone(&self) -> Self {
+        self.clone_storage()
+    }
 }
 
 impl<T: Component + Clone + 'static> ComponentStorage for SparseSet<T> {
@@ -117,6 +133,14 @@ impl<T: Component + Clone + 'static> ComponentStorage for SparseSet<T> {
         self.contains(entity)
     }
 
+    fn get_entity_any(&self, entity: Entity) -> Option<&dyn Any> {
+        self.get(entity).map(|v| v as &dyn Any)
+    }
+
+    fn get_entity_any_mut(&mut self, entity: Entity) -> Option<&mut dyn Any> {
+        self.get_mut(entity).map(|v| v as &mut dyn Any)
+    }
+
     fn clone_entity_into(&self, src: Entity, dst_entity: Entity, dst: &mut dyn ComponentStorage) {
         if let Some(value) = self.get(src) {
             if let Some(typed) = dst.as_any_mut().downcast_mut::<SparseSet<T>>() {
@@ -127,5 +151,13 @@ impl<T: Component + Clone + 'static> ComponentStorage for SparseSet<T> {
 
     fn make_empty(&self) -> Box<dyn ComponentStorage> {
         Box::new(SparseSet::<T>::new())
+    }
+
+    fn clone_storage(&self) -> Box<dyn ComponentStorage> {
+        Box::new(self.clone())
+    }
+
+    fn component_type_name(&self) -> &'static str {
+        std::any::type_name::<T>()
     }
 }

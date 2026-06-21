@@ -117,7 +117,9 @@ inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "GameCamera",
     singleton: false,
     hidden: false,
+    type_id: std::any::TypeId::of::<GameCamera>,
     create: || Box::new(GameCamera),
+    add_to_world: |world, id| world.add_tag::<GameCamera>(id),
 });
 
 #[derive(Tag, Clone)]
@@ -127,7 +129,9 @@ inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "EditorCamera",
     singleton: true,
     hidden: true,
+    type_id: std::any::TypeId::of::<EditorCamera>,
     create: || Box::new(EditorCamera),
+    add_to_world: |world, id| world.add_tag::<EditorCamera>(id),
 });
 
 #[derive(Tag, Clone)]
@@ -137,5 +141,7 @@ inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "ActiveCamera",
     singleton: true,
     hidden: false,
+    type_id: std::any::TypeId::of::<ActiveCamera>,
     create: || Box::new(ActiveCamera),
+    add_to_world: |world, id| world.add_tag::<ActiveCamera>(id),
 });

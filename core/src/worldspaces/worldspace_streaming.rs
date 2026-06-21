@@ -59,13 +59,13 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
     };
 
     // The active camera's cell is the centre of the loaded region.
-    let Ok(camera) = world.get_object_with_tag::<ActiveCamera>() else {
+    let Ok(camera_id) = world.get_entity_with_tag::<ActiveCamera>() else {
         return Ok(());
     };
-    let Ok(transform) = camera.get_component::<Transform>() else {
+    let Some(global_position) = world.get_component::<Transform>(camera_id).map(|t| t.global_position) else {
         return Ok(());
     };
-    let center = world_to_cell(transform.global_position);
+    let center = world_to_cell(global_position);
 
     let in_range = |c: CellCoord| {
         (c.x - center.x).abs() <= render_distance && (c.z - center.z).abs() <= render_distance
@@ -121,37 +121,31 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
 mod tests {
     use super::*;
     use crate::ecs::cell_streaming::cell_streaming_system;
-    use crate::ecs::{Object, components::transform::Transform};
+    use crate::ecs::components::transform::Transform;
     use crate::rendering::components::camera::ActiveCamera;
     use cgmath::{Vector3, Zero};
 
     fn count_named(world: &World, name: &str) -> usize {
         world
-            .worldspace()
-            .get_all_objects()
+            .get_all_ids()
             .iter()
-            .filter(|(_, o)| o.name == name)
+            .filter(|&&id| world.get_name(id).map(|n| n == name).unwrap_or(false))
             .count()
     }
 
     fn camera_at(world: &mut World, pos: Vector3<f32>) {
-        let cams: Vec<_> = world
-            .get_objects_with_tag_with_ids::<ActiveCamera>()
-            .iter()
-            .map(|(id, _)| *id)
-            .collect();
+        let cams = world.get_entities_with_tag::<ActiveCamera>();
         for id in cams {
-            world.remove_object(id);
+            world.despawn(id);
         }
-        let mut cam = Object::new();
-        cam.name = "Camera".into();
-        cam.add_component(Transform {
+        let cam_id = world.spawn();
+        world.set_name(cam_id, "Camera");
+        world.add_component(cam_id, Transform {
             global_position: pos,
             local_position: pos,
             ..Default::default()
         });
-        cam.add_tag(ActiveCamera);
-        world.add_object(cam);
+        world.add_tag::<ActiveCamera>(cam_id);
     }
 
     fn far_cell_object_count(world: &World) -> usize {
@@ -165,17 +159,13 @@ mod tests {
 
         // A populated far cell at (5,0,5).
         let far = Vector3::new(5, 0, 5);
-        let mut obj = Object::new();
-        obj.name = "FarObject".into();
-        obj.add_component(Transform {
+        let far_id = world.spawn_in_cell(far);
+        world.set_name(far_id, "FarObject");
+        world.add_component(far_id, Transform {
             global_position: Vector3::new(5.0 * 128.0 + 1.0, 0.0, 5.0 * 128.0 + 1.0),
             local_position: Vector3::new(5.0 * 128.0 + 1.0, 0.0, 5.0 * 128.0 + 1.0),
             ..Default::default()
         });
-        world
-            .worldspace_mut()
-            .get_or_create_cell(far)
-            .add_object(obj);
         assert_eq!(far_cell_object_count(&world), 1);
 
         // Snapshot it into the streaming source, as load_worldspace would.

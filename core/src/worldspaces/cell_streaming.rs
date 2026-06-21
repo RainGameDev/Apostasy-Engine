@@ -24,8 +24,8 @@ pub struct CellMigrations {
 pub fn cell_streaming_system(world: &mut World) -> Result<()> {
     // Collect first
     let mut migrations: Vec<(ObjectId, CellCoord)> = Vec::new();
-    for (id, object) in world.get_root_objects() {
-        if let Ok(transform) = object.get_component::<Transform>() {
+    for id in world.get_root_ids() {
+        if let Some(transform) = world.get_component::<Transform>(id) {
             let target = world_to_cell(transform.global_position);
             if target != id.cell {
                 migrations.push((id, target));

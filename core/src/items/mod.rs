@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 
+use apostasy_macros::Resource;
 use hashbrown::HashMap;
 
 use crate::ecs::component::BoxedComponent;
@@ -49,7 +50,7 @@ impl ItemDefinition {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug)]
 pub struct ItemRegistry {
     pub defs: HashMap<String, ItemDefinition>,
     pub name_to_id: HashMap<String, ItemId>,

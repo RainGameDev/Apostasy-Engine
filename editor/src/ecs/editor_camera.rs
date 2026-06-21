@@ -57,34 +57,40 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
 
     // camera
-    let camera = world.get_object_with_tag_mut::<EditorCamera>()?;
-    let cam_transform = camera.get_component_mut::<Transform>()?;
+    let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>() else {
+        return Ok(());
+    };
 
-    if is_middle_mouse {
-        if !is_object_focused {
-            cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
-            cam_transform.local_euler_angles.x =
-                cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
-            cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+    {
+        let cam_transform = world.get_component_mut::<Transform>(cam_id)
+            .ok_or_else(|| anyhow::anyhow!("EditorCamera has no Transform"))?;
+
+        if is_middle_mouse {
+            if !is_object_focused {
+                cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
+                cam_transform.local_euler_angles.x =
+                    cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
+                cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+            }
+
+            let current_transform = cam_transform.clone();
+            let wish_dir =
+                current_transform.global_rotation * Vector3::new(scroll_delta.0, 0.0, scroll_delta.1);
+            cam_transform.local_position -= wish_dir * 3000.0 * delta;
         }
 
+        if !viewport_info.is_hovered || !is_looking {
+            return Ok(());
+        }
+
+        cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
+        cam_transform.local_euler_angles.x = cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
+        cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+
         let current_transform = cam_transform.clone();
-        let wish_dir =
-            current_transform.global_rotation * Vector3::new(scroll_delta.0, 0.0, scroll_delta.1);
-        cam_transform.local_position -= wish_dir * 3000.0 * delta;
+        let wish_dir = current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
+        cam_transform.local_position += wish_dir * editor_camera_settings.move_speed * delta;
     }
-
-    if !viewport_info.is_hovered || !is_looking {
-        return Ok(());
-    }
-
-    cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
-    cam_transform.local_euler_angles.x = cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
-    cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
-
-    let current_transform = cam_transform.clone();
-    let wish_dir = current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
-    cam_transform.local_position += wish_dir * editor_camera_settings.move_speed * delta;
 
     world.remove_resource::<IsObjectFocused>();
 

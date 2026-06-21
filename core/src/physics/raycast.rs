@@ -93,14 +93,14 @@ pub struct ColliderSnapshot {
 /// Takes a snapshot of every object in the world that has a Collider component
 pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
     world
-        .get_objects_with_component_with_ids::<Collider>()
+        .get_entities_with_component::<Collider>()
         .into_iter()
-        .filter_map(|(id, object)| {
-            let transform = object.get_component::<Transform>().ok()?;
+        .filter_map(|id| {
+            let transform = world.get_component::<Transform>(id)?;
             let position = transform.global_position;
             let scale = transform.global_scale;
             let rotation = transform.global_rotation;
-            let collider_raw = object.get_component::<Collider>().ok()?;
+            let collider_raw = world.get_component::<Collider>(id)?;
             let mut collider = collider_raw.clone();
 
             // Bake scale to matches collision_detection_system
@@ -340,15 +340,13 @@ pub fn collider_raycast(
 
 /// Raycast forward from the active camera
 pub fn collider_raycast_camera(world: &mut World, range: f32) -> Option<ColliderHit> {
-    let camera_obj = world
-        .get_objects_with_component::<Camera>()
-        .first()
-        .copied()?;
-    let transform = camera_obj.get_component::<Transform>().ok()?.clone();
+    let camera_ids = world.get_entities_with_component::<Camera>();
+    let camera_id = camera_ids.first().copied()?;
+    let transform = world.get_component::<Transform>(camera_id)?.clone();
     let ray = get_camera_ray(&transform, Direction::Forward);
     let snapshots = build_collider_snapshot(world);
     // Ignore the camera object itself so it can't hit its own collider
-    raycast_colliders_raw(&ray, range, &snapshots, Some(camera_obj.id))
+    raycast_colliders_raw(&ray, range, &snapshots, Some(camera_id))
 }
 
 /// Raycast from an arbitrary transform with a pre-built snapshot (avoids rebuilding

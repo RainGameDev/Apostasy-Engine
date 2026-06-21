@@ -107,7 +107,7 @@ impl Cell {
     }
 
     /// Spawns a raw entity with no default name. Used internally for migration.
-    fn spawn_raw(&mut self) -> ObjectId {
+    pub(crate) fn spawn_raw(&mut self) -> ObjectId {
         let entity = self.entities.spawn();
         self.alive.insert(entity.index);
         self.oid(entity)
@@ -159,6 +159,10 @@ impl Cell {
         self.names.get(&id.entity.index).map(|s| s.as_str())
     }
 
+    pub fn get_name_mut(&mut self, id: ObjectId) -> Option<&mut String> {
+        self.names.get_mut(&id.entity.index)
+    }
+
     // ========== Components ==========
 
     pub fn add_component<T: Component + Clone + 'static>(&mut self, id: ObjectId, component: T) {
@@ -204,6 +208,119 @@ impl Cell {
             .and_then(|s| s.as_any().downcast_ref::<SparseSet<T>>())
             .map(|s| s.iter().map(|(e, _)| self.oid(e)).collect())
             .unwrap_or_default()
+    }
+
+    // ========== Entity Blob / Capture / Restore ==========
+
+    /// Captures a snapshot of this entity's data into an [`EntityBlob`] (non-destructive).
+    pub fn capture_entity(&self, id: ObjectId) -> Option<EntityBlob> {
+        if !self.entities.is_alive(id.entity) {
+            return None;
+        }
+        let name = self.names.get(&id.entity.index).cloned().unwrap_or_default();
+        let tags: Vec<TypeId> = self.tags.iter()
+            .filter(|(_, set)| set.contains(&id.entity.index))
+            .map(|(&type_id, _)| type_id)
+            .collect();
+        let components: Vec<(TypeId, Box<dyn ComponentStorage>)> = self.components.iter()
+            .filter(|(_, s)| s.contains_entity(id.entity))
+            .map(|(&type_id, storage)| {
+                let mut single = storage.make_empty();
+                storage.clone_entity_into(id.entity, id.entity, &mut *single);
+                (type_id, single)
+            })
+            .collect();
+        Some(EntityBlob { name, cell: self.coord, tags, components, source_entity: id.entity })
+    }
+
+    /// Spawns a new entity from an [`EntityBlob`] and returns its ID.
+    pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> ObjectId {
+        let id = self.spawn();
+        self.names.insert(id.entity.index, blob.name.clone());
+        for &type_id in &blob.tags {
+            self.tags.entry(type_id).or_default().insert(id.entity.index);
+        }
+        for (type_id, single) in &blob.components {
+            let dst = self.components
+                .entry(*type_id)
+                .or_insert_with(|| single.make_empty());
+            single.clone_entity_into(blob.source_entity, id.entity, &mut **dst);
+        }
+        id
+    }
+
+    // ========== Inspector / Editor helpers ==========
+
+    /// Returns all component TypeIds present on the given entity.
+    pub fn get_entity_component_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.components.iter()
+            .filter(|(_, s)| s.contains_entity(id.entity))
+            .map(|(&type_id, _)| type_id)
+            .collect()
+    }
+
+    /// Returns the type name of a component on this entity by its TypeId.
+    pub fn get_component_type_name(&self, id: ObjectId, type_id: TypeId) -> Option<&'static str> {
+        let storage = self.components.get(&type_id)?;
+        if storage.contains_entity(id.entity) {
+            Some(storage.component_type_name())
+        } else {
+            None
+        }
+    }
+
+    /// Calls `f` with a mutable reference to the component identified by `type_id` on this entity.
+    pub fn with_component_any_mut(
+        &mut self,
+        id: ObjectId,
+        type_id: TypeId,
+        f: impl FnOnce(&mut dyn std::any::Any),
+    ) -> bool {
+        if let Some(storage) = self.components.get_mut(&type_id) {
+            if let Some(any) = storage.get_entity_any_mut(id.entity) {
+                f(any);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Calls `f` with an immutable reference to the component identified by `type_id` on this entity.
+    pub fn with_component_any(
+        &self,
+        id: ObjectId,
+        type_id: TypeId,
+        f: impl FnOnce(&dyn std::any::Any),
+    ) -> bool {
+        if let Some(storage) = self.components.get(&type_id) {
+            if let Some(any) = storage.get_entity_any(id.entity) {
+                f(any);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns all tag TypeIds present on the given entity.
+    pub fn get_entity_tag_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.tags.iter()
+            .filter(|(_, set)| set.contains(&id.entity.index))
+            .map(|(&type_id, _)| type_id)
+            .collect()
+    }
+
+    /// Removes a component identified by its TypeId.
+    pub fn remove_component_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
+        if let Some(storage) = self.components.get_mut(&type_id) {
+            storage.remove(id.entity);
+        }
+    }
+
+    /// Removes a tag by TypeId.
+    pub fn remove_tag_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
+        if let Some(set) = self.tags.get_mut(&type_id) {
+            set.remove(&id.entity.index);
+        }
     }
 
     // ========== Tags ==========
@@ -460,6 +577,33 @@ pub(crate) struct EntitySnapshot {
     pub old_children: Vec<Entity>,
     pub tags: Vec<TypeId>,
     pub components: Vec<(TypeId, Box<dyn ComponentStorage>)>,
+}
+
+/// A public, cloneable snapshot of an entity's data. Used by editor undo/redo and copy-paste.
+#[derive(Clone)]
+pub struct EntityBlob {
+    pub name: String,
+    pub cell: CellCoord,
+    pub tags: Vec<TypeId>,
+    /// Each element: (TypeId, single-entity storage containing the component under `source_entity`)
+    pub(crate) components: Vec<(TypeId, Box<dyn ComponentStorage>)>,
+    /// The entity index that owns each single-entity storage inside `components`.
+    pub(crate) source_entity: Entity,
+}
+
+impl EntityBlob {
+    pub fn cell(&self) -> CellCoord {
+        self.cell
+    }
+}
+
+impl std::fmt::Debug for EntityBlob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntityBlob")
+            .field("name", &self.name)
+            .field("cell", &self.cell)
+            .finish()
+    }
 }
 
 /// Error helper for tag lookups that found nothing.

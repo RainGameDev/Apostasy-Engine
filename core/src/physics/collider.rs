@@ -537,14 +537,14 @@ struct Snapshot {
 
 fn build_snapshot(world: &World) -> Vec<Snapshot> {
     world
-        .get_objects_with_component_with_ids::<Collider>()
+        .get_entities_with_component::<Collider>()
         .into_iter()
-        .filter_map(|(id, object)| {
-            let transform = object.get_component::<Transform>().ok()?;
+        .filter_map(|id| {
+            let transform = world.get_component::<Transform>(id)?;
             let position = transform.global_position;
             let scale = transform.global_scale;
             let rotation = transform.global_rotation;
-            let collider_raw = object.get_component::<Collider>().ok()?;
+            let collider_raw = world.get_component::<Collider>(id)?;
             let is_static = collider_raw.is_static;
             let mut collider = collider_raw.clone();
 
@@ -569,7 +569,7 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
 
             Some(Snapshot {
                 id,
-                name: object.name.clone(),
+                name: world.get_name(id).unwrap_or_default().to_string(),
                 position,
                 rotation,
                 collider,
@@ -583,8 +583,8 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
 #[update(priority = 10)]
 pub fn collision_detection_system(world: &mut World) -> Result<()> {
     // Reset grounded flag itll be set by active collisions
-    for object in world.get_objects_with_component_mut::<Velocity>() {
-        if let Ok(v) = object.get_component_mut::<Velocity>() {
+    for id in world.get_entities_with_component::<Velocity>() {
+        if let Some(v) = world.get_component_mut::<Velocity>(id) {
             v.is_grounded = false;
         }
     }
@@ -637,12 +637,8 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     normal,
                 });
 
-                let vel_a = world
-                    .get_object(a.id)
-                    .and_then(|o| o.get_component::<Velocity>().ok().cloned());
-                let vel_b = world
-                    .get_object(b.id)
-                    .and_then(|o| o.get_component::<Velocity>().ok().cloned());
+                let vel_a = world.get_component::<Velocity>(a.id).cloned();
+                let vel_b = world.get_component::<Velocity>(b.id).cloned();
 
                 if let (Some(mut va), Some(mut vb)) = (vel_a, vel_b) {
                     // Positional correction
@@ -651,42 +647,34 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                             apply_position_correction(world, a.id, translation_vector * 0.5);
                             apply_position_correction(world, b.id, -translation_vector * 0.5);
                             // Cancel velocity along normal for both
-                            if let Some(obj) = world.get_object_mut(a.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let vn = v.linear_velocity.dot(normal);
-                                    if vn < 0.0 {
-                                        v.linear_velocity -= normal * vn;
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
+                                let vn = v.linear_velocity.dot(normal);
+                                if vn < 0.0 {
+                                    v.linear_velocity -= normal * vn;
                                 }
                             }
-                            if let Some(obj) = world.get_object_mut(b.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let vn = v.linear_velocity.dot(-normal);
-                                    if vn < 0.0 {
-                                        v.linear_velocity += normal * vn;
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
+                                let vn = v.linear_velocity.dot(-normal);
+                                if vn < 0.0 {
+                                    v.linear_velocity += normal * vn;
                                 }
                             }
                         }
                         (true, false) => {
                             apply_position_correction(world, b.id, -translation_vector);
-                            if let Some(obj) = world.get_object_mut(b.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let vn = v.linear_velocity.dot(normal);
-                                    if vn > 0.0 {
-                                        v.linear_velocity -= normal * vn;
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
+                                let vn = v.linear_velocity.dot(normal);
+                                if vn > 0.0 {
+                                    v.linear_velocity -= normal * vn;
                                 }
                             }
                         }
                         (false, true) => {
                             apply_position_correction(world, a.id, translation_vector);
-                            if let Some(obj) = world.get_object_mut(a.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let vn = v.linear_velocity.dot(normal);
-                                    if vn < 0.0 {
-                                        v.linear_velocity -= normal * vn;
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
+                                let vn = v.linear_velocity.dot(normal);
+                                if vn < 0.0 {
+                                    v.linear_velocity -= normal * vn;
                                 }
                             }
                         }
@@ -707,32 +695,26 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     resolve_impulse(&mut va, &mut vb, r_a, r_b, normal);
 
                     // skip static objects
-                    if !a.is_static
-                        && let Some(obj) = world.get_object_mut(a.id)
-                        && let Ok(v) = obj.get_component_mut::<Velocity>()
-                    {
-                        *v = va;
+                    if !a.is_static {
+                        if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
+                            *v = va;
+                        }
                     }
-                    if !b.is_static
-                        && let Some(obj) = world.get_object_mut(b.id)
-                        && let Ok(v) = obj.get_component_mut::<Velocity>()
-                    {
-                        *v = vb;
+                    if !b.is_static {
+                        if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
+                            *v = vb;
+                        }
                     }
 
                     if upness > 0.7 {
                         if !a.is_static {
-                            if let Some(obj) = world.get_object_mut(a.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    v.is_grounded = true;
-                                }
+                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
+                                v.is_grounded = true;
                             }
                         }
                         if !b.is_static {
-                            if let Some(obj) = world.get_object_mut(b.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    v.is_grounded = true;
-                                }
+                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
+                                v.is_grounded = true;
                             }
                         }
                     }
@@ -742,24 +724,20 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     if upness > 0.7 {
                         let tang_threshold = 0.5; // tuneable
                         if !a.is_static {
-                            if let Some(obj) = world.get_object_mut(a.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let tang =
-                                        v.linear_velocity - normal * v.linear_velocity.dot(normal);
-                                    if tang.magnitude() < tang_threshold {
-                                        v.linear_velocity -= tang; // zero small tangential
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
+                                let tang =
+                                    v.linear_velocity - normal * v.linear_velocity.dot(normal);
+                                if tang.magnitude() < tang_threshold {
+                                    v.linear_velocity -= tang; // zero small tangential
                                 }
                             }
                         }
                         if !b.is_static {
-                            if let Some(obj) = world.get_object_mut(b.id) {
-                                if let Ok(v) = obj.get_component_mut::<Velocity>() {
-                                    let tang =
-                                        v.linear_velocity - normal * v.linear_velocity.dot(normal);
-                                    if tang.magnitude() < tang_threshold {
-                                        v.linear_velocity -= tang;
-                                    }
+                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
+                                let tang =
+                                    v.linear_velocity - normal * v.linear_velocity.dot(normal);
+                                if tang.magnitude() < tang_threshold {
+                                    v.linear_velocity -= tang;
                                 }
                             }
                         }
@@ -770,13 +748,10 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
     }
 
     // Store events on whichever object holds the CollisionEvents component
-    if let Some(ev_object) = world
-        .get_objects_with_component_mut::<CollisionEvents>()
-        .into_iter()
-        .next()
-        && let Ok(ev) = ev_object.get_component_mut::<CollisionEvents>()
-    {
-        ev.events = events;
+    if let Some(ev_id) = world.get_entities_with_component::<CollisionEvents>().into_iter().next() {
+        if let Some(ev) = world.get_component_mut::<CollisionEvents>(ev_id) {
+            ev.events = events;
+        }
     }
 
     Ok(())
@@ -793,14 +768,10 @@ fn apply_position_correction(world: &mut World, id: ObjectId, offset: Vector3<f3
     };
     // Compute local-space delta before taking mutable borrows on `world`.
     let local_delta = if let Some(parent_id) = world.get_parent_id(id) {
-        if let Some(parent) = world.get_object(parent_id) {
-            if let Ok(parent_t) = parent.get_component::<Transform>() {
-                let pr = parent_t.global_rotation;
-                let inv_pr = Quaternion::new(pr.s, -pr.v.x, -pr.v.y, -pr.v.z);
-                rotate_vector(inv_pr, offset)
-            } else {
-                offset
-            }
+        if let Some(parent_t) = world.get_component::<Transform>(parent_id) {
+            let pr = parent_t.global_rotation;
+            let inv_pr = Quaternion::new(pr.s, -pr.v.x, -pr.v.y, -pr.v.z);
+            rotate_vector(inv_pr, offset)
         } else {
             offset
         }
@@ -808,9 +779,7 @@ fn apply_position_correction(world: &mut World, id: ObjectId, offset: Vector3<f3
         offset
     };
 
-    if let Some(obj) = world.get_object_mut(id)
-        && let Ok(t) = obj.get_component_mut::<Transform>()
-    {
+    if let Some(t) = world.get_component_mut::<Transform>(id) {
         // Apply correction in world space
         t.global_position += offset;
         // Apply the precomputed local delta

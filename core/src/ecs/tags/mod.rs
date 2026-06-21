@@ -9,7 +9,9 @@ inventory::submit!(crate::ecs::tag::TagRegistration {
     type_name: "Player",
     singleton: false,
     hidden: false,
+    type_id: std::any::TypeId::of::<Player>,
     create: || Box::new(Player),
+    add_to_world: |world, id| world.add_tag::<Player>(id),
 });
 
 use std::any::Any;
@@ -60,7 +62,11 @@ pub struct TagRegistration {
     pub type_name: &'static str,
     pub singleton: bool,
     pub hidden: bool,
+    /// Returns the TypeId of this tag's concrete type.
+    pub type_id: fn() -> std::any::TypeId,
     pub create: fn() -> Box<dyn Tag + Send + Sync>,
+    /// Adds this tag to the given entity in the world.
+    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::ObjectId),
 }
 
 inventory::collect!(TagRegistration);

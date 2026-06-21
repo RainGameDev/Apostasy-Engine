@@ -6,10 +6,14 @@ use apostasy_core::{
     items::{ItemRegistry, container::Container, voxel_component::Voxel},
     log_warn,
     ecs::{
-        Object, components::transform::Transform, resources::input_manager::InputManager,
+        components::transform::Transform, resources::input_manager::InputManager,
         tags::Player, world::World,
     },
-    physics::{Gravity, collider::Collider, velocity::Velocity},
+    physics::{
+        Gravity,
+        collider::{Collider, ColliderShape},
+        velocity::Velocity,
+    },
     rendering::components::{
         camera::{ActiveCamera, Camera, GameCamera},
         model_renderer::ModelRenderer,
@@ -50,51 +54,48 @@ impl Default for PlayerData {
     }
 }
 
+impl apostasy_core::ecs::component::Inspect for PlayerData {}
+
 #[start]
 pub fn player_init(world: &mut World) -> Result<()> {
-    let transform = Transform {
+    let player_id = world.spawn();
+    world.add_component(player_id, Transform {
         local_position: Vector3::new(0.0, 50.0, 0.0),
         ..Default::default()
-    };
+    });
+    world.add_component(player_id, Velocity::default());
+    world.add_component(player_id, Container::default());
+    world.add_component(player_id, Gravity::default());
+    world.add_component(player_id, Collider {
+        shape: ColliderShape::Capsule { radius: 0.4, height: 1.8 },
+        is_static: false,
+        ..Default::default()
+    });
+    world.add_component(player_id, PlayerData::default());
+    world.add_tag::<Player>(player_id);
+    world.add_tag::<LoadingGate>(player_id);
+    world.add_tag::<NeedsSpawnPoint>(player_id);
 
-    let camera = Object::new()
-        .add_component(Transform {
-            local_position: Vector3 {
-                x: 0.0,
-                y: 0.8,
-                z: 0.0,
-            },
-            ..Default::default()
-        })
-        .add_component(Camera::default())
-        .add_tag(ActiveCamera)
-        .add_tag(GameCamera);
-
-    let player = Object::new()
-        .add_component(transform)
-        .add_component(Velocity::default())
-        .add_component(Container::default())
-        .add_component(Gravity::default())
-        .add_component(Collider::player())
-        .add_component(PlayerData::default())
-        .add_tag(Player)
-        .add_tag(LoadingGate)
-        .add_tag(NeedsSpawnPoint);
+    let cam_id = world.spawn();
+    world.add_component(cam_id, Transform {
+        local_position: Vector3::new(0.0, 0.8, 0.0),
+        ..Default::default()
+    });
+    world.add_component(cam_id, Camera::default());
+    world.add_tag::<ActiveCamera>(cam_id);
+    world.add_tag::<GameCamera>(cam_id);
 
     let mut model_renderer = ModelRenderer::from_path("model.glb");
     model_renderer.is_wireframe = true;
 
-    let voxel_outline = Object::new()
-        .add_component(Transform {
-            local_scale: Vector3::new(0.85, 0.85, 0.85),
-            ..Default::default()
-        })
-        .add_component(model_renderer)
-        .add_tag(VoxelOutline);
+    let outline_id = world.spawn();
+    world.add_component(outline_id, Transform {
+        local_scale: Vector3::new(0.85, 0.85, 0.85),
+        ..Default::default()
+    });
+    world.add_component(outline_id, model_renderer);
+    world.add_tag::<VoxelOutline>(outline_id);
 
-    let player_id = world.add_object(player.clone());
-    let cam_id = world.add_object(camera.clone());
-    world.add_object(voxel_outline);
     world.set_parent(cam_id, Some(player_id))?;
     Ok(())
 }
@@ -104,64 +105,62 @@ pub fn update(world: &mut World) -> Result<()> {
     if world.has_resource::<IsPaused>() && !world.has_resource::<HasInitGeneration>() {
         return Ok(());
     }
+
+    let player_id = world.get_entity_with_tag::<Player>()?;
+
     if world.get_resource::<IsPaused>().is_ok() {
-        let player = world.get_object_with_tag_mut::<Player>()?;
-        let velocity = player.get_component_mut::<Velocity>()?;
-        velocity.process = false;
+        if let Some(velocity) = world.get_component_mut::<Velocity>(player_id) {
+            velocity.process = false;
+        }
         return Ok(());
-    } else {
-        let player = world.get_object_with_tag_mut::<Player>()?;
-        let velocity = player.get_component_mut::<Velocity>()?;
+    } else if let Some(velocity) = world.get_component_mut::<Velocity>(player_id) {
         velocity.process = true;
     }
 
-    let player = world.get_object_with_tag::<Player>()?;
-
     // Block movement if player is still loading
-    if player.has_tag::<LoadingGate>() {
-        let player = world.get_object_with_tag_mut::<Player>()?;
-        let velocity = player.get_component_mut::<Velocity>()?;
-        velocity.linear_velocity = Vector3::zero();
+    if world.has_tag::<LoadingGate>(player_id) {
+        if let Some(velocity) = world.get_component_mut::<Velocity>(player_id) {
+            velocity.linear_velocity = Vector3::zero();
+        }
+        if let Some(transform) = world.get_component_mut::<Transform>(player_id) {
+            transform.local_position.y = 400.0;
+            transform.local_euler_angles = Vector3::zero();
+        }
 
-        let player = world.get_object_with_tag_mut::<Player>()?;
-        let transform = player.get_component_mut::<Transform>()?;
-        transform.local_position.y = 400.0;
-        transform.local_euler_angles = Vector3::zero();
-
-        let camera = world.get_object_with_tag_mut::<GameCamera>()?;
-        let transform = camera.get_component_mut::<Transform>()?;
-        transform.local_euler_angles = Vector3::new(-90.0, 0.0, 0.0);
-
+        let cam_id = world.get_entity_with_tag::<GameCamera>()?;
+        if let Some(cam_transform) = world.get_component_mut::<Transform>(cam_id) {
+            cam_transform.local_euler_angles = Vector3::new(-90.0, 0.0, 0.0);
+        }
         return Ok(());
     }
 
-    let inputs = world.get_resource::<InputManager>()?;
-
+    let inputs = world.get_resource::<InputManager>()?.clone();
     let mouse_delta = inputs.mouse_delta;
     let direction = inputs.input_vector_2d("Left", "Right", "Backwards", "Forwards");
     let should_jump = inputs.keybind_active("Jump")?;
 
-    let player = world.get_object_with_tag_mut::<Player>()?;
-    let player_transform = player.get_component_mut::<Transform>()?;
-    player_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+    if let Some(player_transform) = world.get_component_mut::<Transform>(player_id) {
+        player_transform.local_euler_angles.y -= mouse_delta.0 as f32;
+    }
 
-    let camera = world.get_object_with_tag_mut::<GameCamera>()?;
-    let cam_transform = camera.get_component_mut::<Transform>()?;
-    cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
-    cam_transform.local_euler_angles.x = cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
+    let cam_id = world.get_entity_with_tag::<GameCamera>()?;
+    if let Some(cam_transform) = world.get_component_mut::<Transform>(cam_id) {
+        cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
+        cam_transform.local_euler_angles.x = cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
+    }
 
-    let player = world.get_object_with_tag::<Player>()?;
-    let rotation = player.get_component::<Transform>()?.global_rotation;
+    let rotation = world.get_component::<Transform>(player_id)
+        .map(|t| t.global_rotation)
+        .unwrap_or_default();
 
-    let player = world.get_object_with_tag_mut::<Player>()?;
-    let velocity = player.get_component_mut::<Velocity>()?;
+    if let Some(velocity) = world.get_component_mut::<Velocity>(player_id) {
+        let wish_dir = rotation * Vector3::new(direction.x, 0.0, direction.y);
+        velocity.linear_velocity.x = wish_dir.x * 3.0;
+        velocity.linear_velocity.z = wish_dir.z * 3.0;
 
-    let wish_dir = rotation * Vector3::new(direction.x, 0.0, direction.y);
-    velocity.linear_velocity.x = wish_dir.x * 3.0;
-    velocity.linear_velocity.z = wish_dir.z * 3.0;
-
-    if should_jump && velocity.is_grounded {
-        velocity.linear_velocity.y = 5.0;
+        if should_jump && velocity.is_grounded {
+            velocity.linear_velocity.y = 5.0;
+        }
     }
 
     Ok(())
@@ -173,18 +172,14 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         return Ok(());
     }
 
-    let inputs = world.get_resource::<InputManager>()?;
+    let inputs = world.get_resource::<InputManager>()?.clone();
     let voxel_registry = world.get_resource::<VoxelRegistry>()?.clone();
     let item_registry = world.get_resource::<ItemRegistry>()?.clone();
     let to_break = inputs.mousebind_active("Break")?;
     let to_place = inputs.mousebind_active("Place")?;
     let can_build;
 
-    let outline = world
-        .get_objects_with_tag_with_ids::<VoxelOutline>()
-        .first()
-        .unwrap()
-        .0;
+    let outline_id = world.get_entity_with_tag::<VoxelOutline>()?;
 
     let new_pos = if let Some(hit) = voxel_raycast_camera(world, 4.0) {
         Vector3::new(
@@ -196,22 +191,15 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         Vector3::new(0.5, -5999.5, 0.5)
     };
 
-    world
-        .get_object_mut(outline)
-        .unwrap()
-        .get_component_mut::<Transform>()
-        .unwrap()
-        .local_position = new_pos;
+    if let Some(t) = world.get_component_mut::<Transform>(outline_id) {
+        t.local_position = new_pos;
+    }
+
+    let player_id = world.get_entity_with_tag::<Player>()?;
 
     {
-        let player_id = world
-            .get_objects_with_tag_with_ids::<Player>()
-            .first()
-            .unwrap()
-            .0;
-
-        let player = world.get_object_mut(player_id).unwrap();
-        let player_data = player.get_component_mut::<PlayerData>()?;
+        let player_data = world.get_component_mut::<PlayerData>(player_id)
+            .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no PlayerData"))?;
         player_data.current_build_ticks += 1;
         can_build = player_data.current_build_ticks >= player_data.build_delay;
     }
@@ -220,28 +208,29 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
         voxel_raycast_system(world, Some(0), 4.0)?;
     }
 
-    let player_id = world
-        .get_objects_with_tag_with_ids::<Player>()
-        .first()
-        .unwrap()
-        .0;
-
     let place_action: Option<(u64, u64)> = if to_place && can_build {
-        let player = world.get_object_mut(player_id).unwrap();
-        let inventory = player.get_component_mut::<Container>()?;
-        if let Some(item) = inventory.items.get(inventory.selected_item as usize) {
-            if item.amount > 0 {
-                let item = item_registry.get_def(&item.item).unwrap();
-                if item.has_component::<Voxel>() {
-                    let voxel = item.get_component::<Voxel>().unwrap();
-                    let voxel_key = voxel.name.clone();
-                    if let Some(voxel_id) = voxel_registry.name_to_id.get(&voxel_key) {
-                        Some((inventory.selected_item as u64, *voxel_id as u64))
+        if let Some(inventory) = world.get_component_mut::<Container>(player_id) {
+            if let Some(item) = inventory.items.get(inventory.selected_item as usize) {
+                if item.amount > 0 {
+                    let item_def = item_registry.get_def(&item.item);
+                    if let Some(item_def) = item_def {
+                        if item_def.has_component::<Voxel>() {
+                            let voxel = item_def.get_component::<Voxel>().unwrap();
+                            let voxel_key = voxel.name.clone();
+                            let selected = inventory.selected_item;
+                            if let Some(voxel_id) = voxel_registry.name_to_id.get(&voxel_key) {
+                                Some((selected as u64, *voxel_id as u64))
+                            } else {
+                                log_warn!(
+                                    "Voxel with the name: {} does not exist in the registry",
+                                    voxel_key
+                                );
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     } else {
-                        log_warn!(
-                            "Voxel with the name: {} does not exist in the registry",
-                            voxel_key
-                        );
                         None
                     }
                 } else {
@@ -260,28 +249,32 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
     if let Some((selected_index, voxel_id)) = place_action
         && let Some(raycast) = voxel_raycast_camera(world, 4.0)
     {
-        let player = world.get_object(player_id).unwrap();
-        let transform = player.get_component::<Transform>()?;
-        let collider = player.get_component::<Collider>()?;
+        let (pos, half_extents) = {
+            let transform = world.get_component::<Transform>(player_id)
+                .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Transform"))?;
+            let collider = world.get_component::<Collider>(player_id)
+                .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Collider"))?;
+            (transform.global_position, collider.half_extents)
+        };
 
         let min = Vector3::new(
-            (transform.global_position.x - collider.half_extents.x).floor() as i32,
-            (transform.global_position.y - collider.half_extents.y).floor() as i32,
-            (transform.global_position.z - collider.half_extents.z).floor() as i32,
+            (pos.x - half_extents.x).floor() as i32,
+            (pos.y - half_extents.y).floor() as i32,
+            (pos.z - half_extents.z).floor() as i32,
         );
         let max = Vector3::new(
-            (transform.global_position.x + collider.half_extents.x).floor() as i32,
-            (transform.global_position.y + collider.half_extents.y).floor() as i32,
-            (transform.global_position.z + collider.half_extents.z).floor() as i32,
+            (pos.x + half_extents.x).floor() as i32,
+            (pos.y + half_extents.y).floor() as i32,
+            (pos.z + half_extents.z).floor() as i32,
         );
 
         let face_offset = match raycast.face {
-            0 => (1, 0, 0),  // +X
-            1 => (-1, 0, 0), // -X
-            2 => (0, 1, 0),  // +Y
-            3 => (0, -1, 0), // -Y
-            4 => (0, 0, 1),  // +Z
-            5 => (0, 0, -1), // -Z
+            0 => (1, 0, 0),
+            1 => (-1, 0, 0),
+            2 => (0, 1, 0),
+            3 => (0, -1, 0),
+            4 => (0, 0, 1),
+            5 => (0, 0, -1),
             _ => (0, 0, 0),
         };
 
@@ -291,7 +284,6 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
             raycast.voxel_pos.z + face_offset.2,
         );
 
-        // Don't place a block inside the player's collider volume
         let inside_player = place_pos.x >= min.x
             && place_pos.x <= max.x
             && place_pos.y >= min.y
@@ -305,13 +297,12 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
 
         voxel_raycast_system(world, Some(voxel_id as u16), 4.0)?;
 
-        let player = world.get_object_mut(player_id).unwrap();
-        let inventory = player.get_component_mut::<Container>()?;
-        inventory.remove_item_index(selected_index as usize);
-
-        let player = world.get_object_mut(player_id).unwrap();
-        let player_data = player.get_component_mut::<PlayerData>()?;
-        player_data.current_build_ticks = 0;
+        if let Some(inventory) = world.get_component_mut::<Container>(player_id) {
+            inventory.remove_item_index(selected_index as usize);
+        }
+        if let Some(player_data) = world.get_component_mut::<PlayerData>(player_id) {
+            player_data.current_build_ticks = 0;
+        }
     }
 
     Ok(())
@@ -329,23 +320,23 @@ pub fn hud(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(player) = world.get_objects_with_tag_with_ids::<Player>().first() {
-        let player = player.1;
-        let inventory = player.get_component::<Container>()?.clone();
-
-        egui::Window::new("Inventory")
-            .anchor(egui::Align2::CENTER_TOP, [10.0, 10.0])
-            .show(&ctx, |ui| {
-                for index in 0..inventory.items.len() {
-                    if let Some(item) = inventory.items.get(index) {
-                        if inventory.selected_item == index as u32 {
-                            ui.label(format!("*{} ({})", item.item, item.amount));
-                        } else {
-                            ui.label(format!("{} ({})", item.item, item.amount));
+    if let Ok(player_id) = world.get_entity_with_tag::<Player>() {
+        let inventory = world.get_component::<Container>(player_id).cloned();
+        if let Some(inventory) = inventory {
+            egui::Window::new("Inventory")
+                .anchor(egui::Align2::CENTER_TOP, [10.0, 10.0])
+                .show(&ctx, |ui| {
+                    for index in 0..inventory.items.len() {
+                        if let Some(item) = inventory.items.get(index) {
+                            if inventory.selected_item == index as u32 {
+                                ui.label(format!("*{} ({})", item.item, item.amount));
+                            } else {
+                                ui.label(format!("{} ({})", item.item, item.amount));
+                            }
                         }
                     }
-                }
-            });
+                });
+        }
     }
 
     Ok(())
@@ -353,25 +344,20 @@ pub fn hud(world: &mut World) -> Result<()> {
 
 #[update]
 pub fn hotbar_update(world: &mut World) -> Result<()> {
-    let inputs = world.get_resource::<InputManager>()?;
+    let inputs = world.get_resource::<InputManager>()?.clone();
 
     let pressed_slot = (1..=9)
         .find(|&i| inputs.is_keybind_active(&format!("Hotbar{}", i)))
         .map(|i| i - 1);
 
-    let player_id = world
-        .get_objects_with_tag_with_ids::<Player>()
-        .first()
-        .unwrap()
-        .0;
+    let player_id = world.get_entity_with_tag::<Player>()?;
 
-    let player = world.get_object_mut(player_id).unwrap();
-    let inventory = player.get_component_mut::<Container>()?;
-
-    if let Some(slot) = pressed_slot
-        && inventory.items.len() > slot
-    {
-        inventory.selected_item = slot as u32;
+    if let Some(inventory) = world.get_component_mut::<Container>(player_id) {
+        if let Some(slot) = pressed_slot
+            && inventory.items.len() > slot
+        {
+            inventory.selected_item = slot as u32;
+        }
     }
 
     Ok(())

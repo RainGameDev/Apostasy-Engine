@@ -1,10 +1,11 @@
+use std::any::TypeId;
+
 use anyhow::{Result, anyhow};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::ecs::{Entity, components::Component, tags::Tag};
-use crate::worldspaces::cell::{Cell, CellCoord, EntitySnapshot, ObjectId, no_tag_error, world_to_cell};
-use crate::ecs::components::transform::Transform;
+use crate::ecs::{Entity, components::Component, tags::{Tag, TagRegistration}};
+use crate::worldspaces::cell::{Cell, CellCoord, EntityBlob, EntitySnapshot, ObjectId, no_tag_error, world_to_cell};
 
 /// An effectively infinite grid of [`Cell`]s.
 /// Cells are created lazily when first needed and dropped when empty and unnamed.
@@ -117,6 +118,10 @@ impl Worldspace {
         self.cells.get(&id.cell)?.get_name(id)
     }
 
+    pub fn get_name_mut(&mut self, id: ObjectId) -> Option<&mut String> {
+        self.cells.get_mut(&id.cell)?.get_name_mut(id)
+    }
+
     // ========== Components ==========
 
     pub fn add_component<T: Component + Clone + 'static>(&mut self, id: ObjectId, component: T) {
@@ -180,6 +185,60 @@ impl Worldspace {
         self.cells.values()
             .flat_map(|c| c.get_entities_with_tag::<T>())
             .collect()
+    }
+
+    // ========== Entity Blob / Capture / Restore ==========
+
+    /// Non-destructively captures an entity's state into an [`EntityBlob`].
+    pub fn capture_entity(&self, id: ObjectId) -> Option<EntityBlob> {
+        self.cells.get(&id.cell)?.capture_entity(id)
+    }
+
+    /// Spawns a new entity using data from an [`EntityBlob`] and returns its ID.
+    pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> ObjectId {
+        self.get_or_create_cell(blob.cell).spawn_from_blob(blob)
+    }
+
+    // ========== Inspector / Editor helpers ==========
+
+    pub fn get_entity_component_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.cells.get(&id.cell).map(|c| c.get_entity_component_type_ids(id)).unwrap_or_default()
+    }
+
+    pub fn get_entity_tag_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+        self.cells.get(&id.cell).map(|c| c.get_entity_tag_type_ids(id)).unwrap_or_default()
+    }
+
+    pub fn remove_component_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
+        if let Some(cell) = self.cells.get_mut(&id.cell) {
+            cell.remove_component_by_type_id(id, type_id);
+        }
+    }
+
+    pub fn get_component_type_name(&self, id: ObjectId, type_id: TypeId) -> Option<&'static str> {
+        self.cells.get(&id.cell)?.get_component_type_name(id, type_id)
+    }
+
+    pub fn with_component_any_mut(
+        &mut self,
+        id: ObjectId,
+        type_id: TypeId,
+        f: impl FnOnce(&mut dyn std::any::Any),
+    ) -> bool {
+        self.cells.get_mut(&id.cell)
+            .map(|c| c.with_component_any_mut(id, type_id, f))
+            .unwrap_or(false)
+    }
+
+    pub fn remove_tag_by_name(&mut self, id: ObjectId, name: &str) {
+        if let Some(reg) = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+        {
+            let type_id = (reg.type_id)();
+            if let Some(cell) = self.cells.get_mut(&id.cell) {
+                cell.remove_tag_by_type_id(id, type_id);
+            }
+        }
     }
 
     // ========== Hierarchy ==========

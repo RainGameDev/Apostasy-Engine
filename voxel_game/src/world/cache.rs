@@ -1,5 +1,6 @@
+use std::collections::HashMap;
+
 use apostasy_core::{
-    egui::ahash::{HashMap, HashMapExt},
     noise::Perlin,
     voxels::biome::BiomeRegistry,
 };

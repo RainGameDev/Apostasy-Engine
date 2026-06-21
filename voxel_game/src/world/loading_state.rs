@@ -83,17 +83,15 @@ pub fn check_loading_complete(world: &mut World) -> Result<()> {
     // Remove loading gate from player if loading is complete
     let is_complete = world.get_resource::<LoadingState>()?.is_complete;
     if is_complete {
-        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
-            if player.has_tag::<LoadingGate>() {
-                player.remove_tag::<LoadingGate>();
+        if let Ok(player_id) = world.get_entity_with_tag::<Player>() {
+            if world.has_tag::<LoadingGate>(player_id) {
+                world.remove_tag::<LoadingGate>(player_id);
                 world.remove_resource::<IsPaused>();
             }
         }
-    } else {
-        if let Ok(player) = world.get_object_with_tag_mut::<Player>() {
-            if !player.has_tag::<LoadingGate>() {
-                player.add_tag(LoadingGate);
-            }
+    } else if let Ok(player_id) = world.get_entity_with_tag::<Player>() {
+        if !world.has_tag::<LoadingGate>(player_id) {
+            world.add_tag::<LoadingGate>(player_id);
         }
     }
 

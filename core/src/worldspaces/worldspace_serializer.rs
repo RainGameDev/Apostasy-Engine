@@ -6,10 +6,11 @@ use hashbrown::HashMap;
 
 use crate::{
     ecs::{
-        Object,
         cell::{CellCoord, ObjectId},
-        component::{BoxedComponent, get_component_registration},
-        components::transform::Transform,
+        components::{
+            get_component_registration,
+            transform::Transform,
+        },
         tag::get_tag_registration,
         world::World,
         worldspace_streaming::WorldspaceStreaming,
@@ -34,154 +35,161 @@ fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
     ])
 }
 
-fn serialize_component(component: &BoxedComponent) -> Option<serde_yaml::Value> {
-    let type_name = component.type_name();
-    let short = type_name.rsplit("::").next()?;
-
+fn serialize_component_transform(t: &Transform) -> Option<serde_yaml::Value> {
     let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), short.into());
+    map.insert("type".into(), "Transform".into());
+    map.insert("local_position".into(), vec3_to_yaml(t.local_position));
+    map.insert("local_euler_angles".into(), vec3_to_yaml(t.local_euler_angles));
+    map.insert("local_scale".into(), vec3_to_yaml(t.local_scale));
+    Some(serde_yaml::Value::Mapping(map))
+}
 
-    match short {
-        "Transform" => {
-            let t = component.as_any().downcast_ref::<Transform>()?;
-            map.insert("local_position".into(), vec3_to_yaml(t.local_position));
-            map.insert(
-                "local_euler_angles".into(),
-                vec3_to_yaml(t.local_euler_angles),
-            );
-            map.insert("local_scale".into(), vec3_to_yaml(t.local_scale));
-        }
-        "ModelRenderer" => {
-            let mr = component.as_any().downcast_ref::<ModelRenderer>()?;
-            map.insert("model_path".into(), mr.model_path.clone().into());
-            map.insert(
-                "material_override".into(),
-                mr.material_override.clone().unwrap_or("".into()).into(),
-            );
-            map.insert("is_wireframe".into(), mr.is_wireframe.into());
-        }
-        "Camera" => {
-            let c = component.as_any().downcast_ref::<Camera>()?;
-            map.insert("fov_y".into(), (c.fov_y as f64).into());
-            map.insert("near".into(), (c.near as f64).into());
-            map.insert("far".into(), (c.far as f64).into());
-            map.insert("is_main".into(), c.is_main.into());
-        }
-        "Collider" => {
-            let col = component.as_any().downcast_ref::<Collider>()?;
-            match &col.shape {
-                ColliderShape::Cuboid { size } => {
-                    map.insert("shape".into(), "Cuboid".into());
-                    map.insert("size".into(), vec3_to_yaml(*size));
-                }
-                ColliderShape::Sphere { radius } => {
-                    map.insert("shape".into(), "Sphere".into());
-                    map.insert("radius".into(), (*radius as f64).into());
-                }
-                ColliderShape::Capsule { radius, height } => {
-                    map.insert("shape".into(), "Capsule".into());
-                    map.insert("radius".into(), (*radius as f64).into());
-                    map.insert("height".into(), (*height as f64).into());
-                }
-                ColliderShape::Cylinder { radius, height } => {
-                    map.insert("shape".into(), "Cylinder".into());
-                    map.insert("radius".into(), (*radius as f64).into());
-                    map.insert("height".into(), (*height as f64).into());
-                }
+fn serialize_component_model_renderer(mr: &ModelRenderer) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "ModelRenderer".into());
+    map.insert("model_path".into(), mr.model_path.clone().into());
+    map.insert("material_override".into(), mr.material_override.clone().unwrap_or_default().into());
+    map.insert("is_wireframe".into(), mr.is_wireframe.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
 
-                ColliderShape::Mesh { model_path, .. } => {
-                    map.insert("shape".into(), "Mesh".into());
-                    map.insert("model_path".into(), model_path.clone().into());
-                }
-            }
-            map.insert("offset".into(), vec3_to_yaml(col.offset));
-            map.insert("is_static".into(), col.is_static.into());
-            map.insert("is_area".into(), col.is_area.into());
+fn serialize_component_camera(c: &Camera) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Camera".into());
+    map.insert("fov_y".into(), (c.fov_y as f64).into());
+    map.insert("near".into(), (c.near as f64).into());
+    map.insert("far".into(), (c.far as f64).into());
+    map.insert("is_main".into(), c.is_main.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_collider(col: &Collider) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Collider".into());
+    match &col.shape {
+        ColliderShape::Cuboid { size } => {
+            map.insert("shape".into(), "Cuboid".into());
+            map.insert("size".into(), vec3_to_yaml(*size));
         }
-        "Velocity" => {
-            let v = component.as_any().downcast_ref::<Velocity>()?;
-            map.insert("mass".into(), (v.mass as f64).into());
-            map.insert("process".into(), v.process.into());
-            map.insert("mu_static".into(), (v.mu_static as f64).into());
-            map.insert("mu_kinetic".into(), (v.mu_kinetic as f64).into());
-            map.insert("restitution".into(), (v.restitution as f64).into());
-            map.insert("linear_damping".into(), (v.linear_damping as f64).into());
-            map.insert("angular_damping".into(), (v.angular_damping as f64).into());
+        ColliderShape::Sphere { radius } => {
+            map.insert("shape".into(), "Sphere".into());
+            map.insert("radius".into(), (*radius as f64).into());
         }
-        "Gravity" => {
-            let g = component.as_any().downcast_ref::<Gravity>()?;
-            map.insert("strength".into(), (g.strength as f64).into());
+        ColliderShape::Capsule { radius, height } => {
+            map.insert("shape".into(), "Capsule".into());
+            map.insert("radius".into(), (*radius as f64).into());
+            map.insert("height".into(), (*height as f64).into());
         }
-        "Light" => {
-            let l = component.as_any().downcast_ref::<Light>()?;
-            match l.light_type {
-                LightType::Point { radius } => {
-                    map.insert("light_type".into(), "Point".into());
-                    map.insert("radius".into(), (radius as f64).into());
-                }
-                LightType::Directional => {
-                    map.insert("light_type".into(), "Directional".into());
-                }
-                LightType::Spot { length, angle } => {
-                    map.insert("light_type".into(), "Spot".into());
-                    map.insert("length".into(), (length as f64).into());
-                    map.insert("angle".into(), (angle as f64).into());
-                }
-            }
-            let mut color = serde_yaml::Mapping::new();
-            color.insert("r".into(), (l.color.x as f64).into());
-            color.insert("g".into(), (l.color.y as f64).into());
-            color.insert("b".into(), (l.color.z as f64).into());
-            map.insert("color".into(), serde_yaml::Value::Mapping(color));
-            map.insert("intensity".into(), (l.intensity as f64).into());
-            map.insert("is_emitting".into(), l.is_emitting.into());
-            map.insert("is_flickering".into(), l.is_flickering.into());
-            map.insert("intensity_min".into(), (l.intensity_min as f64).into());
-            map.insert("intensity_max".into(), (l.intensity_max as f64).into());
-            map.insert("radius_min".into(), (l.radius_min as f64).into());
-            map.insert("radius_max".into(), (l.radius_max as f64).into());
+        ColliderShape::Cylinder { radius, height } => {
+            map.insert("shape".into(), "Cylinder".into());
+            map.insert("radius".into(), (*radius as f64).into());
+            map.insert("height".into(), (*height as f64).into());
         }
-        _ => return None,
+        ColliderShape::Mesh { model_path, .. } => {
+            map.insert("shape".into(), "Mesh".into());
+            map.insert("model_path".into(), model_path.clone().into());
+        }
     }
+    map.insert("offset".into(), vec3_to_yaml(col.offset));
+    map.insert("is_static".into(), col.is_static.into());
+    map.insert("is_area".into(), col.is_area.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
 
+fn serialize_component_velocity(v: &crate::physics::velocity::Velocity) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Velocity".into());
+    map.insert("mass".into(), (v.mass as f64).into());
+    map.insert("process".into(), v.process.into());
+    map.insert("mu_static".into(), (v.mu_static as f64).into());
+    map.insert("mu_kinetic".into(), (v.mu_kinetic as f64).into());
+    map.insert("restitution".into(), (v.restitution as f64).into());
+    map.insert("linear_damping".into(), (v.linear_damping as f64).into());
+    map.insert("angular_damping".into(), (v.angular_damping as f64).into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_gravity(g: &crate::physics::Gravity) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Gravity".into());
+    map.insert("strength".into(), (g.strength as f64).into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_light(l: &Light) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Light".into());
+    match l.light_type {
+        LightType::Point { radius } => {
+            map.insert("light_type".into(), "Point".into());
+            map.insert("radius".into(), (radius as f64).into());
+        }
+        LightType::Directional => {
+            map.insert("light_type".into(), "Directional".into());
+        }
+        LightType::Spot { length, angle } => {
+            map.insert("light_type".into(), "Spot".into());
+            map.insert("length".into(), (length as f64).into());
+            map.insert("angle".into(), (angle as f64).into());
+        }
+    }
+    let mut color = serde_yaml::Mapping::new();
+    color.insert("r".into(), (l.color.x as f64).into());
+    color.insert("g".into(), (l.color.y as f64).into());
+    color.insert("b".into(), (l.color.z as f64).into());
+    map.insert("color".into(), serde_yaml::Value::Mapping(color));
+    map.insert("intensity".into(), (l.intensity as f64).into());
+    map.insert("is_emitting".into(), l.is_emitting.into());
+    map.insert("is_flickering".into(), l.is_flickering.into());
+    map.insert("intensity_min".into(), (l.intensity_min as f64).into());
+    map.insert("intensity_max".into(), (l.intensity_max as f64).into());
+    map.insert("radius_min".into(), (l.radius_min as f64).into());
+    map.insert("radius_max".into(), (l.radius_max as f64).into());
     Some(serde_yaml::Value::Mapping(map))
 }
 
 fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
-    let (name, children_ids, components_data, tags_data) = {
-        let obj = world.get_object(id)?;
+    // Skip editor/internal entities
+    if world.has_tag::<crate::rendering::components::camera::EditorCamera>(id)
+        || world.has_tag::<crate::ecs::tags::skips_serilization::SkipsSerilization>(id)
+    {
+        return None;
+    }
 
-        let should_skip = obj.tags.iter().any(|t| {
-            let tn = t.type_name();
-            tn.ends_with("EditorCamera") || tn.ends_with("SkipsSerilization")
-        });
-        if should_skip {
-            return None;
-        }
+    let name = world.get_name(id).unwrap_or("Entity").to_string();
+    let children_ids = world.get_children_ids(id);
 
-        let name = obj.name.clone();
-        let children_ids: Vec<ObjectId> = obj.children.clone();
+    // Serialize known component types
+    let mut components_data: serde_yaml::Sequence = Vec::new();
+    if let Some(c) = world.get_component::<Transform>(id) {
+        if let Some(v) = serialize_component_transform(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<ModelRenderer>(id) {
+        if let Some(v) = serialize_component_model_renderer(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Camera>(id) {
+        if let Some(v) = serialize_component_camera(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Collider>(id) {
+        if let Some(v) = serialize_component_collider(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<crate::physics::velocity::Velocity>(id) {
+        if let Some(v) = serialize_component_velocity(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<crate::physics::Gravity>(id) {
+        if let Some(v) = serialize_component_gravity(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Light>(id) {
+        if let Some(v) = serialize_component_light(c) { components_data.push(v); }
+    }
 
-        let components_data: serde_yaml::Sequence = obj
-            .components
-            .iter()
-            .filter_map(serialize_component)
-            .collect();
+    // Serialize known persistent tag types (excluding editor/transient tags)
+    let mut tags_data: serde_yaml::Sequence = Vec::new();
+    if world.has_tag::<crate::ecs::tags::Player>(id) {
+        tags_data.push(serde_yaml::Value::String("Player".to_string()));
+    }
 
-        let tags_data: serde_yaml::Sequence = obj
-            .tags
-            .iter()
-            .filter_map(|t| {
-                let n = t.type_name().rsplit("::").next()?.to_string();
-                if matches!(n.as_str(), "EditorCamera" | "ActiveCamera") {
-                    return None;
-                }
-                Some(serde_yaml::Value::String(n))
-            })
-            .collect();
-
-        (name, children_ids, components_data, tags_data)
-    };
+    let (name, children_ids, components_data, tags_data) = (name, children_ids, components_data, tags_data);
 
     let children: serde_yaml::Sequence = children_ids
         .iter()
@@ -216,14 +224,16 @@ fn parse_coord_key(key: &str) -> Option<CellCoord> {
 /// Returns `None` when the cell is not currently loaded.
 pub fn serialize_cell(world: &World, coord: CellCoord) -> Option<serde_yaml::Value> {
     let cell = world.worldspace().get_cell(coord)?;
+    let root_ids = cell.get_root_ids();
+    let cell_name = cell.name.clone();
     let mut objects = serde_yaml::Sequence::new();
-    for (id, _) in cell.get_root_objects() {
+    for id in root_ids {
         if let Some(obj_value) = serialize_object(world, id) {
             objects.push(obj_value);
         }
     }
     let mut cell_map = serde_yaml::Mapping::new();
-    cell_map.insert("name".into(), cell.name.clone().into());
+    cell_map.insert("name".into(), cell_name.into());
     cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
     Some(serde_yaml::Value::Mapping(cell_map))
 }
@@ -257,22 +267,30 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
     }
 
     let mut cells = serde_yaml::Mapping::new();
-    for cell in world.worldspace().loaded_cells() {
+    let cell_coords: Vec<CellCoord> = world.worldspace().loaded_cell_coords();
+    for coord in cell_coords {
+        let cell = match world.worldspace().get_cell(coord) {
+            Some(c) => c,
+            None => continue,
+        };
+        let root_ids = cell.get_root_ids();
+        let cell_name = cell.name.clone();
+        let cell_coord = cell.coord;
         let mut objects = serde_yaml::Sequence::new();
-        for (id, _) in cell.get_root_objects() {
+        for id in root_ids {
             if let Some(obj_value) = serialize_object(world, id) {
                 objects.push(obj_value);
             }
         }
         // Persist a cell if it has serialized objects or a user-assigned name.
-        if objects.is_empty() && cell.name.is_empty() {
+        if objects.is_empty() && cell_name.is_empty() {
             continue;
         }
         let mut cell_map = serde_yaml::Mapping::new();
-        cell_map.insert("name".into(), cell.name.clone().into());
+        cell_map.insert("name".into(), cell_name.into());
         cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
         cells.insert(
-            coord_key(cell.coord).into(),
+            coord_key(cell_coord).into(),
             serde_yaml::Value::Mapping(cell_map),
         );
     }
@@ -314,14 +332,12 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
     Ok(())
 }
 
-fn build_object(value: &serde_yaml::Value) -> Object {
+fn populate_entity(world: &mut World, id: ObjectId, value: &serde_yaml::Value) {
     let name = value
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("Object");
-
-    let mut obj = Object::new();
-    obj.name = name.to_string();
+    world.set_name(id, name);
 
     if let Some(components) = value.get("components").and_then(|v| v.as_sequence()) {
         for comp_value in components {
@@ -332,7 +348,7 @@ fn build_object(value: &serde_yaml::Value) -> Object {
             if let Some(reg) = get_component_registration(type_name) {
                 let mut component = (reg.create)();
                 let _ = (reg.deserialize)(&mut component, comp_value);
-                obj.components.push(component);
+                (reg.add_to_world)(world, id, component);
             }
         }
     }
@@ -341,13 +357,11 @@ fn build_object(value: &serde_yaml::Value) -> Object {
         for tag_value in tags {
             if let Some(tag_name) = tag_value.as_str() {
                 if let Some(reg) = get_tag_registration(tag_name) {
-                    obj.tags.push((reg.create)());
+                    (reg.add_to_world)(world, id);
                 }
             }
         }
     }
-
-    obj
 }
 
 /// Loads an object, and its children, into `cell_coord`,
@@ -359,12 +373,12 @@ fn load_object(
     parent_id: Option<ObjectId>,
     cell_coord: CellCoord,
 ) -> Result<()> {
-    let obj = build_object(value);
+    let obj_id = world.spawn_in_cell(cell_coord);
+    populate_entity(world, obj_id, value);
 
-    let obj_id = match parent_id {
-        Some(pid) => world.add_child_object(pid, obj)?,
-        None => world.add_object_to_cell(cell_coord, obj),
-    };
+    if let Some(pid) = parent_id {
+        world.set_parent(obj_id, Some(pid))?;
+    }
 
     if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
         for child_value in children {
@@ -380,25 +394,23 @@ pub fn load_worldspace(
     value: &serde_yaml::Value,
     keep_tags: &[&str],
 ) -> Result<()> {
-    let root_ids: Vec<ObjectId> = world
-        .get_root_objects()
-        .into_iter()
-        .map(|(id, _)| id)
+    let root_ids = world.get_root_ids();
+
+    // Resolve keep_tags names → TypeIds once before the loop.
+    let keep_type_ids: Vec<std::any::TypeId> = keep_tags
+        .iter()
+        .filter_map(|name| get_tag_registration(name))
+        .map(|reg| (reg.type_id)())
         .collect();
 
     for id in root_ids {
-        let should_keep = world
-            .get_object(id)
-            .map(|obj| {
-                obj.tags.iter().any(|t| {
-                    let short = t.type_name().rsplit("::").next().unwrap_or("");
-                    keep_tags.contains(&short)
-                })
-            })
-            .unwrap_or(false);
+        let entity_tag_ids = world.worldspace().get_entity_tag_type_ids(id);
+        let should_keep = keep_type_ids
+            .iter()
+            .any(|keep_id| entity_tag_ids.contains(keep_id));
 
         if !should_keep {
-            world.remove_object(id);
+            world.despawn(id);
         }
     }
 
@@ -462,19 +474,19 @@ pub fn load_worldspace(
     Ok(())
 }
 
-/// Legacy loader for the old flat `objects` scene format. Root objects are added
-/// via `add_object` (auto-placed into the cell containing their transform).
+/// Legacy loader for the old flat `objects` scene format. Root objects are placed
+/// in cell (0,0,0) by default (or the position-inferred cell for root objects).
 fn load_legacy_object(
     world: &mut World,
     value: &serde_yaml::Value,
     parent_id: Option<ObjectId>,
 ) -> Result<()> {
-    let obj = build_object(value);
+    let obj_id = world.spawn();
+    populate_entity(world, obj_id, value);
 
-    let obj_id = match parent_id {
-        Some(pid) => world.add_child_object(pid, obj)?,
-        None => world.add_object(obj),
-    };
+    if let Some(pid) = parent_id {
+        world.set_parent(obj_id, Some(pid))?;
+    }
 
     if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
         for child_value in children {

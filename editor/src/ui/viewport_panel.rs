@@ -159,7 +159,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .ok()
         .and_then(|r| r.hit_obj);
     let ctx_obj_name: Option<String> =
-        ctx_obj_id.and_then(|id| world.get_object(id).map(|o| o.name.clone()));
+        ctx_obj_id.and_then(|id| world.get_name(id).map(|n| n.to_string()));
 
     let mut pending_focus = false;
     let mut pending_inspect = false;
@@ -187,26 +187,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .ok()
             .and_then(|s| s.selected_obj);
         sel_id.and_then(|id| {
-            let obj_t = world
-                .get_object(id)?
-                .get_component::<Transform>()
-                .ok()?
-                .clone();
-            let collider = world
-                .get_object(id)
-                .and_then(|o| o.get_component::<Collider>().ok().cloned());
-            let cam_t = world
-                .get_objects_with_component::<Camera>()
-                .first()?
-                .get_component::<Transform>()
-                .ok()?
-                .clone();
-            let cam_c = world
-                .get_objects_with_component::<Camera>()
-                .first()?
-                .get_component::<Camera>()
-                .ok()?
-                .clone();
+            let obj_t = world.get_component::<Transform>(id)?.clone();
+            let collider = world.get_component::<Collider>(id).cloned();
+            let cam_ids = world.get_entities_with_component::<Camera>();
+            let first_cam = *cam_ids.first()?;
+            let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+            let cam_c = world.get_component::<Camera>(first_cam)?.clone();
             let aspect = world
                 .get_resource::<ViewportSize>()
                 .map(|v| v.logical_width / v.logical_height)
@@ -231,10 +217,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .ok()?
             .hit_pos?;
         let radius = world.get_resource::<TerrainToolState>().ok()?.brush_radius;
-        let cam_objs = world.get_objects_with_component::<Camera>();
-        let cam_obj = cam_objs.first()?;
-        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
-        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let cam_ids = world.get_entities_with_component::<Camera>();
+        let first_cam = *cam_ids.first()?;
+        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -249,10 +235,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .ok()
         .and_then(|s| s.selected_obj);
     let light_view_proj: Option<apostasy_core::cgmath::Matrix4<f32>> = (|| {
-        let cam_objs = world.get_objects_with_component::<Camera>();
-        let cam_obj = cam_objs.first()?;
-        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
-        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let cam_ids = world.get_entities_with_component::<Camera>();
+        let first_cam = *cam_ids.first()?;
+        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -264,15 +250,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
         Transform,
         apostasy_core::rendering::components::lighting::LightType,
         Vector3<f32>,
-    )> = world
-        .get_objects_with_component_with_ids::<Light>()
-        .into_iter()
-        .filter_map(|(id, obj)| {
-            let t = obj.get_component::<Transform>().ok()?.clone();
-            let l = obj.get_component::<Light>().ok()?;
-            Some((id, t, l.light_type, l.color))
-        })
-        .collect();
+    )> = {
+        let light_ids = world.get_entities_with_component::<Light>();
+        light_ids.into_iter().filter_map(|id| {
+            let t = world.get_component::<Transform>(id)?.clone();
+            let light_type = world.get_component::<Light>(id)?.light_type;
+            let color = world.get_component::<Light>(id)?.color;
+            Some((id, t, light_type, color))
+        }).collect()
+    };
     let mut light_clicked: Option<ObjectId> = None;
 
     {
@@ -582,18 +568,16 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_focus {
         if let Some(id) = ctx_obj_id {
-            let selected_transform = world
-                .get_object(id)
-                .and_then(|o| o.get_component::<Transform>().ok())
-                .map(|t| t.clone());
-            if let Some(selected_transform) = selected_transform {
+            let selected_pos = world.get_component::<Transform>(id)
+                .map(|t| t.global_position);
+            if let Some(sel_pos) = selected_pos {
                 world.insert_resource(IsObjectFocused);
-                if let Ok(editor_camera) = world.get_object_with_tag_mut::<EditorCamera>() {
-                    if let Ok(transform) = editor_camera.get_component_mut::<Transform>() {
-                        transform.local_position = selected_transform.global_position
+                if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>() {
+                    if let Some(transform) = world.get_component_mut::<Transform>(cam_id) {
+                        transform.local_position = sel_pos
                             - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
                         transform.global_position = transform.local_position;
-                        transform.look_at(selected_transform.global_position);
+                        transform.look_at(sel_pos);
                     }
                 }
             }
@@ -622,9 +606,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_copy {
         if let Some(id) = ctx_obj_id {
-            if let Some(obj) = world.get_object(id).cloned() {
+            if let Some(blob) = world.capture_entity(id) {
                 if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-                    s.copied_obj = Some(obj);
+                    s.copied_obj = Some(blob);
                 }
             }
         }
@@ -632,9 +616,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_duplicate {
         if let Some(id) = ctx_obj_id {
-            if let Some(obj) = world.get_object(id).cloned() {
+            if let Some(blob) = world.capture_entity(id) {
                 use crate::systems::history::EditorCommand;
-                let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
+                let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(blob, None));
                 cmd.execute(world).ok();
                 if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
                     h.push(cmd);
@@ -659,19 +643,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
         }
     }
     if let (Some(new_t), Some((id, _, _, _))) = (gizmo_transform_out, gizmo_data) {
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = new_t;
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(id) {
+            *t = new_t;
         }
     }
 
     // Record one history entry per completed gizmo drag
     if drag_just_ended {
         if let (Some(old_t), Some(id)) = (drag_start_transform, gizmo_obj_id) {
-            let new_t = world
-                .get_object(id)
-                .and_then(|obj| obj.get_component::<Transform>().ok().cloned());
+            let new_t = world.get_component::<Transform>(id).cloned();
             if let Some(new_t) = new_t {
                 let cmd = Box::new(crate::systems::history::MoveObjectCmd {
                     id,

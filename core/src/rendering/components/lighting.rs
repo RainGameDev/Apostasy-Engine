@@ -294,11 +294,14 @@ impl Inspect for Light {
 
 #[update(mode = "all")]
 pub fn light_flicker(world: &mut World) -> Result<()> {
-    let delta = world.get_resource::<DeltaTime>().unwrap().0.clone();
-    let lights = world.get_objects_with_component_mut::<Light>();
+    let delta = world.get_resource::<DeltaTime>().unwrap().0;
+    let light_ids = world.get_entities_with_component::<Light>();
 
-    for light in lights {
-        let light = light.get_component_mut::<Light>()?;
+    for id in light_ids {
+        let light = match world.get_component_mut::<Light>(id) {
+            Some(l) => l,
+            None => continue,
+        };
 
         if light.is_flickering {
             if (light.intensity - light.current_intensity_target).abs() < 0.1 {
