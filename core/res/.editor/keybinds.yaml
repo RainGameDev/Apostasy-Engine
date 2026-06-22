@@ -1,20 +1,4 @@
 keybinds:
-  SnapModifier:
-    key: ShiftLeft
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Redo:
-    key: KeyY
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
   TerrainColorEdit:
     key: KeyC
     action: Press
@@ -23,8 +7,56 @@ keybinds:
       shift: false
       alt: false
     context: null
-  TerrainMode:
-    key: KeyH
+  Forwards:
+    key: KeyW
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  SaveAs:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: true
+      alt: false
+    context: null
+  SnapModifier:
+    key: ShiftLeft
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  ReloadShaders:
+    key: F1
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Duplicate:
+    key: KeyD
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  GizmoScale:
+    key: KeyS
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: viewport
+  TerrainFlatten:
+    key: KeyF
     action: Press
     modifiers:
       ctrl: false
@@ -39,30 +71,6 @@ keybinds:
       shift: false
       alt: false
     context: null
-  Paste:
-    key: KeyV
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  Right:
-    key: KeyD
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Backwards:
-    key: KeyS
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
   Toggle Profiler:
     key: F3
     action: Press
@@ -71,16 +79,32 @@ keybinds:
       shift: false
       alt: false
     context: null
-  Save:
-    key: KeyS
-    action: Press
+  ShiftModifier:
+    key: ShiftLeft
+    action: Hold
     modifiers:
       ctrl: false
-      shift: true
+      shift: false
       alt: false
     context: null
   Delete:
     key: Delete
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  TerrainMode:
+    key: KeyH
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  TerrainSmooth:
+    key: KeyS
     action: Press
     modifiers:
       ctrl: false
@@ -103,72 +127,8 @@ keybinds:
       shift: false
       alt: false
     context: viewport
-  SaveAs:
-    key: KeyS
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: true
-      alt: false
-    context: null
-  FocusObject:
-    key: KeyC
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Jump:
-    key: Space
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  ShiftModifier:
-    key: ShiftLeft
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Undo:
-    key: KeyZ
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  TerrainSmooth:
-    key: KeyS
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  TerrainFlatten:
-    key: KeyF
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  Copy:
-    key: KeyC
-    action: Press
-    modifiers:
-      ctrl: true
-      shift: false
-      alt: false
-    context: null
-  Duplicate:
-    key: KeyD
+  Redo:
+    key: KeyY
     action: Press
     modifiers:
       ctrl: true
@@ -183,30 +143,14 @@ keybinds:
       shift: false
       alt: false
     context: viewport
-  Forwards:
-    key: KeyW
-    action: Hold
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  ReloadShaders:
-    key: F1
-    action: Press
-    modifiers:
-      ctrl: false
-      shift: false
-      alt: false
-    context: null
-  GizmoScale:
+  Save:
     key: KeyS
     action: Press
     modifiers:
       ctrl: false
-      shift: false
+      shift: true
       alt: false
-    context: viewport
+    context: null
   Left:
     key: KeyA
     action: Hold
@@ -215,17 +159,65 @@ keybinds:
       shift: false
       alt: false
     context: null
-mousebinds:
-  MiddleMouseClick:
-    key: Middle
+  Jump:
+    key: Space
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Undo:
+    key: KeyZ
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  FocusObject:
+    key: KeyC
+    action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Right:
+    key: KeyD
     action: Hold
     modifiers:
       ctrl: false
       shift: false
       alt: false
     context: null
-  RightMouseClick:
-    key: Right
+  Copy:
+    key: KeyC
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+  Backwards:
+    key: KeyS
+    action: Hold
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  Paste:
+    key: KeyV
+    action: Press
+    modifiers:
+      ctrl: true
+      shift: false
+      alt: false
+    context: null
+mousebinds:
+  MiddleMouseClick:
+    key: Middle
     action: Hold
     modifiers:
       ctrl: false
@@ -243,6 +235,14 @@ mousebinds:
   MouseClick:
     key: Left
     action: Press
+    modifiers:
+      ctrl: false
+      shift: false
+      alt: false
+    context: null
+  RightMouseClick:
+    key: Right
+    action: Hold
     modifiers:
       ctrl: false
       shift: false

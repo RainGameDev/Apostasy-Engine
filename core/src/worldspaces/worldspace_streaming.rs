@@ -9,7 +9,7 @@ use crate::{
         world::World,
         worldspace_serializer::{load_cell, serialize_cell},
     },
-    rendering::components::camera::ActiveCamera,
+    rendering::components::{camera::ActiveCamera, lighting::Light},
 };
 
 /// Smallest allowed render distance, in cells.
@@ -71,11 +71,27 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
         (c.x - center.x).abs() <= render_distance && (c.z - center.z).abs() <= render_distance
     };
 
+    // Pre-collect all cells that contain emitting lights so we never evict them.
+    // Directional and global lights should illuminate the whole world regardless of
+    // where the camera is, so their host cell must stay resident.
+    let light_cells: std::collections::HashSet<CellCoord> = world
+        .get_entities_with_component::<Light>()
+        .into_iter()
+        .filter(|&id| {
+            world.get_component::<Light>(id).map(|l| l.is_emitting).unwrap_or(false)
+        })
+        .map(|id| id.cell)
+        .collect();
+
     // Unload any loaded cell that has moved out of range, snapshotting it first so
     // changes made while loaded (including objects that migrated in) survive and can
     // be restored later.
     for coord in world.worldspace().loaded_cell_coords() {
         if in_range(coord) {
+            continue;
+        }
+        // Never evict a cell that hosts an emitting light.
+        if light_cells.contains(&coord) {
             continue;
         }
         if let Some(snapshot) = serialize_cell(world, coord) {
@@ -120,7 +136,7 @@ pub fn worldspace_streaming_system(world: &mut World) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::cell_streaming::cell_streaming_system;
+    use crate::worldspaces::cell_streaming::cell_streaming_system;
     use crate::ecs::components::transform::Transform;
     use crate::rendering::components::camera::ActiveCamera;
     use cgmath::{Vector3, Zero};

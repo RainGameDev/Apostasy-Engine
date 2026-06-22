@@ -738,6 +738,14 @@ impl Core {
                     let world_fixed_update_ns =
                         world_fixed_update_start.elapsed().as_nanos() as u64;
 
+                    // Refresh the view matrix with the camera's post-update transform so the
+                    // viewport render uses this frame's position rather than last frame's.
+                    if let Some(cam_t) = world.get_component::<Transform>(camera_id).cloned() {
+                        if let Some(cam_c) = world.get_component::<Camera>(camera_id).cloned() {
+                            push_constants.set_camera_constants(&cam_t, &cam_c, aspect);
+                        }
+                    }
+
                     let viewport_render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_viewport_render() {
                         log_error!("Failed to begin viewport render: {}", e);
