@@ -35,6 +35,14 @@ pub fn cell_streaming_system(world: &mut World) -> Result<()> {
 
     let mut remap: HashMap<ObjectId, ObjectId> = HashMap::new();
     for (id, target) in migrations {
+        let name = world.get_name(id).unwrap_or("unnamed").to_string();
+        let pos = world.get_component::<Transform>(id)
+            .map(|t| t.global_position)
+            .unwrap_or(cgmath::Vector3::new(0.0, 0.0, 0.0));
+        eprintln!(
+            "[cell_streaming] migrating '{}' ({:?}) from cell {:?} -> {:?}  (global_pos: {:.1},{:.1},{:.1})",
+            name, id.entity, id.cell, target, pos.x, pos.y, pos.z
+        );
         if let Some(new_id) = world.worldspace_mut().move_subtree_to_cell(id, target) {
             remap.insert(id, new_id);
         }

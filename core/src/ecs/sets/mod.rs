@@ -79,13 +79,15 @@ impl<T> SparseSet<T> {
         self.sparse[idx] = None;
         let last = self.dense.len() - 1;
         if dense_idx != last {
+            // Move the last entry into the vacated slot, then update its sparse pointer.
             self.dense.swap(dense_idx, last);
             self.dense_entities.swap(dense_idx, last);
             let moved = self.dense_entities[dense_idx];
             self.sparse[moved.index as usize] = Some(dense_idx as u32);
         }
+        // The removed entry is now at the end — pop it cleanly (no second swap).
         self.dense_entities.pop();
-        Some(self.dense.swap_remove(dense_idx))
+        self.dense.pop()
     }
 
     /// Checks if the sparse set contains the entity.
