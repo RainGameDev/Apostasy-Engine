@@ -536,6 +536,23 @@ impl Cell {
             .collect()
     }
 
+    /// Iterates all (TypeId, ObjectId) pairs across every tag set in this cell.
+    /// Used by [`crate::ecs::world::World::rebuild_tag_index`].
+    pub(crate) fn iter_tagged_entities(&self) -> impl Iterator<Item = (TypeId, ObjectId)> + '_ {
+        self.tags.iter().flat_map(move |(&type_id, indices)| {
+            indices.iter().filter_map(move |&idx| {
+                let generation = self.entities.current_generation(idx)?;
+                Some((
+                    type_id,
+                    ObjectId {
+                        cell: self.coord,
+                        entity: Entity { index: idx, generation },
+                    },
+                ))
+            })
+        })
+    }
+
     pub fn debug_entities(&self) {
         for &idx in &self.alive {
             if let Some(generation) = self.entities.current_generation(idx) {

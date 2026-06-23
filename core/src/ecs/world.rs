@@ -3,7 +3,7 @@ use std::cmp::Reverse;
 
 use anyhow::Result;
 use cgmath::Vector3;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 use crate::EngineMode;
 use crate::ecs::{
@@ -27,6 +27,7 @@ pub struct World {
     pub(crate) worldspace: Worldspace,
     pub(crate) resources: ResourceMap,
     pub(crate) chunk_position_index: HashMap<(i32, i32, i32), ObjectId>,
+    tag_index: HashMap<TypeId, HashSet<ObjectId>>,
 
     start_systems: Vec<StartSystem>,
     update_systems: Vec<UpdateSystem>,
@@ -261,6 +262,14 @@ impl World {
 
     /// Despawns an entity and all its descendants.
     pub fn despawn(&mut self, id: ObjectId) {
+        let mut to_remove: HashSet<ObjectId> = HashSet::new();
+        to_remove.insert(id);
+        for desc in self.worldspace.get_descendants(id) {
+            to_remove.insert(desc);
+        }
+        for set in self.tag_index.values_mut() {
+            set.retain(|oid| !to_remove.contains(oid));
+        }
         self.worldspace.despawn(id);
     }
 
@@ -309,30 +318,60 @@ impl World {
 
     pub fn add_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
         self.worldspace.add_tag::<T>(id);
+        self.tag_index
+            .entry(TypeId::of::<T>())
+            .or_default()
+            .insert(id);
     }
 
     pub fn remove_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
         self.worldspace.remove_tag::<T>(id);
+        if let Some(set) = self.tag_index.get_mut(&TypeId::of::<T>()) {
+            set.remove(&id);
+        }
     }
 
     pub fn has_tag<T: Tag + 'static>(&self, id: ObjectId) -> bool {
         self.worldspace.has_tag::<T>(id)
     }
 
-    /// Returns the first entity across all cells with tag T.
+    /// Returns the first entity across all cells with tag T. O(1).
     pub fn get_entity_with_tag<T: Tag + 'static>(&self) -> Result<ObjectId> {
-        self.worldspace.get_entity_with_tag::<T>()
+        self.tag_index
+            .get(&TypeId::of::<T>())
+            .and_then(|set| set.iter().next().copied())
+            .ok_or_else(crate::worldspaces::cell::no_tag_error::<T>)
     }
 
-    /// Returns all entities across all cells with tag T.
+    /// Returns all entities across all cells with tag T. O(n) where n = matching entities.
     pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<ObjectId> {
-        self.worldspace.get_entities_with_tag::<T>()
+        self.tag_index
+            .get(&TypeId::of::<T>())
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Rebuilds the tag index from scratch by scanning all loaded cells.
+    /// Call this after bulk worldspace operations (scene load, cell unload) that bypass
+    /// the typed `add_tag`/`remove_tag` methods.
+    pub fn rebuild_tag_index(&mut self) {
+        self.tag_index.clear();
+        for cell in self.worldspace.cells.values() {
+            for (type_id, id) in cell.iter_tagged_entities() {
+                self.tag_index.entry(type_id).or_default().insert(id);
+            }
+        }
     }
 
     // ========== Hierarchy ==========
 
     pub fn set_parent(&mut self, child_id: ObjectId, parent_id: Option<ObjectId>) -> Result<()> {
-        self.worldspace.set_parent(child_id, parent_id)
+        let cross_cell = parent_id.map_or(false, |p| p.cell != child_id.cell);
+        self.worldspace.set_parent(child_id, parent_id)?;
+        if cross_cell {
+            self.rebuild_tag_index();
+        }
+        Ok(())
     }
 
     pub fn detach(&mut self, id: ObjectId) -> Result<()> {
@@ -373,6 +412,7 @@ impl World {
 
     pub fn replace_worldspace(&mut self, ws: Worldspace) {
         self.worldspace = ws;
+        self.rebuild_tag_index();
     }
 
     pub fn worldspace(&self) -> &Worldspace {
@@ -398,14 +438,22 @@ impl World {
 
     /// Spawns a new entity from an [`EntityBlob`] (in the blob's original cell) and returns its ID.
     pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> ObjectId {
-        self.worldspace.spawn_from_blob(blob)
+        let id = self.worldspace.spawn_from_blob(blob);
+        for &type_id in &blob.tags {
+            self.tag_index.entry(type_id).or_default().insert(id);
+        }
+        id
     }
 
     /// Spawns a new entity from an [`EntityBlob`] into a specific cell and returns its ID.
     pub fn spawn_from_blob_in_cell(&mut self, blob: &EntityBlob, coord: CellCoord) -> ObjectId {
         let mut blob2 = blob.clone();
         blob2.cell = coord;
-        self.worldspace.spawn_from_blob(&blob2)
+        let id = self.worldspace.spawn_from_blob(&blob2);
+        for &type_id in &blob2.tags {
+            self.tag_index.entry(type_id).or_default().insert(id);
+        }
+        id
     }
 
     // ========== Inspector / Editor helpers ==========
@@ -476,6 +524,14 @@ impl World {
 
     /// Removes a tag from the given entity by its registered type name.
     pub fn remove_tag_by_name(&mut self, id: ObjectId, name: &str) {
+        if let Some(reg) = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+        {
+            let type_id = (reg.type_id)();
+            if let Some(set) = self.tag_index.get_mut(&type_id) {
+                set.remove(&id);
+            }
+        }
         self.worldspace.remove_tag_by_name(id, name);
     }
 
