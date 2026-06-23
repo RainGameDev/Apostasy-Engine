@@ -31,7 +31,10 @@ impl Default for ObjectId {
     fn default() -> Self {
         Self {
             cell: Vector3::new(0, 0, 0),
-            entity: Entity { index: 0, generation: 0 },
+            entity: Entity {
+                index: 0,
+                generation: 0,
+            },
         }
     }
 }
@@ -85,7 +88,10 @@ impl Cell {
 
     #[inline]
     fn oid(&self, entity: Entity) -> ObjectId {
-        ObjectId { cell: self.coord, entity }
+        ObjectId {
+            cell: self.coord,
+            entity,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -120,7 +126,8 @@ impl Cell {
             return false;
         }
         // Recursively despawn children first to maintain clean hierarchy state.
-        let children: Vec<Entity> = self.children
+        let children: Vec<Entity> = self
+            .children
             .get(&id.entity.index)
             .cloned()
             .unwrap_or_default();
@@ -166,24 +173,28 @@ impl Cell {
     // ========== Components ==========
 
     pub fn add_component<T: Component + Clone + 'static>(&mut self, id: ObjectId, component: T) {
-        let storage = self.components
+        let storage = self
+            .components
             .entry(TypeId::of::<T>())
             .or_insert_with(|| Box::new(SparseSet::<T>::new()));
-        storage.as_any_mut()
+        storage
+            .as_any_mut()
             .downcast_mut::<SparseSet<T>>()
             .unwrap()
             .insert(id.entity, component);
     }
 
     pub fn get_component<T: Component + 'static>(&self, id: ObjectId) -> Option<&T> {
-        self.components.get(&TypeId::of::<T>())?
+        self.components
+            .get(&TypeId::of::<T>())?
             .as_any()
             .downcast_ref::<SparseSet<T>>()?
             .get(id.entity)
     }
 
     pub fn get_component_mut<T: Component + 'static>(&mut self, id: ObjectId) -> Option<&mut T> {
-        self.components.get_mut(&TypeId::of::<T>())?
+        self.components
+            .get_mut(&TypeId::of::<T>())?
             .as_any_mut()
             .downcast_mut::<SparseSet<T>>()?
             .get_mut(id.entity)
@@ -196,7 +207,8 @@ impl Cell {
     }
 
     pub fn has_component<T: Component + 'static>(&self, id: ObjectId) -> bool {
-        self.components.get(&TypeId::of::<T>())
+        self.components
+            .get(&TypeId::of::<T>())
             .and_then(|s| s.as_any().downcast_ref::<SparseSet<T>>())
             .map(|s| s.contains(id.entity))
             .unwrap_or(false)
@@ -204,7 +216,8 @@ impl Cell {
 
     /// Returns all entity IDs in this cell that have component T.
     pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<ObjectId> {
-        self.components.get(&TypeId::of::<T>())
+        self.components
+            .get(&TypeId::of::<T>())
             .and_then(|s| s.as_any().downcast_ref::<SparseSet<T>>())
             .map(|s| s.iter().map(|(e, _)| self.oid(e)).collect())
             .unwrap_or_default()
@@ -217,12 +230,20 @@ impl Cell {
         if !self.entities.is_alive(id.entity) {
             return None;
         }
-        let name = self.names.get(&id.entity.index).cloned().unwrap_or_default();
-        let tags: Vec<TypeId> = self.tags.iter()
+        let name = self
+            .names
+            .get(&id.entity.index)
+            .cloned()
+            .unwrap_or_default();
+        let tags: Vec<TypeId> = self
+            .tags
+            .iter()
             .filter(|(_, set)| set.contains(&id.entity.index))
             .map(|(&type_id, _)| type_id)
             .collect();
-        let components: Vec<(TypeId, Box<dyn ComponentStorage>)> = self.components.iter()
+        let components: Vec<(TypeId, Box<dyn ComponentStorage>)> = self
+            .components
+            .iter()
             .filter(|(_, s)| s.contains_entity(id.entity))
             .map(|(&type_id, storage)| {
                 let mut single = storage.make_empty();
@@ -230,7 +251,13 @@ impl Cell {
                 (type_id, single)
             })
             .collect();
-        Some(EntityBlob { name, cell: self.coord, tags, components, source_entity: id.entity })
+        Some(EntityBlob {
+            name,
+            cell: self.coord,
+            tags,
+            components,
+            source_entity: id.entity,
+        })
     }
 
     /// Spawns a new entity from an [`EntityBlob`] and returns its ID.
@@ -238,10 +265,14 @@ impl Cell {
         let id = self.spawn();
         self.names.insert(id.entity.index, blob.name.clone());
         for &type_id in &blob.tags {
-            self.tags.entry(type_id).or_default().insert(id.entity.index);
+            self.tags
+                .entry(type_id)
+                .or_default()
+                .insert(id.entity.index);
         }
         for (type_id, single) in &blob.components {
-            let dst = self.components
+            let dst = self
+                .components
                 .entry(*type_id)
                 .or_insert_with(|| single.make_empty());
             single.clone_entity_into(blob.source_entity, id.entity, &mut **dst);
@@ -251,12 +282,16 @@ impl Cell {
 
     // ========== Inspector / Editor helpers ==========
 
-    /// Returns all component TypeIds present on the given entity.
+    /// Returns all component TypeIds present on the given entity, sorted by type name.
     pub fn get_entity_component_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
-        self.components.iter()
+        let mut entries: Vec<(TypeId, &'static str)> = self
+            .components
+            .iter()
             .filter(|(_, s)| s.contains_entity(id.entity))
-            .map(|(&type_id, _)| type_id)
-            .collect()
+            .map(|(&type_id, s)| (type_id, s.component_type_name()))
+            .collect();
+        entries.sort_by_key(|(_, name)| *name);
+        entries.into_iter().map(|(type_id, _)| type_id).collect()
     }
 
     /// Returns the type name of a component on this entity by its TypeId.
@@ -303,7 +338,8 @@ impl Cell {
 
     /// Returns all tag TypeIds present on the given entity.
     pub fn get_entity_tag_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
-        self.tags.iter()
+        self.tags
+            .iter()
             .filter(|(_, set)| set.contains(&id.entity.index))
             .map(|(&type_id, _)| type_id)
             .collect()
@@ -326,12 +362,18 @@ impl Cell {
     // ========== Tags ==========
 
     pub fn add_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
-        self.tags.entry(TypeId::of::<T>()).or_default().insert(id.entity.index);
+        self.tags
+            .entry(TypeId::of::<T>())
+            .or_default()
+            .insert(id.entity.index);
     }
 
     /// Adds a tag by TypeId. Used during cell migration where the concrete type is erased.
     pub(crate) fn add_tag_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
-        self.tags.entry(type_id).or_default().insert(id.entity.index);
+        self.tags
+            .entry(type_id)
+            .or_default()
+            .insert(id.entity.index);
     }
 
     pub fn remove_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
@@ -341,19 +383,24 @@ impl Cell {
     }
 
     pub fn has_tag<T: Tag + 'static>(&self, id: ObjectId) -> bool {
-        self.tags.get(&TypeId::of::<T>())
+        self.tags
+            .get(&TypeId::of::<T>())
             .map(|s| s.contains(&id.entity.index))
             .unwrap_or(false)
     }
 
     /// Returns all entity IDs in this cell that have tag T.
     pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<ObjectId> {
-        self.tags.get(&TypeId::of::<T>())
+        self.tags
+            .get(&TypeId::of::<T>())
             .map(|set| {
                 set.iter()
                     .filter_map(|&idx| {
                         let generation = self.entities.current_generation(idx)?;
-                        Some(self.oid(Entity { index: idx, generation }))
+                        Some(self.oid(Entity {
+                            index: idx,
+                            generation,
+                        }))
                     })
                     .collect()
             })
@@ -364,7 +411,10 @@ impl Cell {
     pub fn get_first_entity_with_tag<T: Tag + 'static>(&self) -> Option<ObjectId> {
         self.tags.get(&TypeId::of::<T>())?.iter().find_map(|&idx| {
             let generation = self.entities.current_generation(idx)?;
-            Some(self.oid(Entity { index: idx, generation }))
+            Some(self.oid(Entity {
+                index: idx,
+                generation,
+            }))
         })
     }
 
@@ -379,7 +429,9 @@ impl Cell {
             return Err(anyhow!("Parent entity does not exist"));
         }
         if self.is_ancestor_of(child_id, parent_id) {
-            return Err(anyhow!("Cannot parent an entity to one of its own descendants"));
+            return Err(anyhow!(
+                "Cannot parent an entity to one of its own descendants"
+            ));
         }
         // Detach from old parent.
         if let Some(old_parent) = self.parents.get(&child_id.entity.index).copied() {
@@ -388,7 +440,10 @@ impl Cell {
             }
         }
         self.parents.insert(child_id.entity.index, parent_id.entity);
-        self.children.entry(parent_id.entity.index).or_default().push(child_id.entity);
+        self.children
+            .entry(parent_id.entity.index)
+            .or_default()
+            .push(child_id.entity);
         Ok(())
     }
 
@@ -417,7 +472,8 @@ impl Cell {
     }
 
     pub fn get_children_ids(&self, id: ObjectId) -> Vec<ObjectId> {
-        self.children.get(&id.entity.index)
+        self.children
+            .get(&id.entity.index)
             .map(|v| v.iter().map(|&e| self.oid(e)).collect())
             .unwrap_or_default()
     }
@@ -453,21 +509,29 @@ impl Cell {
 
     /// Returns all root entities (entities with no parent) in this cell.
     pub fn get_root_ids(&self) -> Vec<ObjectId> {
-        self.alive.iter()
+        self.alive
+            .iter()
             .filter(|&&idx| !self.parents.contains_key(&idx))
             .filter_map(|&idx| {
                 let generation = self.entities.current_generation(idx)?;
-                Some(self.oid(Entity { index: idx, generation }))
+                Some(self.oid(Entity {
+                    index: idx,
+                    generation,
+                }))
             })
             .collect()
     }
 
     /// Returns all entity IDs in this cell.
     pub fn get_all_ids(&self) -> Vec<ObjectId> {
-        self.alive.iter()
+        self.alive
+            .iter()
             .filter_map(|&idx| {
                 let generation = self.entities.current_generation(idx)?;
-                Some(self.oid(Entity { index: idx, generation }))
+                Some(self.oid(Entity {
+                    index: idx,
+                    generation,
+                }))
             })
             .collect()
     }
@@ -475,7 +539,10 @@ impl Cell {
     pub fn debug_entities(&self) {
         for &idx in &self.alive {
             if let Some(generation) = self.entities.current_generation(idx) {
-                let id = self.oid(Entity { index: idx, generation });
+                let id = self.oid(Entity {
+                    index: idx,
+                    generation,
+                });
                 println!(
                     "{}: {:?} | parent: {:?} | children: {:?}",
                     self.get_name(id).unwrap_or("unnamed"),
@@ -498,10 +565,10 @@ impl Cell {
         let name = self.names.remove(&id.entity.index).unwrap_or_default();
         let old_parent = self.parents.remove(&id.entity.index);
         // Remove this entity from its parent's child list.
-        if let Some(parent) = old_parent {
-            if let Some(siblings) = self.children.get_mut(&parent.index) {
-                siblings.retain(|&e| e != id.entity);
-            }
+        if let Some(parent) = old_parent
+            && let Some(siblings) = self.children.get_mut(&parent.index)
+        {
+            siblings.retain(|&e| e != id.entity);
         }
         let old_children = self.children.remove(&id.entity.index).unwrap_or_default();
 
@@ -547,11 +614,15 @@ impl Cell {
         self.names.insert(id.entity.index, snapshot.name);
 
         for type_id in snapshot.tags {
-            self.tags.entry(type_id).or_default().insert(id.entity.index);
+            self.tags
+                .entry(type_id)
+                .or_default()
+                .insert(id.entity.index);
         }
 
         for (type_id, single) in snapshot.components {
-            let dst = self.components
+            let dst = self
+                .components
                 .entry(type_id)
                 .or_insert_with(|| single.make_empty());
             single.clone_entity_into(snapshot.old_entity, id.entity, &mut **dst);
@@ -561,7 +632,10 @@ impl Cell {
         if let Some(old_parent) = snapshot.old_parent {
             if let Some(&new_parent) = remap.get(&old_parent) {
                 self.parents.insert(id.entity.index, new_parent);
-                self.children.entry(new_parent.index).or_default().push(id.entity);
+                self.children
+                    .entry(new_parent.index)
+                    .or_default()
+                    .push(id.entity);
             }
             // If the parent wasn't in the migrated set it means this was the root,
             // which the caller detaches before migration.
