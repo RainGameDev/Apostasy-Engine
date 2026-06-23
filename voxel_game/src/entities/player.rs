@@ -1,7 +1,7 @@
 use apostasy_core::{
     Component,
     anyhow::Result,
-    cgmath::{Vector3, Zero},
+    cgmath::{One, Quaternion, Vector3, Zero},
     egui, fixed_update,
     items::{ItemRegistry, container::Container, voxel_component::Voxel},
     log_warn,
@@ -151,7 +151,7 @@ pub fn update(world: &mut World) -> Result<()> {
 
     let rotation = world.get_component::<Transform>(player_id)
         .map(|t| t.global_rotation)
-        .unwrap_or_default();
+        .unwrap_or_else(Quaternion::one);
 
     if let Some(velocity) = world.get_component_mut::<Velocity>(player_id) {
         let wish_dir = rotation * Vector3::new(direction.x, 0.0, direction.y);
@@ -254,7 +254,7 @@ pub fn block_updates(world: &mut World, _delta: f32) -> Result<()> {
                 .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Transform"))?;
             let collider = world.get_component::<Collider>(player_id)
                 .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Collider"))?;
-            (transform.global_position, collider.half_extents)
+            (transform.global_position, collider.half_extents())
         };
 
         let min = Vector3::new(

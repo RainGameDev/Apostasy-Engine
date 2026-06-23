@@ -282,7 +282,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
 
     // --- remesh neighbours of updated positions ---
     let new_pos_set: HashSet<Vector3<i32>> = new_positions.iter().cloned().collect();
-    let mut remesh_ids: Vec<EntityId> = Vec::new();
+    let mut remesh_ids: HashSet<EntityId> = HashSet::new();
 
     {
         let map = world.get_resource::<ChunkPositionMap>()?;
@@ -292,14 +292,11 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
                 if !new_pos_set.contains(&neighbour)
                     && let Some(&id) = map.position_to_id.get(&neighbour)
                 {
-                    remesh_ids.push(id);
+                    remesh_ids.insert(id);
                 }
             }
         }
     }
-
-    remesh_ids.sort_unstable();
-    remesh_ids.dedup();
 
     for id in remesh_ids {
         world.add_tag::<NeedsRemeshing>(id);
@@ -360,7 +357,7 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
     // read directly from the persistent map no allocation, no scan
     let map = world.get_resource::<ChunkPositionMap>()?;
 
-    let mut remesh_ids: Vec<EntityId> = Vec::new();
+    let mut remesh_ids: HashSet<EntityId> = HashSet::new();
 
     for pos in &added_positions {
         for offset in &NEIGHBOUR_OFFSETS {
@@ -369,13 +366,10 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
             if !added_positions.contains(&neighbour)
                 && let Some(&id) = map.position_to_id.get(&neighbour)
             {
-                remesh_ids.push(id);
+                remesh_ids.insert(id);
             }
         }
     }
-
-    remesh_ids.sort_unstable();
-    remesh_ids.dedup();
 
     for id in remesh_ids {
         world.add_tag::<NeedsRemeshing>(id);

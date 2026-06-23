@@ -2,7 +2,7 @@ use apostasy_core::{
     Component,
     anyhow::Result,
     cgmath::{self, InnerSpace, Vector3, Zero},
-    ecs::{components::transform::Transform, world::World},
+    ecs::{components::{transform::Transform, Inspect}, world::World},
     physics::{Gravity, collider::Collider, raycast::Direction, velocity::Velocity},
     rand::{RngExt, rng},
     serde_yaml::Value,
@@ -30,6 +30,8 @@ impl Default for PassiveAI {
         }
     }
 }
+
+impl Inspect for PassiveAI {}
 
 impl PassiveAI {
     pub fn deserialize(&mut self, _value: &Value) -> Result<()> {
