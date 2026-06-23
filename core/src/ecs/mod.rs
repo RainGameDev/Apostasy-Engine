@@ -1,10 +1,12 @@
 pub mod components;
+pub mod query;
 pub mod resources;
 pub mod sets;
 pub mod systems;
 pub mod tags;
 pub mod world;
 
+pub use query::{Query, QueryBuilder, QueryFetch, QueryFilter, With, Without, WithTag, WithoutTag};
 pub use world::World;
 
 // Reexport worldspace modules through ecs so existing import paths still resolve.

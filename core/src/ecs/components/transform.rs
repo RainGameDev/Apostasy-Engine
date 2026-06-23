@@ -3,7 +3,7 @@ use apostasy_macros::{Component, update};
 use cgmath::{Deg, Euler, InnerSpace, Matrix3, Quaternion, Rotation, Rotation3, Vector3};
 
 use crate::{
-    ecs::{cell::ObjectId, component::Inspect, world::World},
+    ecs::{component::Inspect, world::World},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 

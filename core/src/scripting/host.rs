@@ -73,7 +73,7 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
         if let Some(reg) = get_component_registration(&name) {
-            let mut component = (reg.create)();
+            let component = (reg.create)();
             (reg.add_to_world)(world, id, component);
         }
     })?;

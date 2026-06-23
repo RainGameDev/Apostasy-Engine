@@ -1,5 +1,4 @@
 use anyhow::Result;
-use apostasy_macros::Resource;
 
 use crate::EngineMode;
 use crate::ecs::world::World;

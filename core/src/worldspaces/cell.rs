@@ -368,7 +368,7 @@ impl Cell {
             .insert(id.entity.index);
     }
 
-    /// Adds a tag by TypeId. Used during cell migration where the concrete type is erased.
+    #[allow(dead_code)]
     pub(crate) fn add_tag_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
         self.tags
             .entry(type_id)
@@ -665,6 +665,7 @@ pub(crate) struct EntitySnapshot {
     pub old_entity: Entity,
     pub name: String,
     pub old_parent: Option<Entity>,
+    #[allow(dead_code)]
     pub old_children: Vec<Entity>,
     pub tags: Vec<TypeId>,
     pub components: Vec<(TypeId, Box<dyn ComponentStorage>)>,

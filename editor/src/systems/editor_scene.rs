@@ -106,10 +106,13 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     let camera_id = world.spawn();
     world.set_name(camera_id, "Camera");
     world.add_component(camera_id, Camera::default());
-    world.add_component(camera_id, Transform {
-        local_position: Vector3::new(0.0, 2.0, 20.0),
-        ..Default::default()
-    });
+    world.add_component(
+        camera_id,
+        Transform {
+            local_position: Vector3::new(0.0, 2.0, 20.0),
+            ..Default::default()
+        },
+    );
     world.add_component(camera_id, Velocity::default());
     world.add_tag::<ActiveCamera>(camera_id);
     world.add_tag::<EditorCamera>(camera_id);
@@ -148,23 +151,34 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     } else {
         let floor_id = world.spawn();
         world.set_name(floor_id, "Floor");
-        world.add_component(floor_id, Transform {
-            local_scale: Vector3::new(15.0, 1.0, 15.0),
-            ..Default::default()
-        });
+        world.add_component(
+            floor_id,
+            Transform {
+                local_scale: Vector3::new(15.0, 1.0, 15.0),
+                ..Default::default()
+            },
+        );
         world.add_component(floor_id, ModelRenderer::default());
         world.add_component(floor_id, Velocity::static_object());
-        world.add_component(floor_id, Collider::new_static(
-            ColliderShape::Cuboid { size: Vector3::new(1.0, 1.0, 1.0) },
-            Vector3::zero(),
-        ));
+        world.add_component(
+            floor_id,
+            Collider::new_static(
+                ColliderShape::Cuboid {
+                    size: Vector3::new(1.0, 1.0, 1.0),
+                },
+                Vector3::zero(),
+            ),
+        );
 
         let cube_id = world.spawn();
         world.set_name(cube_id, "Cube");
-        world.add_component(cube_id, Transform {
-            local_position: Vector3::new(4.0, 10.0, 0.0),
-            ..Default::default()
-        });
+        world.add_component(
+            cube_id,
+            Transform {
+                local_position: Vector3::new(4.0, 10.0, 0.0),
+                ..Default::default()
+            },
+        );
         world.add_component(cube_id, ModelRenderer::default());
         world.add_component(cube_id, Velocity::default());
         world.add_component(cube_id, Gravity::default());
@@ -172,10 +186,13 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
         let cube2_id = world.spawn();
         world.set_name(cube2_id, "Cube");
-        world.add_component(cube2_id, Transform {
-            local_position: Vector3::new(-4.0, 15.0, 0.0),
-            ..Default::default()
-        });
+        world.add_component(
+            cube2_id,
+            Transform {
+                local_position: Vector3::new(-4.0, 15.0, 0.0),
+                ..Default::default()
+            },
+        );
         world.add_component(cube2_id, ModelRenderer::default());
         world.add_component(cube2_id, Velocity::default());
         world.add_component(cube2_id, Gravity::default());
@@ -183,32 +200,38 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
 
         let sphere_id = world.spawn();
         world.set_name(sphere_id, "Sphere");
-        world.add_component(sphere_id, Transform {
-            local_position: Vector3::new(1.0, 8.0, 0.0),
-            ..Default::default()
-        });
+        world.add_component(
+            sphere_id,
+            Transform {
+                local_position: Vector3::new(1.0, 8.0, 0.0),
+                ..Default::default()
+            },
+        );
         world.add_component(sphere_id, ModelRenderer::from_path("sphere"));
         world.add_component(sphere_id, Velocity::default_sphere());
         world.add_component(sphere_id, Gravity::default());
-        world.add_component(sphere_id, Collider::new(
-            ColliderShape::Sphere { radius: 1.0 },
-            Vector3::zero(),
-        ));
+        world.add_component(
+            sphere_id,
+            Collider::new(ColliderShape::Sphere { radius: 1.0 }, Vector3::zero()),
+        );
         world.add_tag::<Player>(sphere_id);
 
         let sphere2_id = world.spawn();
         world.set_name(sphere2_id, "Sphere");
-        world.add_component(sphere2_id, Transform {
-            local_position: Vector3::new(0.0, 8.0, 0.0),
-            ..Default::default()
-        });
+        world.add_component(
+            sphere2_id,
+            Transform {
+                local_position: Vector3::new(0.0, 8.0, 0.0),
+                ..Default::default()
+            },
+        );
         world.add_component(sphere2_id, ModelRenderer::from_path("sphere"));
         world.add_component(sphere2_id, Velocity::default_sphere());
         world.add_component(sphere2_id, Gravity::default());
-        world.add_component(sphere2_id, Collider::new(
-            ColliderShape::Sphere { radius: 1.0 },
-            Vector3::zero(),
-        ));
+        world.add_component(
+            sphere2_id,
+            Collider::new(ColliderShape::Sphere { radius: 1.0 }, Vector3::zero()),
+        );
         world.add_tag::<Player>(sphere2_id);
 
         let _ = load_terrain_cells(world, &terrain_dir);

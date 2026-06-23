@@ -1107,7 +1107,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         // Capture it as a blob for the undo command
         if let Some(blob) = world.capture_entity(blank_id) {
             // We already spawned it; set the history cmd to track it
-            let mut cmd = Box::new(crate::systems::history::AddObjectCmd {
+            let cmd = Box::new(crate::systems::history::AddObjectCmd {
                 blob,
                 cell: selected_cell,
                 added_id: Some(blank_id),

@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
     ecs::{

@@ -5,7 +5,7 @@ use apostasy_core::{
     egui::{self, Margin, Rect, Stroke, Window},
     log_warn,
     ecs::{
-        component::{BoxedComponent, Component, InspectorRegistry},
+        component::{BoxedComponent, InspectorRegistry},
         tag::TagRegistration,
         world::World,
     },
@@ -143,8 +143,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let copied_component = picker_state.copied_component.clone();
     let mut component_to_add: Option<String> = None;
     let mut component_to_remove: Option<TypeId> = None;
-    let mut component_to_copy: Option<BoxedComponent> = None;
-    let mut to_paste_component = false;
+    let component_to_copy: Option<BoxedComponent> = None;
+    let to_paste_component = false;
     let mut tag_to_add: Option<String> = None;
     let mut tag_to_remove: Option<String> = None;
     let mut pending_name: Option<(apostasy_core::ecs::cell::ObjectId, String)> = None;

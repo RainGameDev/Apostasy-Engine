@@ -7,7 +7,8 @@ use hashbrown::{HashMap, HashSet};
 
 use crate::EngineMode;
 use crate::ecs::{
-    components::{Component, BoxedComponent, ComponentRegistration},
+    components::{BoxedComponent, Component, ComponentRegistration},
+    query::{QueryBuilder, QueryFetch},
     resources::{Resource, ResourceMap},
     systems::{
         DeltaTime, EngineTimer, FixedUpdateSystem, FixedUpdateTimer, HasMode, HasPriority,
@@ -496,8 +497,8 @@ impl World {
     /// Adds a boxed component to the given entity using the registration's `add_to_world` fn.
     pub fn add_boxed_component(&mut self, id: ObjectId, comp: BoxedComponent) {
         let type_name = comp.type_name();
-        if let Some(reg) = inventory::iter::<ComponentRegistration>()
-            .find(|r| r.type_name == type_name)
+        if let Some(reg) =
+            inventory::iter::<ComponentRegistration>().find(|r| r.type_name == type_name)
         {
             (reg.add_to_world)(self, id, comp);
         }
@@ -533,6 +534,22 @@ impl World {
             }
         }
         self.worldspace.remove_tag_by_name(id, name);
+    }
+
+    // ========== Queries ==========
+
+    /// Build a typed query over components and tags.
+    ///
+    /// ```rust
+    /// world.query::<(Mut<Transform>, Ref<Velocity>)>()
+    ///     .with_tag::<ActiveCamera>()
+    ///     .without::<Frozen>()
+    ///     .for_each(|id, (transform, vel)| {
+    ///         transform.position += vel.linear * dt;
+    ///     });
+    /// ```
+    pub fn query<F: QueryFetch>(&mut self) -> QueryBuilder<'_, F> {
+        QueryBuilder::new(self)
     }
 
     pub fn insert_resource<T: Resource + 'static>(&mut self, resource: T) -> &mut Self {

@@ -16,9 +16,7 @@ use crate::{
         worldspace_streaming::WorldspaceStreaming,
     },
     physics::{
-        Gravity,
         collider::{Collider, ColliderShape},
-        velocity::Velocity,
     },
     rendering::components::{
         camera::Camera,
