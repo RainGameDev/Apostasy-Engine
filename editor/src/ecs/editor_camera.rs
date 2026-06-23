@@ -11,7 +11,7 @@ use apostasy_core::{
 use apostasy_macros::Resource;
 
 use crate::{
-    systems::object_focus::IsObjectFocused,
+    systems::entity_focus::IsEntityFocused,
     terrain::TerrainToolState,
     ui::{preferences_panel::EditorPreferences, viewport_panel::ViewportInfo},
 };
@@ -44,7 +44,7 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     }
     let state = world.get_resource::<TerrainToolState>()?.clone();
 
-    let is_object_focused = world.has_resource::<IsObjectFocused>();
+    let is_entity_focused = world.has_resource::<IsEntityFocused>();
 
     // inputs
     let inputs = world.get_resource::<InputManager>().unwrap();
@@ -66,7 +66,7 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("EditorCamera has no Transform"))?;
 
         if is_middle_mouse {
-            if !is_object_focused {
+            if !is_entity_focused {
                 cam_transform.local_euler_angles.x -= mouse_delta.1 as f32;
                 cam_transform.local_euler_angles.x =
                     cam_transform.local_euler_angles.x.clamp(-89.0, 89.0);
@@ -92,7 +92,7 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
         cam_transform.local_position += wish_dir * editor_camera_settings.move_speed * delta;
     }
 
-    world.remove_resource::<IsObjectFocused>();
+    world.remove_resource::<IsEntityFocused>();
 
     if is_looking && scroll_delta.1 != 0.0 {
         let new_speed = clamp(

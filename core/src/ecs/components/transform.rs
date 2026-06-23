@@ -11,7 +11,7 @@ pub const UP: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
 pub const RIGHT: Vector3<f32> = Vector3::new(1.0, 0.0, 0.0);
 pub const FORWARD: Vector3<f32> = Vector3::new(0.0, 0.0, -1.0);
 
-/// Position, rotation, and scale of an object in world space.
+/// Position, rotation, and scale of an entity in world space.
 ///
 /// Local fields are set directly; global fields are derived from local values
 /// (plus any parent transform) each frame by `transform_update`.
@@ -115,7 +115,7 @@ impl Transform {
         self.global_rotation.rotate_vector(RIGHT)
     }
 
-    /// Orbits the object around `pivot` by `angle_deg` degrees along `axis` in world space
+    /// Orbits the entity around `pivot` by `angle_deg` degrees along `axis` in world space
     /// Updates both position and orientation, roll is preserved (usually zero)
     pub fn rotate_around(&mut self, pivot: Vector3<f32>, axis: Vector3<f32>, angle_deg: f32) {
         let q = Quaternion::from_axis_angle(axis.normalize(), Deg(angle_deg));

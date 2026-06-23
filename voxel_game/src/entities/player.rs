@@ -58,7 +58,7 @@ impl apostasy_core::ecs::component::Inspect for PlayerData {}
 
 #[start]
 pub fn player_init(world: &mut World) -> Result<()> {
-    let player_id = world.spawn();
+    let player_id = world.spawn().id();
     world.add_component(player_id, Transform {
         local_position: Vector3::new(0.0, 50.0, 0.0),
         ..Default::default()
@@ -76,7 +76,7 @@ pub fn player_init(world: &mut World) -> Result<()> {
     world.add_tag::<LoadingGate>(player_id);
     world.add_tag::<NeedsSpawnPoint>(player_id);
 
-    let cam_id = world.spawn();
+    let cam_id = world.spawn().id();
     world.add_component(cam_id, Transform {
         local_position: Vector3::new(0.0, 0.8, 0.0),
         ..Default::default()
@@ -88,7 +88,7 @@ pub fn player_init(world: &mut World) -> Result<()> {
     let mut model_renderer = ModelRenderer::from_path("model.glb");
     model_renderer.is_wireframe = true;
 
-    let outline_id = world.spawn();
+    let outline_id = world.spawn().id();
     world.add_component(outline_id, Transform {
         local_scale: Vector3::new(0.85, 0.85, 0.85),
         ..Default::default()

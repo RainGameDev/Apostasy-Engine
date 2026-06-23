@@ -11,7 +11,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
     log,
-    ecs::{cell::ObjectId, components::transform::Transform, tags::Player, world::World},
+    ecs::{cell::EntityId, components::transform::Transform, tags::Player, world::World},
     voxels::{
         VoxelTransform, biome::BiomeRegistry, chunk::Chunk, meshes::NeedsRemeshing,
         structure::StructureRegistry, voxel::VoxelRegistry,
@@ -139,7 +139,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
     }
 
     // unload out of range chunks
-    let unload_ids: Vec<ObjectId> = {
+    let unload_ids: Vec<EntityId> = {
         let map = world.get_resource::<ChunkPositionMap>()?;
         map.position_to_id
             .iter()
@@ -282,7 +282,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
 
     // --- remesh neighbours of updated positions ---
     let new_pos_set: HashSet<Vector3<i32>> = new_positions.iter().cloned().collect();
-    let mut remesh_ids: Vec<ObjectId> = Vec::new();
+    let mut remesh_ids: Vec<EntityId> = Vec::new();
 
     {
         let map = world.get_resource::<ChunkPositionMap>()?;
@@ -338,7 +338,7 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
             .in_flight
             .remove(&data.position);
 
-        let id = world.spawn();
+        let id = world.spawn().id();
         world.set_name(id, "Chunk");
         world.add_component(id, VoxelTransform { position: data.position });
         world.add_component(id, Chunk {
@@ -360,7 +360,7 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
     // read directly from the persistent map no allocation, no scan
     let map = world.get_resource::<ChunkPositionMap>()?;
 
-    let mut remesh_ids: Vec<ObjectId> = Vec::new();
+    let mut remesh_ids: Vec<EntityId> = Vec::new();
 
     for pos in &added_positions {
         for offset in &NEIGHBOUR_OFFSETS {

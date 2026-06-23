@@ -28,7 +28,7 @@ use ash::vk::{
     self, ClearColorValue, CommandBufferResetFlags, CommandPool, Extent2D, ImageView, Pipeline,
     PipelineLayout, PipelineLayoutCreateInfo, SampleCountFlags,
 };
-use egui::{Context, TextureId};
+use egui::{ClippedPrimitive, Context, TextureId};
 use epaint::ImageDelta;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -136,6 +136,7 @@ pub struct VulkanRenderer {
     context: Arc<VulkanRenderingContext>,
 
     pub aa_amount: AntiAliasingAmount,
+    pub ui_cached_primitives: Vec<ClippedPrimitive>,
 }
 
 impl VulkanRenderer {
@@ -1669,6 +1670,7 @@ impl RenderingAPI for VulkanRenderer {
                 swapchain,
 
                 aa_amount,
+                ui_cached_primitives: Vec::new(),
             };
 
             rendering_info.renderer = Some(Box::new(renderer));
@@ -2292,19 +2294,28 @@ impl RenderingAPI for VulkanRenderer {
 
         state.handle_platform_output(&self.ui_renderer.window, full_output.platform_output);
 
-        let clipped_primitives = self
-            .ui_renderer
-            .context
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        let pixels_per_point = full_output.pixels_per_point;
 
-        let texture_updates: Vec<(TextureId, ImageDelta)> = full_output
-            .textures_delta
-            .set
-            .iter()
-            .map(|(id, delta)| (*id, delta.clone()))
-            .collect();
+        let needs_retessellate = full_output
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|vo| vo.repaint_delay.is_zero())
+            .unwrap_or(true);
 
-        if !texture_updates.is_empty() {
+        if needs_retessellate {
+            self.ui_cached_primitives = self
+                .ui_renderer
+                .context
+                .tessellate(full_output.shapes, pixels_per_point);
+        }
+
+        if !full_output.textures_delta.set.is_empty() {
+            let texture_updates: Vec<(TextureId, ImageDelta)> = full_output
+                .textures_delta
+                .set
+                .iter()
+                .map(|(id, delta)| (*id, delta.clone()))
+                .collect();
             renderer.set_textures(
                 self.context.queues[&self.context.queue_families.graphics],
                 self.context.command_pool,
@@ -2315,8 +2326,8 @@ impl RenderingAPI for VulkanRenderer {
         renderer.cmd_draw(
             self.frames[self.current_frame].command_buffer,
             self.swapchain.extent,
-            full_output.pixels_per_point,
-            &clipped_primitives,
+            pixels_per_point,
+            &self.ui_cached_primitives,
         )?;
 
         Ok(())

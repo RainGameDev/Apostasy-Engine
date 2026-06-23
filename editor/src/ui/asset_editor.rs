@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use super::{
     EditorStyle,
-    assets_panel::ObjectWindowState,
+    assets_panel::EntityWindowState,
     shared::WindowLayout,
 };
 
@@ -212,7 +212,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     }
 
     let selected_id = world
-        .get_resource::<ObjectWindowState>()
+        .get_resource::<EntityWindowState>()
         .ok()
         .and_then(|s| s.selected_entry.clone());
 
@@ -389,7 +389,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
             if state.yaml.is_none() {
                 ui.add_space(8.0);
                 ui.label(
-                    egui::RichText::new("Select an asset in the Object Window")
+                    egui::RichText::new("Select an asset in the Entity Window")
                         .italics()
                         .weak(),
                 );
@@ -1197,8 +1197,8 @@ fn render_color_field(
     });
 }
 
-/// Albedo field with drag-and-drop support for texture entries from the Object Window.
-/// When a texture is dragged from the object window, dropping it here sets the albedo path.
+/// Albedo field with drag-and-drop support for texture entries from the Entity Window.
+/// When a texture is dragged from the entity window, dropping it here sets the albedo path.
 fn render_albedo_field(
     ui: &mut egui::Ui,
     value: &mut serde_yaml::Value,
@@ -1561,7 +1561,7 @@ fn save_asset(world: &mut World) {
                         if let Ok(am) = world.get_resource_mut::<AssetManager>() {
                             let _ = am.load_file(&path);
                         }
-                        if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+                        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
                             ow.is_first_frame = true;
                         }
                         if let Ok(s) = world.get_resource_mut::<AssetEditorState>() {
@@ -1638,7 +1638,7 @@ fn create_asset(
                 if let Ok(am) = world.get_resource_mut::<AssetManager>() {
                     let _ = am.load_file(&path);
                 }
-                if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+                if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
                     ow.is_first_frame = true;
                 }
                 // Load the new asset into the editor immediately.

@@ -43,7 +43,7 @@ pub struct ComponentRegistration {
     pub create: fn() -> BoxedComponent,
     pub deserialize: fn(&mut BoxedComponent, &serde_yaml::Value) -> anyhow::Result<()>,
     /// Downcast the boxed component and insert it into the world at the given entity.
-    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::ObjectId, BoxedComponent),
+    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::EntityId, BoxedComponent),
 }
 
 inventory::collect!(ComponentRegistration);

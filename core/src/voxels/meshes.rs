@@ -9,7 +9,7 @@ use hashbrown::HashMap;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::biome_loader::BiomeLoader;
-use crate::ecs::cell::ObjectId;
+use crate::ecs::cell::EntityId;
 use crate::ecs::world::World;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::vertex::VertexDefinition;
@@ -192,7 +192,7 @@ const MAX_MESH_JOBS_PER_FRAME: usize = 32;
 const MAX_MESH_RESULTS_PER_FRAME: usize = 16;
 
 // builds a flat position -> id lookup for every loaded chunk
-fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), ObjectId> {
+fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), EntityId> {
     world
         .get_entities_with_component::<VoxelTransform>()
         .into_iter()
@@ -205,8 +205,8 @@ fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), ObjectId> {
 }
 
 // collects all chunks needing a remesh, voxel-break jobs sorted first
-fn sorted_remesh_candidates(world: &World) -> Vec<(ObjectId, Vector3<i32>)> {
-    let mut candidates: Vec<(ObjectId, Vector3<i32>)> = world
+fn sorted_remesh_candidates(world: &World) -> Vec<(EntityId, Vector3<i32>)> {
+    let mut candidates: Vec<(EntityId, Vector3<i32>)> = world
         .get_entities_with_tag::<NeedsRemeshing>()
         .into_iter()
         .filter_map(|id| {
@@ -226,7 +226,7 @@ fn sorted_remesh_candidates(world: &World) -> Vec<(ObjectId, Vector3<i32>)> {
 fn get_neighbour(
     pos: Vector3<i32>,
     offset: Vector3<i32>,
-    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    chunk_positions: &HashMap<(i32, i32, i32), EntityId>,
     world: &World,
 ) -> Option<Chunk> {
     let key = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
@@ -237,7 +237,7 @@ fn get_neighbour(
 
 fn gather_neighbours(
     pos: Vector3<i32>,
-    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    chunk_positions: &HashMap<(i32, i32, i32), EntityId>,
     world: &World,
 ) -> ChunkNeighbours {
     ChunkNeighbours {
@@ -285,7 +285,7 @@ fn all_neighbours_ready(
 }
 
 struct Job {
-    id: ObjectId,
+    id: EntityId,
     pos: Vector3<i32>,
     chunk: Chunk,
     neighbours: ChunkNeighbours,
@@ -430,7 +430,7 @@ fn destroy_now(device: &ash::Device, buffer: vk::Buffer, memory: vk::DeviceMemor
 
 fn upload_opaque_mesh(
     world: &mut World,
-    id: ObjectId,
+    id: EntityId,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     vertices: &[VoxelVertex],
@@ -462,7 +462,7 @@ fn upload_opaque_mesh(
 
 fn upload_water_mesh(
     world: &mut World,
-    id: ObjectId,
+    id: EntityId,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     vertices: &[VoxelVertex],
@@ -511,7 +511,7 @@ pub fn receive_meshes(
     }
 
     // build position -> id map once for all results
-    let pos_to_id: HashMap<Vector3<i32>, ObjectId> = world
+    let pos_to_id: HashMap<Vector3<i32>, EntityId> = world
         .get_entities_with_component::<VoxelTransform>()
         .into_iter()
         .filter_map(|id| {

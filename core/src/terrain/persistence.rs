@@ -86,7 +86,7 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Loads all `.terrain` files from `dir`, creating or updating terrain objects in `world`.
+/// Loads all `.terrain` files from `dir`, creating or updating terrain entities in `world`.
 pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     if !dir.exists() {
         // Still try to load standalone texture list even without terrain dir.
@@ -175,20 +175,20 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
             .and_then(|m| m.0.get(&coord).copied())
             .filter(|&id| world.is_alive(id));
 
-        if let Some(obj_id) = existing_id {
-            if let Some(existing) = world.get_component_mut::<TerrainChunk>(obj_id) {
+        if let Some(entity_id) = existing_id {
+            if let Some(existing) = world.get_component_mut::<TerrainChunk>(entity_id) {
                 *existing = chunk.clone();
             }
-            world.add_tag::<NeedsTerrainRebuild>(obj_id);
+            world.add_tag::<NeedsTerrainRebuild>(entity_id);
         } else {
-            let obj_id = world.spawn_in_cell(coord);
-            world.set_name(obj_id, &format!("Terrain ({},{})", coord.x, coord.z));
-            world.add_component(obj_id, chunk.clone());
-            world.add_tag::<NeedsTerrainRebuild>(obj_id);
-            world.add_tag::<SkipsSerilization>(obj_id);
+            let entity_id = world.spawn_in_cell(coord).id();
+            world.set_name(entity_id, &format!("Terrain ({},{})", coord.x, coord.z));
+            world.add_component(entity_id, chunk.clone());
+            world.add_tag::<NeedsTerrainRebuild>(entity_id);
+            world.add_tag::<SkipsSerilization>(entity_id);
 
             if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
-                map.0.insert(coord, obj_id);
+                map.0.insert(coord, entity_id);
             }
         }
     }

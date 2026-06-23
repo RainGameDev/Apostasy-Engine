@@ -5,7 +5,7 @@ use apostasy_macros::{Component, Inspect, fixed_update, update};
 
 use crate::{
     assets::asset_manager::AssetManager,
-    ecs::{cell::ObjectId, components::transform::Transform, world::World},
+    ecs::{cell::EntityId, components::transform::Transform, world::World},
     physics::{collider::{Collider, ColliderShape}, velocity::Velocity},
     rendering::shared::model::Bvh,
 };
@@ -40,8 +40,8 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    // Collect unresolved mesh colliders — can't hold object borrow while reading resources
-    let unresolved: Vec<ObjectId> = world
+    // Collect unresolved mesh colliders — can't hold entity borrow while reading resources
+    let unresolved: Vec<EntityId> = world
         .get_entities_with_component::<Collider>()
         .into_iter()
         .filter(|&id| {

@@ -1,7 +1,7 @@
 use apostasy_macros::Resource;
 use hashbrown::HashMap;
 
-use crate::ecs::cell::{CellCoord, ObjectId};
+use crate::ecs::cell::{CellCoord, EntityId};
 
 pub mod chunk;
 pub mod mesh_builder;
@@ -29,6 +29,6 @@ impl Default for TerrainSettings {
     }
 }
 
-/// Maps cell coordinates to the ObjectId of the terrain object in that cell.
+/// Maps cell coordinates to the EntityId of the terrain entity in that cell.
 #[derive(Resource, Clone, Default)]
-pub struct TerrainChunkMap(pub HashMap<CellCoord, ObjectId>);
+pub struct TerrainChunkMap(pub HashMap<CellCoord, EntityId>);

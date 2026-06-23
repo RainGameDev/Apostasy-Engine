@@ -37,7 +37,7 @@ pub enum SortDir {
 
 /// Container for a piece of data
 #[derive(Clone)]
-pub struct ObjectEntry {
+pub struct EntityEntry {
     pub hex_id: String,
     pub editor_id: String,
     pub entry_type: String,
@@ -79,13 +79,13 @@ impl FilterNode {
 }
 
 #[derive(Clone, Resource)]
-pub struct ObjectWindowState {
+pub struct EntityWindowState {
     pub open: bool,
     pub show_used_in_cell: bool,
     pub col_widths: [f32; 4],
     pub filter_tree: Vec<FilterNode>,
     pub selected_filter: Option<Vec<String>>,
-    pub entries: Vec<ObjectEntry>,
+    pub entries: Vec<EntityEntry>,
     pub filter_string: String,
     pub sort_col: SortColumn,
     pub sort_dir: SortDir,
@@ -98,7 +98,7 @@ pub struct ObjectWindowState {
     pub rename_request_focus: bool,
 }
 
-impl Default for ObjectWindowState {
+impl Default for EntityWindowState {
     fn default() -> Self {
         Self {
             open: true,
@@ -120,7 +120,7 @@ impl Default for ObjectWindowState {
     }
 }
 
-impl ObjectWindowState {
+impl EntityWindowState {
     pub fn populate(
         &mut self,
         registry_data: Vec<(String, Vec<(String, String)>)>,
@@ -168,7 +168,7 @@ impl ObjectWindowState {
             data_children.push(FilterNode::leaf(class_name, &data_path));
             for (namespace, name) in class_entries {
                 let editor_id = format!("{}:{}:{}", namespace, class_name, name);
-                entries.push(ObjectEntry {
+                entries.push(EntityEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -191,7 +191,7 @@ impl ObjectWindowState {
             gfx_children.push(FilterNode::leaf("Models", &gfx_path));
             for name in &models {
                 let editor_id = format!("model:{}", name);
-                entries.push(ObjectEntry {
+                entries.push(EntityEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -211,7 +211,7 @@ impl ObjectWindowState {
             gfx_children.push(FilterNode::leaf("Shaders", &gfx_path));
             for name in &shaders {
                 let editor_id = format!("shader:{}", name);
-                entries.push(ObjectEntry {
+                entries.push(EntityEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -231,7 +231,7 @@ impl ObjectWindowState {
             gfx_children.push(FilterNode::leaf("Textures", &gfx_path));
             for name in &textures {
                 let editor_id = format!("texture:{}", name);
-                entries.push(ObjectEntry {
+                entries.push(EntityEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -256,28 +256,28 @@ impl ObjectWindowState {
 }
 
 #[update(mode = "editor")]
-pub fn object_window(world: &mut World) -> Result<()> {
+pub fn entity_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let style = world
         .get_resource::<EditorStyle>()
         .cloned()
         .unwrap_or_default();
-    if world.get_resource::<ObjectWindowState>().is_err() {
-        world.insert_resource(ObjectWindowState::default());
+    if world.get_resource::<EntityWindowState>().is_err() {
+        world.insert_resource(EntityWindowState::default());
     }
     if !world.has_resource::<WindowLayout>() {
         return Ok(());
     }
 
     let state = match world.get_resource::<WindowLayout>() {
-        Ok(l) => l.object_window.clone(),
+        Ok(l) => l.entity_window.clone(),
         Err(_) => return Ok(()),
     };
 
     let pos = state.to_pos();
     let size = state.to_size();
 
-    let window = Window::new("Object Window")
+    let window = Window::new("Entity Window")
         .default_pos(pos)
         .collapsible(false)
         .default_size(size)
@@ -285,7 +285,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .movable(true);
 
     let needs_populate = world
-        .get_resource::<ObjectWindowState>()
+        .get_resource::<EntityWindowState>()
         .map(|s| s.is_first_frame)
         .unwrap_or(false);
     let populate_data = if needs_populate {
@@ -302,19 +302,19 @@ pub fn object_window(world: &mut World) -> Result<()> {
     };
 
     let mut window_open = world
-        .get_resource::<ObjectWindowState>()
+        .get_resource::<EntityWindowState>()
         .map(|s| s.open)
         .unwrap_or(true);
     if !window_open {
         return Ok(());
     }
 
-    let object_window_resource = world.get_resource_mut::<ObjectWindowState>()?;
-    if object_window_resource.is_first_frame {
+    let entity_window_resource = world.get_resource_mut::<EntityWindowState>()?;
+    if entity_window_resource.is_first_frame {
         if let Some((registry_data, models, shaders, textures)) = populate_data {
-            object_window_resource.populate(registry_data, models, shaders, textures);
+            entity_window_resource.populate(registry_data, models, shaders, textures);
         }
-        object_window_resource.is_first_frame = false;
+        entity_window_resource.is_first_frame = false;
     }
 
     let mut pending_scene_load: Option<String> = None;
@@ -332,10 +332,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
         .show(&ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-            let filter_w = object_window_resource.col_widths[0];
-            let hex_w = object_window_resource.col_widths[1];
-            let type_w = object_window_resource.col_widths[2];
-            let name_w = object_window_resource.col_widths[3];
+            let filter_w = entity_window_resource.col_widths[0];
+            let hex_w = entity_window_resource.col_widths[1];
+            let type_w = entity_window_resource.col_widths[2];
+            let name_w = entity_window_resource.col_widths[3];
             let total_w = ui.available_width();
             let refresh_btn_w = 26.0;
             let count_w = (total_w - filter_w - hex_w - type_w - name_w - refresh_btn_w).max(50.0);
@@ -359,7 +359,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
             );
             ui.add_sized(
                 Vec2::new(filter_w, 18.0),
-                egui::TextEdit::singleline(&mut object_window_resource.filter_string)
+                egui::TextEdit::singleline(&mut entity_window_resource.filter_string)
                     .hint_text("Placeholder..."),
             )
             .on_hover_text(concat!(
@@ -393,20 +393,20 @@ pub fn object_window(world: &mut World) -> Result<()> {
                         .rect_filled(rect, 0.0, Color32::from_rgb(40, 40, 40));
                 }
                 if resp.clicked() {
-                    if object_window_resource.sort_col == col {
-                        object_window_resource.sort_dir =
-                            if object_window_resource.sort_dir == SortDir::Asc {
+                    if entity_window_resource.sort_col == col {
+                        entity_window_resource.sort_dir =
+                            if entity_window_resource.sort_dir == SortDir::Asc {
                                 SortDir::Desc
                             } else {
                                 SortDir::Asc
                             };
                     } else {
-                        object_window_resource.sort_col = col.clone();
-                        object_window_resource.sort_dir = SortDir::Asc;
+                        entity_window_resource.sort_col = col.clone();
+                        entity_window_resource.sort_dir = SortDir::Asc;
                     }
                 }
-                let arrow = if object_window_resource.sort_col == col {
-                    if object_window_resource.sort_dir == SortDir::Asc {
+                let arrow = if entity_window_resource.sort_col == col {
+                    if entity_window_resource.sort_dir == SortDir::Asc {
                         " ▲"
                     } else {
                         " ▼"
@@ -495,7 +495,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     cb_ui.add_space(6.0);
 
                     cb_ui.checkbox(
-                        &mut object_window_resource.show_used_in_cell,
+                        &mut entity_window_resource.show_used_in_cell,
                         "Show used in cell",
                     );
 
@@ -511,9 +511,9 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
                     draw_tree(
                         ui,
-                        &object_window_resource.filter_tree.clone(),
+                        &entity_window_resource.filter_tree.clone(),
                         0,
-                        &object_window_resource.selected_filter,
+                        &entity_window_resource.selected_filter,
                         style.text_col,
                         style.dim_col,
                         style.sel_bg,
@@ -527,10 +527,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
                 });
 
             if let Some(ref p) = toggle_path {
-                toggle_node(&mut object_window_resource.filter_tree, p);
+                toggle_node(&mut entity_window_resource.filter_tree, p);
             }
             if let Some(sel) = select_path {
-                object_window_resource.selected_filter = sel;
+                entity_window_resource.selected_filter = sel;
             }
 
             ui.painter().line_segment(
@@ -542,7 +542,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
             );
 
             // parse filter string
-            let filter_splits = object_window_resource
+            let filter_splits = entity_window_resource
                 .filter_string
                 .split(':')
                 .collect::<Vec<&str>>();
@@ -553,10 +553,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
             };
 
             // filter + sort entries
-            let mut filtered: Vec<&ObjectEntry> = object_window_resource
+            let mut filtered: Vec<&EntityEntry> = entity_window_resource
                 .entries
                 .iter()
-                .filter(|e| match &object_window_resource.selected_filter {
+                .filter(|e| match &entity_window_resource.selected_filter {
                     None => true,
                     Some(sel) => {
                         e.category_path.len() >= sel.len()
@@ -578,13 +578,13 @@ pub fn object_window(world: &mut World) -> Result<()> {
                 .collect();
 
             filtered.sort_by(|a, b| {
-                let ord = match object_window_resource.sort_col {
+                let ord = match entity_window_resource.sort_col {
                     SortColumn::HexId => a.hex_id.cmp(&b.hex_id),
                     SortColumn::Type => a.entry_type.cmp(&b.entry_type),
                     SortColumn::Name => a.name.cmp(&b.name),
                     SortColumn::Count => a.count.cmp(&b.count),
                 };
-                if object_window_resource.sort_dir == SortDir::Desc {
+                if entity_window_resource.sort_dir == SortDir::Desc {
                     ord.reverse()
                 } else {
                     ord
@@ -607,7 +607,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                     for (idx, entry) in filtered.iter().enumerate() {
-                        let is_selected = object_window_resource.selected_entry.as_deref()
+                        let is_selected = entity_window_resource.selected_entry.as_deref()
                             == Some(entry.editor_id.as_str());
 
                         let is_texture = entry.editor_id.starts_with("texture:");
@@ -621,11 +621,11 @@ pub fn object_window(world: &mut World) -> Result<()> {
 
                         let is_scene = entry.category_path.len() >= 2
                             && entry.category_path[1] == "worldspace";
-                        let is_renaming = object_window_resource.renaming_entry.as_deref()
+                        let is_renaming = entity_window_resource.renaming_entry.as_deref()
                             == Some(entry.editor_id.as_str());
 
                         if row_resp.clicked() {
-                            object_window_resource.selected_entry = Some(entry.editor_id.clone());
+                            entity_window_resource.selected_entry = Some(entry.editor_id.clone());
                         }
 
                         // Texture, model, shader, and material rows are drag sources for DnD fields
@@ -653,10 +653,10 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                     ui.close();
                                 }
                                 if ui.button("Rename").clicked() {
-                                    object_window_resource.renaming_entry =
+                                    entity_window_resource.renaming_entry =
                                         Some(entry.editor_id.clone());
-                                    object_window_resource.rename_buf = entry.name.clone();
-                                    object_window_resource.rename_request_focus = true;
+                                    entity_window_resource.rename_buf = entry.name.clone();
+                                    entity_window_resource.rename_request_focus = true;
                                     ui.close();
                                 }
                                 ui.separator();
@@ -705,23 +705,23 @@ pub fn object_window(world: &mut World) -> Result<()> {
                                 Vec2::new(name_w - 4.0, row_h - 2.0),
                             );
                             let te =
-                                egui::TextEdit::singleline(&mut object_window_resource.rename_buf)
+                                egui::TextEdit::singleline(&mut entity_window_resource.rename_buf)
                                     .font(fnt.clone());
                             let te_resp = ui.put(name_rect, te);
-                            if object_window_resource.rename_request_focus {
+                            if entity_window_resource.rename_request_focus {
                                 te_resp.request_focus();
-                                object_window_resource.rename_request_focus = false;
+                                entity_window_resource.rename_request_focus = false;
                             }
                             let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
                             let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
                             if (te_resp.lost_focus() && !escape) || enter {
-                                let new_name = object_window_resource.rename_buf.trim().to_string();
+                                let new_name = entity_window_resource.rename_buf.trim().to_string();
                                 if !new_name.is_empty() && new_name != entry.name {
                                     pending_scene_rename = Some((entry.name.clone(), new_name));
                                 }
-                                object_window_resource.renaming_entry = None;
+                                entity_window_resource.renaming_entry = None;
                             } else if escape {
-                                object_window_resource.renaming_entry = None;
+                                entity_window_resource.renaming_entry = None;
                             }
                         } else {
                             paint_clipped(
@@ -822,20 +822,20 @@ pub fn object_window(world: &mut World) -> Result<()> {
                     let d = resp.drag_delta().x;
                     match i {
                         0 => {
-                            object_window_resource.col_widths[0] =
-                                (object_window_resource.col_widths[0] + d).max(80.0)
+                            entity_window_resource.col_widths[0] =
+                                (entity_window_resource.col_widths[0] + d).max(80.0)
                         }
                         1 => {
-                            object_window_resource.col_widths[1] =
-                                (object_window_resource.col_widths[1] + d).max(50.0)
+                            entity_window_resource.col_widths[1] =
+                                (entity_window_resource.col_widths[1] + d).max(50.0)
                         }
                         2 => {
-                            object_window_resource.col_widths[2] =
-                                (object_window_resource.col_widths[2] + d).max(50.0)
+                            entity_window_resource.col_widths[2] =
+                                (entity_window_resource.col_widths[2] + d).max(50.0)
                         }
                         3 => {
-                            object_window_resource.col_widths[3] =
-                                (object_window_resource.col_widths[3] + d).max(50.0)
+                            entity_window_resource.col_widths[3] =
+                                (entity_window_resource.col_widths[3] + d).max(50.0)
                         }
                         _ => {}
                     }
@@ -847,11 +847,11 @@ pub fn object_window(world: &mut World) -> Result<()> {
         let rect = response.response.rect;
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
-        layout.object_window.update_from_rect(rect);
+        layout.entity_window.update_from_rect(rect);
         layout.dirty = true;
     }
 
-    world.get_resource_mut::<ObjectWindowState>()?.open = window_open;
+    world.get_resource_mut::<EntityWindowState>()?.open = window_open;
 
     if let Some(name) = pending_scene_load {
         ow_scene_load(world, &name);
@@ -859,18 +859,18 @@ pub fn object_window(world: &mut World) -> Result<()> {
     if let Some(name) = pending_scene_delete {
         ow_scene_delete(world, &name);
         world
-            .get_resource_mut::<ObjectWindowState>()?
+            .get_resource_mut::<EntityWindowState>()?
             .is_first_frame = true;
     }
     if let Some((old, new)) = pending_scene_rename {
         ow_scene_rename(world, &old, &new);
         world
-            .get_resource_mut::<ObjectWindowState>()?
+            .get_resource_mut::<EntityWindowState>()?
             .is_first_frame = true;
     }
 
     if let Some(ref id) = pending_open_in_editor {
-        if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
             ow.selected_entry = Some(id.clone());
         }
         if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
@@ -895,7 +895,7 @@ pub fn object_window(world: &mut World) -> Result<()> {
     }
 
     if pending_refresh {
-        if let Ok(ow) = world.get_resource_mut::<ObjectWindowState>() {
+        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
             ow.is_first_frame = true;
         }
     }
@@ -914,7 +914,7 @@ fn ow_scene_load(world: &mut World, name: &str) {
         EditorPreferences::save_last_scene(name);
         let _ = load_worldspace(world, &value, &["EditorCamera"]);
         if let Ok(s) = world.get_resource_mut::<crate::ui::cell_panel::CellSearchState>() {
-            s.selected_obj = None;
+            s.selected_entity = None;
         }
     }
 }

@@ -63,7 +63,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let selected_id = world
         .get_resource::<CellSearchState>()
         .ok()
-        .and_then(|state| state.selected_obj);
+        .and_then(|state| state.selected_entity);
 
     let entity_name = selected_id
         .and_then(|id| world.get_name(id).map(|n| n.to_string()));
@@ -147,7 +147,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let to_paste_component = false;
     let mut tag_to_add: Option<String> = None;
     let mut tag_to_remove: Option<String> = None;
-    let mut pending_name: Option<(apostasy_core::ecs::cell::ObjectId, String)> = None;
+    let mut pending_name: Option<(apostasy_core::ecs::cell::EntityId, String)> = None;
 
     let screen_height = ctx.input(|i| {
         i.raw
@@ -321,7 +321,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
                             ui.label(egui::RichText::new("No inspectable components").italics().weak());
                         }
                     } else {
-                        ui.label(egui::RichText::new("No object selected").italics().weak());
+                        ui.label(egui::RichText::new("No entity selected").italics().weak());
                     }
                 });
 

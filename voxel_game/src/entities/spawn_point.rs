@@ -15,7 +15,7 @@ pub struct NeedsSpawnPoint;
 
 #[update]
 pub fn find_spawn_point(world: &mut World) -> Result<()> {
-    let object_ids: Vec<_> = world
+    let entity_ids: Vec<_> = world
         .get_entities_with_tag::<NeedsSpawnPoint>()
         .into_iter()
         .filter(|&id| !world.has_tag::<LoadingGate>(id))
@@ -27,7 +27,7 @@ pub fn find_spawn_point(world: &mut World) -> Result<()> {
         ..Default::default()
     };
 
-    for id in object_ids {
+    for id in entity_ids {
         if let Some(hit) = voxel_raycast(world, &transform, 1500.0, Direction::Down) {
             let spawn = Vector3::new(
                 hit.voxel_pos.x as f32,

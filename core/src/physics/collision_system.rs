@@ -3,7 +3,7 @@ use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
     ecs::{
-        components::transform::Transform, cell::ObjectId, systems::DeltaTime, world::World,
+        components::transform::Transform, cell::EntityId, systems::DeltaTime, world::World,
     },
     physics::{collider::Collider, velocity::Velocity},
     voxels::{voxel::VoxelRegistry, voxel_components::is_solid::IsSolid},
@@ -17,9 +17,9 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
     let registry = world.get_resource::<VoxelRegistry>()?.clone();
     let _delta = world.get_resource::<DeltaTime>()?.0;
 
-    // Snapshot all collidable objects up front to avoid borrow conflicts
+    // Snapshot all collidable entities up front to avoid borrow conflicts
     struct CollidableSnapshot {
-        id: ObjectId,
+        id: EntityId,
         position: Vector3<f32>,
         half_extents: Vector3<f32>,
         _linear_velocity: Vector3<f32>,
@@ -50,7 +50,7 @@ pub fn voxel_collision_system(world: &mut World) -> Result<()> {
             continue;
         }
 
-        // The velocity system already moves the object; we just need the
+        // The velocity system already moves the entity; we just need the
         // post-move position to run collision resolution against voxels.
         let current_pos = snap.position;
         let half = snap.half_extents;

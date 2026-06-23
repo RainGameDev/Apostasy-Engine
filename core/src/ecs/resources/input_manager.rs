@@ -620,7 +620,7 @@ impl InputManager {
     ///
     ///         // Context-scoped only active when "viewport" context is set that frame.
     ///         inputs.register_default_mousebind(
-    ///             "PlaceObject",
+    ///             "PlaceEntity",
     ///             MouseBind::new(MouseButton::Left, KeyAction::Press).with_context("viewport"),
     ///         );
     ///

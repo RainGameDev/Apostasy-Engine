@@ -50,7 +50,7 @@ use crate::rendering::lighting::gpu_light::{
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::frustrum::Frustum;
-use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::rendering::shared::frustrum::EntitiesDrawing;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{
@@ -168,7 +168,7 @@ impl Core {
 
         world.insert_resource(PushConstants::default());
         world.insert_resource(ModelPushConstants::default());
-        world.insert_resource(ObjectsDrawing(0));
+        world.insert_resource(EntitiesDrawing(0));
         world.insert_resource(EngineTimer(0.0));
         world.insert_resource(Profiler::default());
 
@@ -219,7 +219,7 @@ impl Core {
                 }
                 WindowEvent::RedrawRequested => {
                     let frame_start = std::time::Instant::now();
-                    let mut objects_dawn = 0;
+                    let mut entities_dawn = 0;
                     let mut world = self.world.lock().unwrap();
                     let asset_manager = world.get_resource::<AssetManager>().unwrap().clone();
 
@@ -250,7 +250,7 @@ impl Core {
                         return;
                     };
 
-                    // If an EditorCamera exists, only render from an object that has
+                    // If an EditorCamera exists, only render from an entity that has
                     // both ActiveCamera + EditorCamera. If no EditorCamera is in the
                     // world (game / standalone mode), fall back to any ActiveCamera.
                     let has_editor_cam = !world.get_entities_with_tag::<EditorCamera>().is_empty();
@@ -782,9 +782,9 @@ impl Core {
                         })
                         .unwrap_or_default();
 
-                    let object_ids = world.get_entities_with_component::<ModelRenderer>();
+                    let entity_ids = world.get_entities_with_component::<ModelRenderer>();
 
-                    for id in object_ids {
+                    for id in entity_ids {
                         // Lazily load model if needed
                         if world.get_component::<ModelRenderer>(id).map(|mr| mr.model.is_none()).unwrap_or(false) {
                             let model_path = match world.get_component::<ModelRenderer>(id) {
@@ -961,7 +961,7 @@ impl Core {
                             ) {
                                 continue;
                             }
-                            objects_dawn += 1;
+                            entities_dawn += 1;
                             let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
                             let voxel_mesh = voxel_mesh.clone();
                             let water_mesh = world.get_component::<WaterMesh>(id).cloned();
@@ -1014,7 +1014,7 @@ impl Core {
                         }
                     }
 
-                    world.get_resource_mut::<ObjectsDrawing>().unwrap().0 = objects_dawn;
+                    world.get_resource_mut::<EntitiesDrawing>().unwrap().0 = entities_dawn;
                     if let Err(e) = renderer.end_viewport_render() {
                         log_error!("Failed to end viewport render: {}", e);
                     }

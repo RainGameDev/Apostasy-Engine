@@ -7,7 +7,7 @@ pub struct Player;
 
 use std::any::Any;
 
-/// A trait that defines a tag that can be attached to an object.
+/// A trait that defines a tag that can be attached to an entity.
 pub trait Tag: TagContainer + Send + Sync {
     fn name() -> &'static str
     where
@@ -28,7 +28,7 @@ impl PartialEq for dyn Tag {
 
 impl Eq for dyn Tag {}
 
-/// Wrapper for a workaround of object saftey.
+/// Wrapper for a workaround of object safety.
 pub trait TagContainer {
     fn clone_box(&self) -> Box<dyn Tag + Send + Sync>;
 }
@@ -57,7 +57,7 @@ pub struct TagRegistration {
     pub type_id: fn() -> std::any::TypeId,
     pub create: fn() -> Box<dyn Tag + Send + Sync>,
     /// Adds this tag to the given entity in the world.
-    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::ObjectId),
+    pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::EntityId),
 }
 
 inventory::collect!(TagRegistration);

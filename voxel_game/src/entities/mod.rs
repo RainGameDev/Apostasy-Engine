@@ -108,7 +108,7 @@ pub fn entity_process(world: &mut World) -> Result<()> {
 
 #[start]
 pub fn entity_init(world: &mut World) -> Result<()> {
-    let sheep_id = world.spawn();
+    let sheep_id = world.spawn().id();
     world.add_component(sheep_id, PassiveAI::default());
     world.add_component(sheep_id, Transform::default());
     world.add_component(sheep_id, Gravity::default());

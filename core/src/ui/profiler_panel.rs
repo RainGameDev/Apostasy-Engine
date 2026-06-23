@@ -8,10 +8,13 @@ use crate::ecs::world::World;
 use crate::ui::ui_context::EguiContext;
 use crate::utils::profiler::{FrameSample, Profiler, SystemTiming};
 
+const PROFILER_UPDATE_INTERVAL: u32 = 6;
+
 #[derive(Resource, Clone, Default)]
 pub struct ProfilerPanelState {
     pub open: bool,
     pub skip_counter: u32,
+    pub cached_profiler: Option<Profiler>,
 }
 
 // colours per category
@@ -358,15 +361,30 @@ pub fn profiler_panel(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
+    let counter = world
+        .get_resource::<ProfilerPanelState>()
+        .map(|s| s.skip_counter)
+        .unwrap_or(0);
+
+    let fresh_profiler = if counter % PROFILER_UPDATE_INTERVAL == 0 {
+        world.get_resource::<Profiler>().ok().cloned()
+    } else {
+        None
+    };
+
     {
         let state = world.get_resource_mut::<ProfilerPanelState>()?;
-        state.skip_counter += 1;
+        state.skip_counter = counter.wrapping_add(1);
+        if let Some(p) = fresh_profiler {
+            state.cached_profiler = Some(p);
+        }
     }
 
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let profiler = world
-        .get_resource::<Profiler>()
-        .cloned()
+        .get_resource::<ProfilerPanelState>()
+        .ok()
+        .and_then(|s| s.cached_profiler.clone())
         .unwrap_or_default();
 
     let mut still_open = open;

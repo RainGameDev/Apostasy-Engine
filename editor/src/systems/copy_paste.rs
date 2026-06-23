@@ -70,7 +70,7 @@ pub fn init(world: &mut World) -> Result<()> {
 }
 
 #[update(mode = "editor")]
-pub fn copy_paste_objects(world: &mut World) -> Result<()> {
+pub fn copy_paste_entities(world: &mut World) -> Result<()> {
     if world.get_resource::<CellSearchState>().is_err() {
         world.insert_resource(CellSearchState::default());
     }
@@ -84,19 +84,19 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
     let do_paste = !wants_keyboard && inputs.is_keybind_active("Paste");
     let do_duplicate = !wants_keyboard && inputs.is_keybind_active("Duplicate");
 
-    let clipboard: Option<EntityBlob> = world.get_resource::<CellSearchState>()?.copied_obj.clone();
-    let selected_id = world.get_resource::<CellSearchState>()?.selected_obj;
+    let clipboard: Option<EntityBlob> = world.get_resource::<CellSearchState>()?.copied_entity.clone();
+    let selected_id = world.get_resource::<CellSearchState>()?.selected_entity;
     let selected_blob: Option<EntityBlob> = selected_id.and_then(|id| world.capture_entity(id));
 
     if do_copy {
         if let Some(blob) = selected_blob.clone() {
-            world.get_resource_mut::<CellSearchState>()?.copied_obj = Some(blob);
+            world.get_resource_mut::<CellSearchState>()?.copied_entity = Some(blob);
         }
     }
 
     if do_paste {
         if let Some(copied) = clipboard {
-            let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(copied, None));
+            let mut cmd = Box::new(crate::systems::history::AddEntityCmd::new(copied, None));
             cmd.execute(world)?;
             world
                 .get_resource_mut::<crate::systems::history::History>()?
@@ -104,7 +104,7 @@ pub fn copy_paste_objects(world: &mut World) -> Result<()> {
         }
     } else if do_duplicate {
         if let Some(blob) = selected_blob {
-            let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(blob, None));
+            let mut cmd = Box::new(crate::systems::history::AddEntityCmd::new(blob, None));
             cmd.execute(world)?;
             world
                 .get_resource_mut::<crate::systems::history::History>()?

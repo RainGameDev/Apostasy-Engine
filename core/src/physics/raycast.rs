@@ -1,4 +1,4 @@
-use crate::ecs::cell::ObjectId;
+use crate::ecs::cell::EntityId;
 use crate::ecs::components::transform::Transform;
 use crate::ecs::world::World;
 use crate::physics::collider::{Collider, ColliderShape};
@@ -66,7 +66,7 @@ pub fn get_camera_ray(transform: &Transform, direction: Direction) -> Ray {
 /// Result of a successful collider raycast
 #[derive(Debug, Clone)]
 pub struct ColliderHit {
-    pub object_id: ObjectId,
+    pub entity_id: EntityId,
     /// World space point where the ray enters the collider surface
     pub point: Vector3<f32>,
     /// Sacing surface normal at the hit point
@@ -80,7 +80,7 @@ pub struct ColliderHit {
 
 /// Snapshot of a collider needed for ray testing
 pub struct ColliderSnapshot {
-    id: ObjectId,
+    id: EntityId,
     center: Vector3<f32>,
     axes: [Vector3<f32>; 3],
     half_extents: Vector3<f32>,
@@ -90,7 +90,7 @@ pub struct ColliderSnapshot {
     rotation: Quaternion<f32>,
 }
 
-/// Takes a snapshot of every object in the world that has a Collider component
+/// Takes a snapshot of every entity in the world that has a Collider component
 pub fn build_collider_snapshot(world: &World) -> Vec<ColliderSnapshot> {
     world
         .get_entities_with_component::<Collider>()
@@ -292,12 +292,12 @@ fn test_snapshot(
 }
 
 /// Core collider raycast Iterates all colliders, returns the nearest hit within max_distance
-/// Optionally skips a single object (e.g. the caster itself).
+/// Optionally skips a single entity (e.g. the caster itself).
 pub fn raycast_colliders_raw(
     ray: &Ray,
     max_distance: f32,
     snapshots: &[ColliderSnapshot],
-    ignore_id: Option<ObjectId>,
+    ignore_id: Option<EntityId>,
 ) -> Option<ColliderHit> {
     let mut nearest: Option<ColliderHit> = None;
     let mut nearest_dist = max_distance;
@@ -313,7 +313,7 @@ pub fn raycast_colliders_raw(
         if let Some((dist, point, normal, face)) = test_snapshot(ray, snap, nearest_dist) {
             nearest_dist = dist;
             nearest = Some(ColliderHit {
-                object_id: snap.id,
+                entity_id: snap.id,
                 point,
                 normal,
                 distance: dist,
@@ -331,7 +331,7 @@ pub fn collider_raycast(
     transform: &Transform,
     distance: f32,
     direction: Direction,
-    ignore_id: Option<ObjectId>,
+    ignore_id: Option<EntityId>,
 ) -> Option<ColliderHit> {
     let ray = get_camera_ray(transform, direction);
     let snapshots = build_collider_snapshot(world);
@@ -345,7 +345,7 @@ pub fn collider_raycast_camera(world: &mut World, range: f32) -> Option<Collider
     let transform = world.get_component::<Transform>(camera_id)?.clone();
     let ray = get_camera_ray(&transform, Direction::Forward);
     let snapshots = build_collider_snapshot(world);
-    // Ignore the camera object itself so it can't hit its own collider
+    // Ignore the camera entity itself so it can't hit its own collider
     raycast_colliders_raw(&ray, range, &snapshots, Some(camera_id))
 }
 
@@ -356,7 +356,7 @@ pub fn collider_raycast_with_snapshot(
     distance: f32,
     direction: Direction,
     snapshots: &[ColliderSnapshot],
-    ignore_id: Option<ObjectId>,
+    ignore_id: Option<EntityId>,
 ) -> Option<ColliderHit> {
     let ray = get_camera_ray(transform, direction);
     raycast_colliders_raw(&ray, distance, snapshots, ignore_id)

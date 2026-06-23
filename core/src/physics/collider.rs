@@ -6,7 +6,7 @@ use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
 use egui::{ComboBox, DragAndDrop};
 
 use crate::{
-    ecs::{cell::ObjectId, component::Inspect, components::transform::Transform, world::World},
+    ecs::{cell::EntityId, component::Inspect, components::transform::Transform, world::World},
     physics::velocity::Velocity,
     rendering::shared::model::Bvh,
     ui::{DRAG_SIZE, LABEL_WIDTH},
@@ -73,12 +73,12 @@ impl ColliderShape {
     }
 }
 
-/// Collision volume attached to an object.
-/// `is_static` objects are immovable, `is_area` objects detect overlaps but do not resolve them.
+/// Collision volume attached to an entity.
+/// `is_static` entities are immovable, `is_area` entities detect overlaps but do not resolve them.
 #[derive(Component, Debug, Clone)]
 pub struct Collider {
     pub shape: ColliderShape,
-    /// Local-space offset from the object's origin to the collider center.
+    /// Local-space offset from the entity's origin to the collider center.
     pub offset: Vector3<f32>,
     pub is_static: bool,
     pub is_area: bool,
@@ -527,7 +527,7 @@ impl CollisionEvents {
 /// A snapshot of a collider and it's needed data.
 #[derive(Clone)]
 struct Snapshot {
-    id: ObjectId,
+    id: EntityId,
     name: String,
     position: Vector3<f32>,
     rotation: Quaternion<f32>,
@@ -579,7 +579,7 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
         .collect()
 }
 
-/// Detects collisions between all objects using OBB vs OBB
+/// Detects collisions between all entities using OBB vs OBB
 #[update(priority = 10)]
 pub fn collision_detection_system(world: &mut World) -> Result<()> {
     // Reset grounded flag itll be set by active collisions
@@ -680,7 +680,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                         }
                         (true, true) => {}
                     }
-                    // zero out velocity for static objects so impulse math is correct
+                    // zero out velocity for static entities so impulse math is correct
                     if a.is_static {
                         va.linear_velocity = Vector3::zero();
                         va.angular_velocity = Vector3::zero();
@@ -694,7 +694,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
 
                     resolve_impulse(&mut va, &mut vb, r_a, r_b, normal);
 
-                    // skip static objects
+                    // skip static entities
                     if !a.is_static {
                         if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
                             *v = va;
@@ -747,7 +747,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
         }
     }
 
-    // Store events on whichever object holds the CollisionEvents component
+    // Store events on whichever entity holds the CollisionEvents component
     if let Some(ev_id) = world.get_entities_with_component::<CollisionEvents>().into_iter().next() {
         if let Some(ev) = world.get_component_mut::<CollisionEvents>(ev_id) {
             ev.events = events;
@@ -756,7 +756,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
 
     Ok(())
 }
-fn apply_position_correction(world: &mut World, id: ObjectId, offset: Vector3<f32>) {
+fn apply_position_correction(world: &mut World, id: EntityId, offset: Vector3<f32>) {
     if offset.magnitude2() < 1e-6 {
         return;
     }

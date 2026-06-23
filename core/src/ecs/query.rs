@@ -1,32 +1,32 @@
 use std::marker::PhantomData;
 
 use crate::ecs::{World, components::Component, tags::Tag};
-use crate::worldspaces::cell::ObjectId;
+use crate::worldspaces::cell::EntityId;
 
 // QueryFetch
 pub trait QueryFetch {
     type Item<'w>;
-    fn collect_base_ids(world: &World) -> Vec<ObjectId>;
+    fn collect_base_ids(world: &World) -> Vec<EntityId>;
     /// # Safety: don't alias `&mut T` and `&T` (or two `&mut T`) for the same T on the same entity.
-    unsafe fn fetch<'w>(world: *mut World, id: ObjectId) -> Option<Self::Item<'w>>;
+    unsafe fn fetch<'w>(world: *mut World, id: EntityId) -> Option<Self::Item<'w>>;
 }
 
 impl<'a, T: Component + 'static> QueryFetch for &'a T {
     type Item<'w> = &'w T;
-    fn collect_base_ids(world: &World) -> Vec<ObjectId> {
+    fn collect_base_ids(world: &World) -> Vec<EntityId> {
         world.get_entities_with_component::<T>()
     }
-    unsafe fn fetch<'w>(world: *mut World, id: ObjectId) -> Option<Self::Item<'w>> {
+    unsafe fn fetch<'w>(world: *mut World, id: EntityId) -> Option<Self::Item<'w>> {
         unsafe { (*world).get_component::<T>(id).map(|r| &*(r as *const T)) }
     }
 }
 
 impl<'a, T: Component + 'static> QueryFetch for &'a mut T {
     type Item<'w> = &'w mut T;
-    fn collect_base_ids(world: &World) -> Vec<ObjectId> {
+    fn collect_base_ids(world: &World) -> Vec<EntityId> {
         world.get_entities_with_component::<T>()
     }
-    unsafe fn fetch<'w>(world: *mut World, id: ObjectId) -> Option<Self::Item<'w>> {
+    unsafe fn fetch<'w>(world: *mut World, id: EntityId) -> Option<Self::Item<'w>> {
         unsafe {
             (*world)
                 .get_component_mut::<T>(id)
@@ -38,10 +38,10 @@ impl<'a, T: Component + 'static> QueryFetch for &'a mut T {
 /// Optional read — entity is never skipped, closure receives `None` if the component is absent.
 impl<'a, T: Component + 'static> QueryFetch for Option<&'a T> {
     type Item<'w> = Option<&'w T>;
-    fn collect_base_ids(world: &World) -> Vec<ObjectId> {
+    fn collect_base_ids(world: &World) -> Vec<EntityId> {
         world.get_all_ids()
     }
-    unsafe fn fetch<'w>(world: *mut World, id: ObjectId) -> Option<Self::Item<'w>> {
+    unsafe fn fetch<'w>(world: *mut World, id: EntityId) -> Option<Self::Item<'w>> {
         unsafe { Some((*world).get_component::<T>(id).map(|r| &*(r as *const T))) }
     }
 }
@@ -51,8 +51,8 @@ macro_rules! impl_query_fetch_tuple {
         #[allow(non_snake_case)]
         impl<$head: QueryFetch, $($tail: QueryFetch,)+> QueryFetch for ($head, $($tail,)+) {
             type Item<'w> = ($head::Item<'w>, $($tail::Item<'w>,)+);
-            fn collect_base_ids(world: &World) -> Vec<ObjectId> { $head::collect_base_ids(world) }
-            unsafe fn fetch<'w>(world: *mut World, id: ObjectId) -> Option<Self::Item<'w>> {
+            fn collect_base_ids(world: &World) -> Vec<EntityId> { $head::collect_base_ids(world) }
+            unsafe fn fetch<'w>(world: *mut World, id: EntityId) -> Option<Self::Item<'w>> {
                 unsafe { Some(($head::fetch(world, id)?, $($tail::fetch(world, id)?,)+)) }
             }
         }
@@ -69,11 +69,11 @@ impl_query_fetch_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8);
 
 // QueryFilter
 pub trait QueryFilter {
-    fn matches(world: &World, id: ObjectId) -> bool;
+    fn matches(world: &World, id: EntityId) -> bool;
 }
 
 impl QueryFilter for () {
-    fn matches(_: &World, _: ObjectId) -> bool {
+    fn matches(_: &World, _: EntityId) -> bool {
         true
     }
 }
@@ -84,25 +84,25 @@ pub struct WithTag<T>(PhantomData<T>);
 pub struct WithoutTag<T>(PhantomData<T>);
 
 impl<T: Component + 'static> QueryFilter for With<T> {
-    fn matches(world: &World, id: ObjectId) -> bool {
+    fn matches(world: &World, id: EntityId) -> bool {
         world.has_component::<T>(id)
     }
 }
 
 impl<T: Component + 'static> QueryFilter for Without<T> {
-    fn matches(world: &World, id: ObjectId) -> bool {
+    fn matches(world: &World, id: EntityId) -> bool {
         !world.has_component::<T>(id)
     }
 }
 
 impl<T: Tag + 'static> QueryFilter for WithTag<T> {
-    fn matches(world: &World, id: ObjectId) -> bool {
+    fn matches(world: &World, id: EntityId) -> bool {
         world.has_tag::<T>(id)
     }
 }
 
 impl<T: Tag + 'static> QueryFilter for WithoutTag<T> {
-    fn matches(world: &World, id: ObjectId) -> bool {
+    fn matches(world: &World, id: EntityId) -> bool {
         !world.has_tag::<T>(id)
     }
 }
@@ -111,7 +111,7 @@ macro_rules! impl_query_filter_tuple {
     ($head:ident, $($tail:ident),+) => {
         #[allow(non_snake_case)]
         impl<$head: QueryFilter, $($tail: QueryFilter,)+> QueryFilter for ($head, $($tail,)+) {
-            fn matches(world: &World, id: ObjectId) -> bool {
+            fn matches(world: &World, id: EntityId) -> bool {
                 $head::matches(world, id) $(&& $tail::matches(world, id))+
             }
         }
@@ -126,7 +126,7 @@ impl_query_filter_tuple!(F1, F2, F3, F4);
 // with &mut World in the same function without a borrow conflict.
 pub struct Query<F: QueryFetch, Fil: QueryFilter = ()> {
     world: *mut World,
-    ids: Vec<ObjectId>,
+    ids: Vec<EntityId>,
     _marker: PhantomData<(F, Fil)>,
 }
 
@@ -151,7 +151,7 @@ impl<F: QueryFetch, Fil: QueryFilter> Query<F, Fil> {
         }
     }
 
-    pub fn for_each(&self, mut f: impl FnMut(ObjectId, F::Item<'_>)) {
+    pub fn for_each(&self, mut f: impl FnMut(EntityId, F::Item<'_>)) {
         for &id in &self.ids {
             if let Some(item) = unsafe { F::fetch(self.world, id) } {
                 f(id, item);
@@ -170,7 +170,7 @@ impl<F: QueryFetch, Fil: QueryFilter> Query<F, Fil> {
 // QueryBuilder — manual builder with runtime filter chaining
 pub struct QueryBuilder<'w, F: QueryFetch> {
     world: &'w mut World,
-    filters: Vec<Box<dyn Fn(&World, ObjectId) -> bool>>,
+    filters: Vec<Box<dyn Fn(&World, EntityId) -> bool>>,
     _fetch: PhantomData<F>,
 }
 
@@ -205,9 +205,9 @@ impl<'w, F: QueryFetch> QueryBuilder<'w, F> {
         self
     }
 
-    pub fn for_each(self, mut f: impl FnMut(ObjectId, F::Item<'_>)) {
+    pub fn for_each(self, mut f: impl FnMut(EntityId, F::Item<'_>)) {
         let world_ptr: *mut World = self.world;
-        let ids: Vec<ObjectId> = {
+        let ids: Vec<EntityId> = {
             let world_ref: &World = unsafe { &*world_ptr };
             F::collect_base_ids(world_ref)
                 .into_iter()

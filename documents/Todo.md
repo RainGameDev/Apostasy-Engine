@@ -3,7 +3,7 @@
 - [x] World
   - [x] Ability to access renderer in systems
   - [x] Manual system registration
-  - [x] Scene hierarchy (parent/child objects)
+  - [x] Scene hierarchy (parent/child entities)
   - [x] Tags system
   - [x] States system
 
@@ -30,8 +30,8 @@
 
 - [x] Physics
   - [x] Basic collisions
-    - [x] Object resolution
-    - [x] Object shapes
+    - [x] Entity resolution
+    - [x] Entity shapes
     - [x] Offsets
   - [x] Friction
   - [x] Inertia
@@ -48,11 +48,11 @@
 - [-] Editor UI
   - [x] Top bar menu
   - [x] Inspector
-    - [x] Objects displaying
-    - [x] Object selection
-    - [x] Object deletion
-    - [x] Object creation
-  - [-] Object Editor
+    - [x] Entities displaying
+    - [x] Entity selection
+    - [x] Entity deletion
+    - [x] Entity creation
+  - [-] Entity Editor
     - [x] Name bar (inline rename)
     - [x] Component adding
     - [x] Component editing
@@ -62,7 +62,7 @@
     - [x] Tag removal
   - [x] Assets panel (loaded assets display)
   - [x] Viewport panel
-  - [x] Cell / Objects panel
+  - [x] Cell / Entities panel
   - [x] Preferences panel
     - [x] Font loading and themes
     - [x] Camera speed setting
@@ -77,13 +77,13 @@
 
 - [-] Editor Camera
   - [x] Camera rotation
-  - [x] Object focusing
+  - [x] Entity focusing
   - [x] Camera speed
   - [ ] Save the cameras position and rotate
 
 - [x] Editor systems
-  - [x] Copy/paste objects (keybinds)
-  - [x] Raycasting (viewport object selection)
+  - [x] Copy/paste entities (keybinds)
+  - [x] Raycasting (viewport entity selection)
   - [x] Layout saving and loading
 
 - [x] Viewport Gizmos

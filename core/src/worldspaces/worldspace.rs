@@ -5,7 +5,7 @@ use cgmath::Vector3;
 use hashbrown::HashMap;
 
 use crate::ecs::{Entity, components::Component, tags::{Tag, TagRegistration}};
-use crate::worldspaces::cell::{Cell, CellCoord, EntityBlob, EntitySnapshot, ObjectId, no_tag_error, world_to_cell};
+use crate::worldspaces::cell::{Cell, CellCoord, EntityBlob, EntitySnapshot, EntityId, no_tag_error, world_to_cell};
 
 /// An effectively infinite grid of [`Cell`]s.
 /// Cells are created lazily when first needed and dropped when empty and unnamed.
@@ -53,7 +53,7 @@ impl Worldspace {
         self.cells.remove(&coord)
     }
 
-    pub fn object_count(&self) -> usize {
+    pub fn entity_count(&self) -> usize {
         self.cells.values().map(|c| c.len()).sum()
     }
 
@@ -80,76 +80,76 @@ impl Worldspace {
     // ========== Entity Management ==========
 
     /// Spawns a new entity in cell (0, 0, 0).
-    pub fn spawn(&mut self) -> ObjectId {
+    pub fn spawn(&mut self) -> EntityId {
         self.get_or_create_cell(Vector3::new(0, 0, 0)).spawn()
     }
 
     /// Spawns a new entity in the cell that contains `position`.
-    pub fn spawn_at_position(&mut self, position: Vector3<f32>) -> ObjectId {
+    pub fn spawn_at_position(&mut self, position: Vector3<f32>) -> EntityId {
         self.get_or_create_cell(world_to_cell(position)).spawn()
     }
 
     /// Spawns a new entity in a specific cell.
-    pub fn spawn_in_cell(&mut self, coord: CellCoord) -> ObjectId {
+    pub fn spawn_in_cell(&mut self, coord: CellCoord) -> EntityId {
         self.get_or_create_cell(coord).spawn()
     }
 
     /// Despawns an entity and all its descendants.
-    pub fn despawn(&mut self, id: ObjectId) {
+    pub fn despawn(&mut self, id: EntityId) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.despawn(id);
         }
         self.drop_if_empty(id.cell);
     }
 
-    pub fn is_alive(&self, id: ObjectId) -> bool {
+    pub fn is_alive(&self, id: EntityId) -> bool {
         self.cells.get(&id.cell).map(|c| c.is_alive(id)).unwrap_or(false)
     }
 
     // ========== Names ==========
 
-    pub fn set_name(&mut self, id: ObjectId, name: &str) {
+    pub fn set_name(&mut self, id: EntityId, name: &str) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.set_name(id, name);
         }
     }
 
-    pub fn get_name(&self, id: ObjectId) -> Option<&str> {
+    pub fn get_name(&self, id: EntityId) -> Option<&str> {
         self.cells.get(&id.cell)?.get_name(id)
     }
 
-    pub fn get_name_mut(&mut self, id: ObjectId) -> Option<&mut String> {
+    pub fn get_name_mut(&mut self, id: EntityId) -> Option<&mut String> {
         self.cells.get_mut(&id.cell)?.get_name_mut(id)
     }
 
     // ========== Components ==========
 
-    pub fn add_component<T: Component + Clone + 'static>(&mut self, id: ObjectId, component: T) {
+    pub fn add_component<T: Component + Clone + 'static>(&mut self, id: EntityId, component: T) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.add_component(id, component);
         }
     }
 
-    pub fn get_component<T: Component + 'static>(&self, id: ObjectId) -> Option<&T> {
+    pub fn get_component<T: Component + 'static>(&self, id: EntityId) -> Option<&T> {
         self.cells.get(&id.cell)?.get_component(id)
     }
 
-    pub fn get_component_mut<T: Component + 'static>(&mut self, id: ObjectId) -> Option<&mut T> {
+    pub fn get_component_mut<T: Component + 'static>(&mut self, id: EntityId) -> Option<&mut T> {
         self.cells.get_mut(&id.cell)?.get_component_mut(id)
     }
 
-    pub fn remove_component<T: Component + 'static>(&mut self, id: ObjectId) {
+    pub fn remove_component<T: Component + 'static>(&mut self, id: EntityId) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.remove_component::<T>(id);
         }
     }
 
-    pub fn has_component<T: Component + 'static>(&self, id: ObjectId) -> bool {
+    pub fn has_component<T: Component + 'static>(&self, id: EntityId) -> bool {
         self.cells.get(&id.cell).map(|c| c.has_component::<T>(id)).unwrap_or(false)
     }
 
     /// Returns all entity IDs across all cells that have component T.
-    pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<ObjectId> {
+    pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<EntityId> {
         self.cells.values()
             .flat_map(|c| c.get_entities_with_component::<T>())
             .collect()
@@ -157,31 +157,31 @@ impl Worldspace {
 
     // ========== Tags ==========
 
-    pub fn add_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
+    pub fn add_tag<T: Tag + 'static>(&mut self, id: EntityId) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.add_tag::<T>(id);
         }
     }
 
-    pub fn remove_tag<T: Tag + 'static>(&mut self, id: ObjectId) {
+    pub fn remove_tag<T: Tag + 'static>(&mut self, id: EntityId) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.remove_tag::<T>(id);
         }
     }
 
-    pub fn has_tag<T: Tag + 'static>(&self, id: ObjectId) -> bool {
+    pub fn has_tag<T: Tag + 'static>(&self, id: EntityId) -> bool {
         self.cells.get(&id.cell).map(|c| c.has_tag::<T>(id)).unwrap_or(false)
     }
 
     /// Returns the first entity across all cells with tag T.
-    pub fn get_entity_with_tag<T: Tag + 'static>(&self) -> Result<ObjectId> {
+    pub fn get_entity_with_tag<T: Tag + 'static>(&self) -> Result<EntityId> {
         self.cells.values()
             .find_map(|c| c.get_first_entity_with_tag::<T>())
             .ok_or_else(no_tag_error::<T>)
     }
 
     /// Returns all entities across all cells with tag T.
-    pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<ObjectId> {
+    pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<EntityId> {
         self.cells.values()
             .flat_map(|c| c.get_entities_with_tag::<T>())
             .collect()
@@ -190,38 +190,38 @@ impl Worldspace {
     // ========== Entity Blob / Capture / Restore ==========
 
     /// Non-destructively captures an entity's state into an [`EntityBlob`].
-    pub fn capture_entity(&self, id: ObjectId) -> Option<EntityBlob> {
+    pub fn capture_entity(&self, id: EntityId) -> Option<EntityBlob> {
         self.cells.get(&id.cell)?.capture_entity(id)
     }
 
     /// Spawns a new entity using data from an [`EntityBlob`] and returns its ID.
-    pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> ObjectId {
+    pub fn spawn_from_blob(&mut self, blob: &EntityBlob) -> EntityId {
         self.get_or_create_cell(blob.cell).spawn_from_blob(blob)
     }
 
     // ========== Inspector / Editor helpers ==========
 
-    pub fn get_entity_component_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+    pub fn get_entity_component_type_ids(&self, id: EntityId) -> Vec<TypeId> {
         self.cells.get(&id.cell).map(|c| c.get_entity_component_type_ids(id)).unwrap_or_default()
     }
 
-    pub fn get_entity_tag_type_ids(&self, id: ObjectId) -> Vec<TypeId> {
+    pub fn get_entity_tag_type_ids(&self, id: EntityId) -> Vec<TypeId> {
         self.cells.get(&id.cell).map(|c| c.get_entity_tag_type_ids(id)).unwrap_or_default()
     }
 
-    pub fn remove_component_by_type_id(&mut self, id: ObjectId, type_id: TypeId) {
+    pub fn remove_component_by_type_id(&mut self, id: EntityId, type_id: TypeId) {
         if let Some(cell) = self.cells.get_mut(&id.cell) {
             cell.remove_component_by_type_id(id, type_id);
         }
     }
 
-    pub fn get_component_type_name(&self, id: ObjectId, type_id: TypeId) -> Option<&'static str> {
+    pub fn get_component_type_name(&self, id: EntityId, type_id: TypeId) -> Option<&'static str> {
         self.cells.get(&id.cell)?.get_component_type_name(id, type_id)
     }
 
     pub fn with_component_any_mut(
         &mut self,
-        id: ObjectId,
+        id: EntityId,
         type_id: TypeId,
         f: impl FnOnce(&mut dyn std::any::Any),
     ) -> bool {
@@ -230,7 +230,7 @@ impl Worldspace {
             .unwrap_or(false)
     }
 
-    pub fn remove_tag_by_name(&mut self, id: ObjectId, name: &str) {
+    pub fn remove_tag_by_name(&mut self, id: EntityId, name: &str) {
         if let Some(reg) = inventory::iter::<TagRegistration>()
             .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
         {
@@ -245,7 +245,7 @@ impl Worldspace {
 
     /// Parents `child_id` under `parent_id`.
     /// If they live in different cells, the child's subtree is migrated into the parent's cell first.
-    pub fn set_parent(&mut self, child_id: ObjectId, new_parent_id: Option<ObjectId>) -> Result<()> {
+    pub fn set_parent(&mut self, child_id: EntityId, new_parent_id: Option<EntityId>) -> Result<()> {
         match new_parent_id {
             None => {
                 self.cells
@@ -269,11 +269,11 @@ impl Worldspace {
         }
     }
 
-    pub fn detach_from_parent(&mut self, id: ObjectId) -> Result<()> {
+    pub fn detach_from_parent(&mut self, id: EntityId) -> Result<()> {
         self.set_parent(id, None)
     }
 
-    pub fn is_ancestor_of(&self, ancestor_id: ObjectId, descendant_id: ObjectId) -> bool {
+    pub fn is_ancestor_of(&self, ancestor_id: EntityId, descendant_id: EntityId) -> bool {
         if ancestor_id.cell != descendant_id.cell {
             return false; // hierarchies never span cells
         }
@@ -282,33 +282,33 @@ impl Worldspace {
             .unwrap_or(false)
     }
 
-    pub fn get_parent_id(&self, id: ObjectId) -> Option<ObjectId> {
+    pub fn get_parent_id(&self, id: EntityId) -> Option<EntityId> {
         self.cells.get(&id.cell)?.get_parent_id(id)
     }
 
-    pub fn get_children_ids(&self, id: ObjectId) -> Vec<ObjectId> {
+    pub fn get_children_ids(&self, id: EntityId) -> Vec<EntityId> {
         self.cells.get(&id.cell)
             .map(|c| c.get_children_ids(id))
             .unwrap_or_default()
     }
 
-    pub fn get_ancestors(&self, id: ObjectId) -> Vec<ObjectId> {
+    pub fn get_ancestors(&self, id: EntityId) -> Vec<EntityId> {
         self.cells.get(&id.cell)
             .map(|c| c.get_ancestors(id))
             .unwrap_or_default()
     }
 
-    pub fn get_descendants(&self, id: ObjectId) -> Vec<ObjectId> {
+    pub fn get_descendants(&self, id: EntityId) -> Vec<EntityId> {
         self.cells.get(&id.cell)
             .map(|c| c.get_descendants(id))
             .unwrap_or_default()
     }
 
-    pub fn get_all_ids(&self) -> Vec<ObjectId> {
+    pub fn get_all_ids(&self) -> Vec<EntityId> {
         self.cells.values().flat_map(|c| c.get_all_ids()).collect()
     }
 
-    pub fn get_root_ids(&self) -> Vec<ObjectId> {
+    pub fn get_root_ids(&self) -> Vec<EntityId> {
         self.cells.values().flat_map(|c| c.get_root_ids()).collect()
     }
 
@@ -323,7 +323,7 @@ impl Worldspace {
     /// Moves an entity's subtree into the cell that contains `position`.
     /// Only meaningful for root entities — children always follow their parent's cell.
     /// Returns the root's new ID (changes when the cell changes).
-    pub fn rehome_by_position(&mut self, id: ObjectId, position: Vector3<f32>) -> Option<ObjectId> {
+    pub fn rehome_by_position(&mut self, id: EntityId, position: Vector3<f32>) -> Option<EntityId> {
         let target = world_to_cell(position);
         if target == id.cell {
             return Some(id);
@@ -333,7 +333,7 @@ impl Worldspace {
 
     /// Moves the subtree rooted at `root_id` into `target`, remapping all IDs.
     /// Returns the root's new ID.
-    pub fn move_subtree_to_cell(&mut self, root_id: ObjectId, target: CellCoord) -> Option<ObjectId> {
+    pub fn move_subtree_to_cell(&mut self, root_id: EntityId, target: CellCoord) -> Option<EntityId> {
         if root_id.cell == target {
             return Some(root_id);
         }
@@ -344,7 +344,7 @@ impl Worldspace {
         let source = root_id.cell;
         let descendants = self.cells.get(&source)?.get_descendants(root_id);
         // BFS order: root first, then children — so parents always get a new ID before their children.
-        let all_ids: Vec<ObjectId> = std::iter::once(root_id).chain(descendants).collect();
+        let all_ids: Vec<EntityId> = std::iter::once(root_id).chain(descendants).collect();
 
         // Extract all entity data from the source cell.
         let mut snapshots: Vec<EntitySnapshot> = Vec::new();
@@ -360,7 +360,7 @@ impl Worldspace {
 
         // Allocate new IDs in the target cell and build old→new entity remap.
         let mut remap: HashMap<Entity, Entity> = HashMap::new();
-        let mut new_ids: Vec<ObjectId> = Vec::new();
+        let mut new_ids: Vec<EntityId> = Vec::new();
         {
             let dst = self.get_or_create_cell(target);
             for snap in &snapshots {

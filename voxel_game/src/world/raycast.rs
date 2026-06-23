@@ -8,7 +8,7 @@ use apostasy_core::{
     },
     log, log_error,
     ecs::{
-        cell::ObjectId, resources::input_manager::InputManager, tags::Player, world::World,
+        cell::EntityId, resources::input_manager::InputManager, tags::Player, world::World,
     },
     utils::flatten::flatten,
     voxels::{
@@ -150,7 +150,7 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
                 .remove(&hit_world_pos);
 
             // find and update the chunk
-            let chunks_to_update: Vec<ObjectId> = {
+            let chunks_to_update: Vec<EntityId> = {
                 let all_ids = world.get_entities_with_component::<VoxelTransform>();
                 all_ids.into_iter().filter(|&id| {
                     world.get_component::<VoxelTransform>(id)
@@ -256,7 +256,7 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
         )
     };
 
-    let chunks_to_update: Vec<ObjectId> = {
+    let chunks_to_update: Vec<EntityId> = {
         let all_ids = world.get_entities_with_component::<VoxelTransform>();
         all_ids.into_iter().filter(|&id| {
             world.get_component::<VoxelTransform>(id)

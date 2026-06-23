@@ -11,8 +11,8 @@ use crate::{
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
-/// Rigid body physics state for an object.
-/// Set `mass` to `0.0` or `process` to `false` to make the object immovable.
+/// Rigid body physics state for an entity.
+/// Set `mass` to `0.0` or `process` to `false` to make the entity immovable.
 #[derive(Component, Clone, Debug)]
 pub struct Velocity {
     pub angular_velocity: Vector3<f32>,
@@ -20,7 +20,7 @@ pub struct Velocity {
     pub mass: f32,
     /// Set by the collision system each frame, `true` if resting on a surface.
     pub is_grounded: bool,
-    /// Whether physics simulation is applied to this object each frame.
+    /// Whether physics simulation is applied to this entity each frame.
     pub process: bool,
 
     pub inertia_tensor: Vector3<f32>,
@@ -99,8 +99,8 @@ impl Default for Velocity {
 }
 
 impl Velocity {
-    /// Creates a zero-mass, non-processing velocity for immovable objects.
-    pub fn static_object() -> Self {
+    /// Creates a zero-mass, non-processing velocity for immovable entities.
+    pub fn static_entity() -> Self {
         Self {
             angular_velocity: Vector3::zero(),
             linear_velocity: Vector3::zero(),

@@ -1,7 +1,7 @@
 use apostasy_core::{
     cgmath::{InnerSpace, Matrix3, Matrix4, Rotation3, Vector3, Vector4},
     egui::{self, Color32, Pos2, Stroke, Vec2},
-    ecs::{cell::ObjectId, components::transform::Transform},
+    ecs::{cell::EntityId, components::transform::Transform},
     physics::collider::{Collider, ColliderShape},
     rendering::components::lighting::LightType,
 };
@@ -41,7 +41,7 @@ pub struct GizmoDrag {
 #[derive(Resource, Clone)]
 pub struct GizmoState {
     pub mode: GizmoMode,
-    /// true = axes follow object orientation, false = world-aligned axes
+    /// true = axes follow entity orientation, false = world-aligned axes
     pub local: bool,
     pub drag: Option<GizmoDrag>,
     /// True when cursor is near a gizmo handle, suppresses viewport deselect on raycast miss
@@ -183,7 +183,7 @@ pub fn gizmo(
         (GizmoAxis::Z, Color32::from_rgb(55, 100, 220)),
     ];
 
-    // World-space direction for each axis - rotated by object orientation in local mode
+    // World-space direction for each axis - rotated by entity orientation in local mode
     let axis_dirs: [Vector3<f32>; 3] = if state.local {
         [
             (transform.local_rotation * Vector3::new(1.0, 0.0, 0.0)).normalize(),
@@ -482,7 +482,7 @@ pub fn gizmo(
     (new_transform, state)
 }
 
-/// Draw a wireframe outline of the collider shape for the selected object.
+/// Draw a wireframe outline of the collider shape for the selected entity.
 pub fn collider_gizmo(
     ui: &mut egui::Ui,
     transform: &Transform,
@@ -721,21 +721,21 @@ const ICON_RADIUS: f32 = 12.0;
 const ICON_HIT: f32 = 14.0;
 
 /// Draw billboard icons and wireframes for all lights in the scene.
-/// Returns the ObjectId of whichever icon was clicked this frame, if any.
+/// Returns the EntityId of whichever icon was clicked this frame, if any.
 pub fn light_gizmos(
     ui: &mut egui::Ui,
-    lights: &[(ObjectId, Transform, LightType, Vector3<f32>)],
+    lights: &[(EntityId, Transform, LightType, Vector3<f32>)],
     view_proj: Matrix4<f32>,
     frame_rect: egui::Rect,
-    selected_id: Option<ObjectId>,
+    selected_id: Option<EntityId>,
     gizmo_consuming: bool,
-) -> Option<ObjectId> {
+) -> Option<EntityId> {
     let painter = ui.painter_at(frame_rect);
     let mouse_pos = ui.input(|i| i.pointer.hover_pos());
     let just_clicked = ui.input(|i| i.pointer.primary_clicked());
-    let mut clicked: Option<ObjectId> = None;
+    let mut clicked: Option<EntityId> = None;
 
-    for (obj_id, transform, light_type, color) in lights {
+    for (entity_id, transform, light_type, color) in lights {
         let pos = transform.global_position;
         let screen_pos = match project(pos, view_proj, frame_rect) {
             Some(p) if frame_rect.expand(ICON_RADIUS + 4.0).contains(p) => p,
@@ -747,10 +747,10 @@ pub fn light_gizmos(
             .unwrap_or(false);
 
         if hovered && just_clicked && !gizmo_consuming {
-            clicked = Some(*obj_id);
+            clicked = Some(*entity_id);
         }
 
-        let is_selected = selected_id == Some(*obj_id);
+        let is_selected = selected_id == Some(*entity_id);
 
         // Derive a visible icon color from the light's linear color
         let lc = Color32::from_rgb(

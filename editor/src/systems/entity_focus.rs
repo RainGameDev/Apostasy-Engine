@@ -13,34 +13,34 @@ use apostasy_core::{
 use apostasy_macros::Resource;
 
 #[derive(Resource, Clone)]
-pub struct IsObjectFocused;
+pub struct IsEntityFocused;
 
 use crate::ui::cell_panel::CellSearchState;
 
 #[update(mode = "editor")]
-pub fn object_focus(world: &mut World) -> Result<()> {
+pub fn entity_focus(world: &mut World) -> Result<()> {
     let inputs = world.get_resource::<InputManager>().unwrap();
     let delta = inputs.mouse_delta;
     let middle_click = inputs.is_mousebind_active("MiddleMouseClick");
     if !world.has_resource::<CellSearchState>() {
         return Ok(());
     }
-    if let Some(selected_obj) = world
+    if let Some(selected_entity) = world
         .get_resource::<CellSearchState>()
         .unwrap()
-        .selected_obj
+        .selected_entity
     {
         if let Ok(ctx) = world.get_resource::<EguiContext>() {
             if ctx.0.egui_wants_keyboard_input() {
                 return Ok(());
             }
         }
-        if inputs.is_keybind_active("FocusObject") {
-            world.insert_resource(IsObjectFocused);
-            if !world.has_component::<Transform>(selected_obj) {
+        if inputs.is_keybind_active("FocusEntity") {
+            world.insert_resource(IsEntityFocused);
+            if !world.has_component::<Transform>(selected_entity) {
                 return Ok(());
             }
-            let selected_global_pos = world.get_component::<Transform>(selected_obj)
+            let selected_global_pos = world.get_component::<Transform>(selected_entity)
                 .map(|t| t.global_position);
             if let Some(sel_pos) = selected_global_pos {
                 let cam_id = world.get_entity_with_tag::<EditorCamera>()?;
@@ -53,8 +53,8 @@ pub fn object_focus(world: &mut World) -> Result<()> {
             }
         }
 
-        if world.has_resource::<IsObjectFocused>() && middle_click {
-            let sel_pos = world.get_component::<Transform>(selected_obj)
+        if world.has_resource::<IsEntityFocused>() && middle_click {
+            let sel_pos = world.get_component::<Transform>(selected_entity)
                 .map(|t| t.global_position);
             if let Some(pivot) = sel_pos {
                 let cam_id = world.get_entity_with_tag::<EditorCamera>()?;

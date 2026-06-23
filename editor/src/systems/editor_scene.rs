@@ -103,19 +103,17 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
 
 #[start(mode = "editor")]
 pub fn editor_scene_setup(world: &mut World) -> Result<()> {
-    let camera_id = world.spawn();
-    world.set_name(camera_id, "Camera");
-    world.add_component(camera_id, Camera::default());
-    world.add_component(
-        camera_id,
-        Transform {
+    world
+        .spawn()
+        .with_name("Camera")
+        .add_component(Camera::default())
+        .add_component(Transform {
             local_position: Vector3::new(0.0, 2.0, 20.0),
             ..Default::default()
-        },
-    );
-    world.add_component(camera_id, Velocity::default());
-    world.add_tag::<ActiveCamera>(camera_id);
-    world.add_tag::<EditorCamera>(camera_id);
+        })
+        .add_component(Velocity::default())
+        .add_tag::<ActiveCamera>()
+        .add_tag::<EditorCamera>();
 
     // Seed cell streaming with the saved render distance so far cells unload/reload
     // around the camera. load_worldspace preserves this setting when it runs.
@@ -124,7 +122,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     streaming.set_render_distance(prefs.render_distance);
     world.insert_resource(streaming);
 
-    // Try loading: last opened scene → "default" scene → hard-coded test objects.
+    // Try loading: last opened scene → "default" scene → hard-coded test entities.
     let last_scene_name = prefs.last_scene;
     let startup_scene: Option<(String, serde_yaml::Value)> = world
         .get_resource::<AssetManager>()
@@ -149,7 +147,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         let _ = load_terrain_cells(world, &terrain_dir);
         EditorPreferences::save_last_scene(&scene_name);
     } else {
-        let floor_id = world.spawn();
+        let floor_id = world.spawn().id();
         world.set_name(floor_id, "Floor");
         world.add_component(
             floor_id,
@@ -159,7 +157,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             },
         );
         world.add_component(floor_id, ModelRenderer::default());
-        world.add_component(floor_id, Velocity::static_object());
+        world.add_component(floor_id, Velocity::static_entity());
         world.add_component(
             floor_id,
             Collider::new_static(
@@ -170,7 +168,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             ),
         );
 
-        let cube_id = world.spawn();
+        let cube_id = world.spawn().id();
         world.set_name(cube_id, "Cube");
         world.add_component(
             cube_id,
@@ -184,7 +182,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         world.add_component(cube_id, Gravity::default());
         world.add_component(cube_id, Collider::default());
 
-        let cube2_id = world.spawn();
+        let cube2_id = world.spawn().id();
         world.set_name(cube2_id, "Cube");
         world.add_component(
             cube2_id,
@@ -198,7 +196,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         world.add_component(cube2_id, Gravity::default());
         world.add_component(cube2_id, Collider::default());
 
-        let sphere_id = world.spawn();
+        let sphere_id = world.spawn().id();
         world.set_name(sphere_id, "Sphere");
         world.add_component(
             sphere_id,
@@ -216,7 +214,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         );
         world.add_tag::<Player>(sphere_id);
 
-        let sphere2_id = world.spawn();
+        let sphere2_id = world.spawn().id();
         world.set_name(sphere2_id, "Sphere");
         world.add_component(
             sphere2_id,
@@ -282,7 +280,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
     );
 
     inputs.register_default_keybind(
-        "FocusObject",
+        "FocusEntity",
         KeyBind::new(PhysicalKey::Code(KeyCode::KeyC), KeyAction::Press),
     );
 
@@ -356,13 +354,13 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             if !gizmo_consuming {
                 if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
                     if let Some(hit) = hit {
-                        cell_search_state.selected_obj = Some(hit.object_id);
+                        cell_search_state.selected_entity = Some(hit.entity_id);
                         if let Ok(inspector_state) = world.get_resource_mut::<InspectorPanelState>()
                         {
                             inspector_state.visible = true;
                         }
                     } else {
-                        cell_search_state.selected_obj = None;
+                        cell_search_state.selected_entity = None;
                     }
                 }
             }
@@ -418,13 +416,13 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             let ray = Ray::new(camera_transform.global_position, direction);
 
             let snapshots = build_collider_snapshot(world);
-            raycast_colliders_raw(&ray, 1000.0, &snapshots, None).map(|h| h.object_id)
+            raycast_colliders_raw(&ray, 1000.0, &snapshots, None).map(|h| h.entity_id)
         } else {
             None
         };
 
         if let Ok(ctx_menu) = world.get_resource_mut::<ViewportContextMenu>() {
-            ctx_menu.hit_obj = hit_id;
+            ctx_menu.hit_entity = hit_id;
         }
     }
 

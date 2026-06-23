@@ -6,7 +6,7 @@ use hashbrown::HashMap;
 
 use crate::{
     ecs::{
-        cell::{CellCoord, ObjectId},
+        cell::{CellCoord, EntityId},
         components::{
             get_component_registration,
             transform::Transform,
@@ -146,7 +146,7 @@ fn serialize_component_light(l: &Light) -> Option<serde_yaml::Value> {
     Some(serde_yaml::Value::Mapping(map))
 }
 
-fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
+fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
     // Skip editor/internal entities
     if world.has_tag::<crate::rendering::components::camera::EditorCamera>(id)
         || world.has_tag::<crate::ecs::tags::skips_serilization::SkipsSerilization>(id)
@@ -191,7 +191,7 @@ fn serialize_object(world: &World, id: ObjectId) -> Option<serde_yaml::Value> {
 
     let children: serde_yaml::Sequence = children_ids
         .iter()
-        .filter_map(|&child_id| serialize_object(world, child_id))
+        .filter_map(|&child_id| serialize_entity(world, child_id))
         .collect();
 
     let mut map = serde_yaml::Mapping::new();
@@ -218,41 +218,41 @@ fn parse_coord_key(key: &str) -> Option<CellCoord> {
     Some(Vector3::new(x, y, z))
 }
 
-/// Serializes a single loaded cell into its on-disk `{ name, objects }` mapping.
+/// Serializes a single loaded cell into its on-disk `{ name, entities }` mapping.
 /// Returns `None` when the cell is not currently loaded.
 pub fn serialize_cell(world: &World, coord: CellCoord) -> Option<serde_yaml::Value> {
     let cell = world.worldspace().get_cell(coord)?;
     let root_ids = cell.get_root_ids();
     let cell_name = cell.name.clone();
-    let mut objects = serde_yaml::Sequence::new();
+    let mut entities = serde_yaml::Sequence::new();
     for id in root_ids {
-        if let Some(obj_value) = serialize_object(world, id) {
-            objects.push(obj_value);
+        if let Some(entity_value) = serialize_entity(world, id) {
+            entities.push(entity_value);
         }
     }
     let mut cell_map = serde_yaml::Mapping::new();
     cell_map.insert("name".into(), cell_name.into());
-    cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
+    cell_map.insert("entities".into(), serde_yaml::Value::Sequence(entities));
     Some(serde_yaml::Value::Mapping(cell_map))
 }
 
-/// Loads a single cell's `{ name, objects }` mapping (as produced by
+/// Loads a single cell's `{ name, entities }` mapping (as produced by
 /// [`serialize_cell`]) into `coord`. Used by the streaming system to bring cells
 /// back into memory once they re-enter render distance.
 pub fn load_cell(world: &mut World, coord: CellCoord, value: &serde_yaml::Value) -> Result<()> {
-    let (name, objects) = match value {
+    let (name, entities) = match value {
         serde_yaml::Value::Mapping(_) => (
             value.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-            value.get("objects").and_then(|v| v.as_sequence()),
+            value.get("entities").and_then(|v| v.as_sequence()),
         ),
         _ => ("", value.as_sequence()),
     };
     if !name.is_empty() {
         world.worldspace_mut().set_cell_name(coord, name);
     }
-    if let Some(objects) = objects {
-        for obj_value in objects {
-            load_object(world, obj_value, None, coord)?;
+    if let Some(entities) = entities {
+        for entity_value in entities {
+            load_entity(world, entity_value, None, coord)?;
         }
     }
     Ok(())
@@ -274,19 +274,19 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
         let root_ids = cell.get_root_ids();
         let cell_name = cell.name.clone();
         let cell_coord = cell.coord;
-        let mut objects = serde_yaml::Sequence::new();
+        let mut entities = serde_yaml::Sequence::new();
         for id in root_ids {
-            if let Some(obj_value) = serialize_object(world, id) {
-                objects.push(obj_value);
+            if let Some(entity_value) = serialize_entity(world, id) {
+                entities.push(entity_value);
             }
         }
-        // Persist a cell if it has serialized objects or a user-assigned name.
-        if objects.is_empty() && cell_name.is_empty() {
+        // Persist a cell if it has serialized entities or a user-assigned name.
+        if entities.is_empty() && cell_name.is_empty() {
             continue;
         }
         let mut cell_map = serde_yaml::Mapping::new();
         cell_map.insert("name".into(), cell_name.into());
-        cell_map.insert("objects".into(), serde_yaml::Value::Sequence(objects));
+        cell_map.insert("entities".into(), serde_yaml::Value::Sequence(entities));
         cells.insert(
             coord_key(cell_coord).into(),
             serde_yaml::Value::Mapping(cell_map),
@@ -301,8 +301,8 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
             if cells.contains_key(&key) {
                 continue; // a currently-loaded cell already covers this coord
             }
-            let has_objects = value
-                .get("objects")
+            let has_entities = value
+                .get("entities")
                 .and_then(|v| v.as_sequence())
                 .map(|s| !s.is_empty())
                 .unwrap_or(false);
@@ -311,7 +311,7 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
                 .and_then(|v| v.as_str())
                 .map(|n| !n.is_empty())
                 .unwrap_or(false);
-            if has_objects || has_name {
+            if has_entities || has_name {
                 cells.insert(key, value.clone());
             }
         }
@@ -330,11 +330,11 @@ pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) 
     Ok(())
 }
 
-fn populate_entity(world: &mut World, id: ObjectId, value: &serde_yaml::Value) {
+fn populate_entity(world: &mut World, id: EntityId, value: &serde_yaml::Value) {
     let name = value
         .get("name")
         .and_then(|v| v.as_str())
-        .unwrap_or("Object");
+        .unwrap_or("Entity");
     world.set_name(id, name);
 
     if let Some(components) = value.get("components").and_then(|v| v.as_sequence()) {
@@ -362,25 +362,25 @@ fn populate_entity(world: &mut World, id: ObjectId, value: &serde_yaml::Value) {
     }
 }
 
-/// Loads an object, and its children, into `cell_coord`,
-/// Root objects are placed directly in the given cell so the on-disk layout is preserved exactly
+/// Loads an entity, and its children, into `cell_coord`,
+/// Root entities are placed directly in the given cell so the on-disk layout is preserved exactly
 /// Children follow their parent's cell
-fn load_object(
+fn load_entity(
     world: &mut World,
     value: &serde_yaml::Value,
-    parent_id: Option<ObjectId>,
+    parent_id: Option<EntityId>,
     cell_coord: CellCoord,
 ) -> Result<()> {
-    let obj_id = world.spawn_in_cell(cell_coord);
-    populate_entity(world, obj_id, value);
+    let entity_id = world.spawn_in_cell(cell_coord).id();
+    populate_entity(world, entity_id, value);
 
     if let Some(pid) = parent_id {
-        world.set_parent(obj_id, Some(pid))?;
+        world.set_parent(entity_id, Some(pid))?;
     }
 
     if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
         for child_value in children {
-            load_object(world, child_value, Some(obj_id), cell_coord)?;
+            load_entity(world, child_value, Some(entity_id), cell_coord)?;
         }
     }
 
@@ -422,14 +422,14 @@ pub fn load_worldspace(
                 continue;
             };
 
-            // New format: { name, objects }. Legacy: a bare objects sequence.
-            let (name, objects) = match cell_value {
+            // New format: { name, entities }. Legacy: a bare entities sequence.
+            let (name, entities) = match cell_value {
                 serde_yaml::Value::Mapping(_) => (
                     cell_value
                         .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or(""),
-                    cell_value.get("objects").and_then(|v| v.as_sequence()),
+                    cell_value.get("entities").and_then(|v| v.as_sequence()),
                 ),
                 _ => ("", cell_value.as_sequence()),
             };
@@ -437,16 +437,16 @@ pub fn load_worldspace(
             if !name.is_empty() {
                 world.worldspace_mut().set_cell_name(coord, name);
             }
-            if let Some(objects) = objects {
-                for obj_value in objects {
-                    load_object(world, obj_value, None, coord)?;
+            if let Some(entities) = entities {
+                for entity_value in entities {
+                    load_entity(world, entity_value, None, coord)?;
                 }
             }
         }
-    } else if let Some(objects) = value.get("objects").and_then(|v| v.as_sequence()) {
-        // Legacy flat scene format: place each object by its transform position.
-        for obj_value in objects {
-            load_legacy_object(world, obj_value, None)?;
+    } else if let Some(entities) = value.get("entities").and_then(|v| v.as_sequence()) {
+        // Legacy flat scene format: place each entity by its transform position.
+        for entity_value in entities {
+            load_legacy_entity(world, entity_value, None)?;
         }
     }
 
@@ -472,23 +472,23 @@ pub fn load_worldspace(
     Ok(())
 }
 
-/// Legacy loader for the old flat `objects` scene format. Root objects are placed
-/// in cell (0,0,0) by default (or the position-inferred cell for root objects).
-fn load_legacy_object(
+/// Legacy loader for the old flat `entities` scene format. Root entities are placed
+/// in cell (0,0,0) by default (or the position-inferred cell for root entities).
+fn load_legacy_entity(
     world: &mut World,
     value: &serde_yaml::Value,
-    parent_id: Option<ObjectId>,
+    parent_id: Option<EntityId>,
 ) -> Result<()> {
-    let obj_id = world.spawn();
-    populate_entity(world, obj_id, value);
+    let entity_id = world.spawn().id();
+    populate_entity(world, entity_id, value);
 
     if let Some(pid) = parent_id {
-        world.set_parent(obj_id, Some(pid))?;
+        world.set_parent(entity_id, Some(pid))?;
     }
 
     if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
         for child_value in children {
-            load_legacy_object(world, child_value, Some(obj_id))?;
+            load_legacy_entity(world, child_value, Some(entity_id))?;
         }
     }
 

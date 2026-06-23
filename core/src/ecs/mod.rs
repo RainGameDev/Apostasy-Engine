@@ -1,4 +1,5 @@
 pub mod components;
+pub mod entity_builder;
 pub mod query;
 pub mod resources;
 pub mod sets;
@@ -6,6 +7,7 @@ pub mod systems;
 pub mod tags;
 pub mod world;
 
+pub use entity_builder::EntityBuilder;
 pub use query::{Query, QueryBuilder, QueryFetch, QueryFilter, With, Without, WithTag, WithoutTag};
 pub use world::World;
 

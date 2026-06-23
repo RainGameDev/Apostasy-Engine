@@ -193,7 +193,7 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
         } else {
             let mut model_renderer = ModelRenderer::from_path("centered_cube.glb");
             model_renderer.is_wireframe = true;
-            let sel_id = world.spawn();
+            let sel_id = world.spawn().id();
             world.add_component(sel_id, Transform::default());
             world.add_component(sel_id, model_renderer);
             world.add_tag::<StructureSelectionArea>(sel_id);

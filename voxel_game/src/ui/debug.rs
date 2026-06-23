@@ -8,7 +8,7 @@ use apostasy_core::{
     egui,
     ecs::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     physics::velocity::Velocity,
-    rendering::shared::frustrum::ObjectsDrawing,
+    rendering::shared::frustrum::EntitiesDrawing,
     start,
     ui::ui_context::EguiContext,
     voxels::{VoxelTransform, biome::BiomeRegistry, chunk::Chunk},
@@ -46,14 +46,10 @@ pub fn hud(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
 
     // Single player lookup
-    let player_obj = world.get_object_with_tag::<Player>().unwrap();
-    let transform = player_obj
-        .get_component::<Transform>()
-        .unwrap()
-        .global_position;
-    let velocity = player_obj.get_component::<Velocity>().unwrap();
-    let linear_velocity = velocity.linear_velocity;
-    let is_grounded = velocity.is_grounded;
+    let player_id = world.get_entity_with_tag::<Player>().unwrap();
+    let transform = world.get_component::<Transform>(player_id).unwrap().global_position;
+    let linear_velocity = world.get_component::<Velocity>(player_id).unwrap().linear_velocity;
+    let is_grounded = world.get_component::<Velocity>(player_id).unwrap().is_grounded;
 
     let chunk_pos = Vector3::new(
         (transform.x as i32) / 32,
@@ -71,15 +67,15 @@ pub fn hud(world: &mut World) -> Result<()> {
     let v_load_radius = world.get_resource::<ChunkLoader>()?.v_load_radius;
     let load_radius = world.get_resource::<ChunkLoader>()?.load_radius;
 
-    let chunks = world.get_objects_with_component::<Chunk>();
-    let chunk_count = chunks.len();
-    let biome = chunks
+    let chunk_ids = world.get_entities_with_component::<Chunk>();
+    let chunk_count = chunk_ids.len();
+    let biome = chunk_ids
         .iter()
-        .find(|c| {
-            c.get_component::<VoxelTransform>()
+        .find(|&&id| {
+            world.get_component::<VoxelTransform>(id)
                 .map_or(false, |t| t.position == chunk_pos)
         })
-        .and_then(|c| c.get_component::<Chunk>().ok())
+        .and_then(|&id| world.get_component::<Chunk>(id))
         .and_then(|c| registry.id_to_name.get(&c.biome))
         .map(|n| n.to_string())
         .unwrap_or_else(|| "None".to_string());
@@ -107,8 +103,8 @@ pub fn hud(world: &mut World) -> Result<()> {
     let one_pct_low = sorted[..one_pct_idx.max(1)].iter().sum::<f32>() / one_pct_idx.max(1) as f32;
     let point1_low = sorted[..point1_idx.max(1)].iter().sum::<f32>() / point1_idx.max(1) as f32;
 
-    let object_count = world.object_count();
-    let objects_drawing = world.get_resource::<ObjectsDrawing>()?.0;
+    let entity_count = world.entity_count();
+    let entities_drawing = world.get_resource::<EntitiesDrawing>()?.0;
 
     egui::Window::new("Debug")
         .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
@@ -119,8 +115,8 @@ pub fn hud(world: &mut World) -> Result<()> {
             ui.label(format!("1% low: {:.0}", one_pct_low));
             ui.label(format!("0.1% low: {:.0}", point1_low));
             ui.separator();
-            ui.label(format!("Objects: {}", object_count));
-            ui.label(format!("Objects Drawing: {}", objects_drawing));
+            ui.label(format!("Entities: {}", entity_count));
+            ui.label(format!("Entities Drawing: {}", entities_drawing));
             ui.separator();
             ui.label(format!("Chunks: {}", chunk_count));
             ui.label(format!("Biome: {}", biome));

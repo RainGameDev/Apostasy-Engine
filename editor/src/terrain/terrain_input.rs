@@ -2,7 +2,7 @@ use anyhow::Result;
 use apostasy_core::{
     cgmath::{SquareMatrix, Vector3, Vector4},
     ecs::{
-        cell::{CELL_SIZE, CellCoord, ObjectId, world_to_cell},
+        cell::{CELL_SIZE, CellCoord, EntityId, world_to_cell},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         tags::skips_serilization::SkipsSerilization,
@@ -164,7 +164,7 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
         .map(|s| s.resolution)
         .unwrap_or(128);
 
-    // Ensure all affected cells have terrain objects
+    // Ensure all affected cells have terrain entities
     for &cell in &affected_cells {
         ensure_terrain_chunk(world, cell, resolution);
     }
@@ -182,10 +182,10 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
     // Apply brush to each affected chunk
     for &cell in &affected_cells {
         let chunk_map = world.get_resource::<TerrainChunkMap>()?.clone();
-        if let Some(&obj_id) = chunk_map.0.get(&cell) {
+        if let Some(&entity_id) = chunk_map.0.get(&cell) {
             apply_brush(
                 world,
-                obj_id,
+                entity_id,
                 hit_pos,
                 &state,
                 flatten_target,
@@ -307,11 +307,11 @@ fn sample_height_at(world: &World, pos: Vector3<f32>) -> f32 {
         Ok(m) => m,
         Err(_) => return 0.0,
     };
-    let obj_id = match chunk_map.0.get(&cell) {
+    let entity_id = match chunk_map.0.get(&cell) {
         Some(&id) => id,
         None => return 0.0,
     };
-    let chunk = match world.get_component::<TerrainChunk>(obj_id) {
+    let chunk = match world.get_component::<TerrainChunk>(entity_id) {
         Some(c) => c,
         None => return 0.0,
     };
@@ -351,7 +351,7 @@ fn cells_in_radius(pos: Vector3<f32>, radius: f32) -> Vec<CellCoord> {
     cells
 }
 
-/// Ensures a terrain chunk object exists for `cell`. Creates it if missing.
+/// Ensures a terrain chunk entity exists for `cell`. Creates it if missing.
 fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
     let exists = world
         .get_resource::<TerrainChunkMap>()
@@ -362,7 +362,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
         return;
     }
 
-    let id = world.spawn();
+    let id = world.spawn().id();
     world.set_name(id, &format!("Terrain ({},{})", cell.x, cell.z));
     world.add_component(id, TerrainChunk::new(cell, resolution));
     world.add_tag::<NeedsTerrainRebuild>(id);
@@ -376,7 +376,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
 }
 
 /// Copies neighbor edge heights into a freshly created chunk's border vertices.
-fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: ObjectId, resolution: u32) {
+fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: EntityId, resolution: u32) {
     let r = resolution as usize;
     let side = r + 1;
 
@@ -556,7 +556,7 @@ fn stitch_corners(
         let corner_idx = r + r * side;
 
         // Read phase: collect (id, index, height) for all present chunks
-        let mut entries: Vec<(ObjectId, usize, f32)> = Vec::with_capacity(4);
+        let mut entries: Vec<(EntityId, usize, f32)> = Vec::with_capacity(4);
         if let Some(&id) = chunk_map.0.get(&cell)
             && let Some(h) = world
                 .get_component::<TerrainChunk>(id)
@@ -591,7 +591,7 @@ fn stitch_corners(
 
 fn apply_brush(
     world: &mut World,
-    obj_id: ObjectId,
+    entity_id: EntityId,
     hit_pos: Vector3<f32>,
     state: &TerrainToolState,
     flatten_target: Option<f32>,
@@ -599,7 +599,7 @@ fn apply_brush(
     shift_pressed: bool,
     right_click_pressed: bool,
 ) {
-    let chunk = match world.get_component_mut::<TerrainChunk>(obj_id) {
+    let chunk = match world.get_component_mut::<TerrainChunk>(entity_id) {
         Some(c) => c,
         None => return,
     };
@@ -694,7 +694,7 @@ fn apply_brush(
     }
 
     // Mark dirty
-    world.add_tag::<NeedsTerrainRebuild>(obj_id);
+    world.add_tag::<NeedsTerrainRebuild>(entity_id);
 }
 
 fn gaussian_weight(dist: f32, radius: f32) -> f32 {
