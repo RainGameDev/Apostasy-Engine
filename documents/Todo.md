@@ -102,3 +102,25 @@
 - [x] Undo / Redo
 
 # Apostasy
+
+# Lua Scripting
+
+- [ ] Add mlua as a dependency to core
+- [ ] LuaRuntime resource — holds the Lua state, loads and caches script files
+- [ ] Expose World to Lua as a userdata type
+  - [ ] world:get_resource(name)
+  - [ ] world:get_entity_with_tag(name)
+  - [ ] world:get_entities_with_tag(name)
+  - [ ] world:get_component(id, name) — returns a Lua table copy
+  - [ ] world:set_component(id, name, table) — writes table back to component
+  - [ ] world:add_tag(id, name)
+  - [ ] world:remove_tag(id, name)
+  - [ ] world:spawn() — returns an EntityId
+  - [ ] world:despawn(id)
+- [ ] Query builder from Lua
+  - [ ] world:query(...component names) — returns a QueryBuilder userdata
+  - [ ] :with_tag(name), :without_tag(name), :with(name), :without(name) filters
+  - [ ] :for_each(function(id, ...components)) — iterates results
+- [ ] Script component — attach a script path to an entity, auto-calls start/update/fixed_update
+- [ ] LuaScript system — runs update() on all loaded scripts each frame
+- [ ] Script hot-reload — watch script files for changes and reload without restart
