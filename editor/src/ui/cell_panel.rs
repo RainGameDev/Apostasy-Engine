@@ -5,46 +5,45 @@ use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::cgmath::Vector3;
-use apostasy_core::egui::{Color32, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
-use apostasy_core::objects::cell::{CELL_SIZE, ObjectId, world_to_cell};
-use apostasy_core::objects::cell_streaming::CellMigrations;
-use apostasy_core::objects::components::transform::Transform;
-use apostasy_core::objects::resources::input_manager::InputManager;
-use apostasy_core::objects::world::World;
-use apostasy_core::objects::worldspace_serializer::load_worldspace;
-use apostasy_core::objects::{Object, fmt_key};
+use apostasy_core::ecs::cell::{CELL_SIZE, EntityBlob, EntityId, world_to_cell};
+use apostasy_core::ecs::components::transform::Transform;
+use apostasy_core::ecs::resources::input_manager::InputManager;
+use apostasy_core::ecs::world::World;
+use apostasy_core::ecs::worldspace_serializer::load_worldspace;
+use apostasy_core::egui::{Color32, Margin, Pos2, Rect, ScrollArea, Sense, Stroke, Vec2, Window};
 use apostasy_core::rendering::components::camera::EditorCamera;
 use apostasy_core::terrain::chunk::TerrainChunk;
 use apostasy_core::ui::ui_context::EguiContext;
+use apostasy_core::worldspaces::cell_streaming::CellMigrations;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
 use super::EditorStyle;
 use super::shared::WindowLayout;
-use crate::systems::history::{EditorCommand, History, RemoveObjectCmd};
+use crate::systems::history::{EditorCommand, History, RemoveEntityCmd};
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::EditorPreferences;
 
 #[derive(Clone)]
-pub struct ObjectRefEntry {
-    pub obj_name: String,
+pub struct EntityRefEntry {
+    pub entity_name: String,
     pub id: String,
-    pub object_id: ObjectId,
+    pub entity_id: EntityId,
 }
 
 #[derive(Clone, Resource)]
 pub struct CellSearchState {
     pub open: bool,
-    pub obj_filter: String,
-    pub obj_entries: Vec<ObjectRefEntry>,
-    pub selected_obj: Option<ObjectId>,
-    pub clicked_obj: Option<ObjectId>,
-    pub copied_obj: Option<Object>,
-    pub renaming_obj: Option<ObjectId>,
+    pub entity_filter: String,
+    pub entity_entries: Vec<EntityRefEntry>,
+    pub selected_entity: Option<EntityId>,
+    pub clicked_entity: Option<EntityId>,
+    pub copied_entity: Option<EntityBlob>,
+    pub renaming_entity: Option<EntityId>,
     pub rename_buf: String,
     pub rename_request_focus: bool,
-    // currently selected cell; when set, filters the object list to that cell
+    // currently selected cell; when set, filters the entity list to that cell
     pub selected_cell: Option<Vector3<i32>>,
     // cell rename state
     pub renaming_cell: Option<Vector3<i32>>,
@@ -62,12 +61,12 @@ impl Default for CellSearchState {
     fn default() -> Self {
         Self {
             open: true,
-            obj_filter: String::new(),
-            obj_entries: vec![],
-            selected_obj: None,
-            clicked_obj: None,
-            copied_obj: None,
-            renaming_obj: None,
+            entity_filter: String::new(),
+            entity_entries: vec![],
+            selected_entity: None,
+            clicked_entity: None,
+            copied_entity: None,
+            renaming_entity: None,
             rename_buf: String::new(),
             rename_request_focus: false,
             selected_cell: None,
@@ -90,16 +89,16 @@ pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
     };
 
     if let Ok(state) = world.get_resource_mut::<CellSearchState>() {
-        let fix = |slot: &mut Option<ObjectId>| {
+        let fix = |slot: &mut Option<EntityId>| {
             if let Some(id) = *slot
                 && let Some(&new_id) = remap.get(&id)
             {
                 *slot = Some(new_id);
             }
         };
-        fix(&mut state.selected_obj);
-        fix(&mut state.clicked_obj);
-        fix(&mut state.renaming_obj);
+        fix(&mut state.selected_entity);
+        fix(&mut state.clicked_entity);
+        fix(&mut state.renaming_entity);
     }
 
     Ok(())
@@ -123,28 +122,28 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     // Track camera's current cell
-    if let Ok(camera) = world.get_object_with_tag::<EditorCamera>()
-        && let Ok(transform) = camera.get_component::<Transform>()
+    if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>()
+        && let Some(transform) = world.get_component::<Transform>(cam_id)
     {
         let cam_cell = world_to_cell(transform.global_position);
         world.get_resource_mut::<CellSearchState>()?.selected_cell = Some(cam_cell);
     }
 
-    let obj_entries: Vec<ObjectRefEntry> = world
-        .get_all_objects()
+    let entity_entries: Vec<EntityRefEntry> = world
+        .get_all_ids()
         .iter()
-        .filter(|(_, obj)| {
-            !obj.has_component::<TerrainChunk>() && !obj.has_tag::<EditorCamera>()
+        .filter(|&&id| {
+            !world.has_component::<TerrainChunk>(id) && !world.has_tag::<EditorCamera>(id)
         })
-        .map(|(id, obj)| ObjectRefEntry {
-            obj_name: obj.name.clone(),
-            id: fmt_key(*id),
-            object_id: *id,
+        .map(|&id| EntityRefEntry {
+            entity_name: world.get_name(id).unwrap_or("Entity").to_string(),
+            id: format!("{:?}", id),
+            entity_id: id,
         })
         .collect();
-    world.get_resource_mut::<CellSearchState>()?.obj_entries = obj_entries;
+    world.get_resource_mut::<CellSearchState>()?.entity_entries = entity_entries;
 
-    // Loaded cells of the active worldspace: (coord, name, object count), sorted by X then Z.
+    // Loaded cells of the active worldspace: (coord, name, entity count), sorted by X then Z.
     let mut cell_entries: Vec<(Vector3<i32>, String, usize)> = world
         .worldspace()
         .loaded_cells()
@@ -153,27 +152,33 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     cell_entries.sort_by_key(|(coord, _, _)| (coord.x, coord.z));
 
     let mut open = world.get_resource::<CellSearchState>()?.open;
-    let obj_entries = world.get_resource::<CellSearchState>()?.obj_entries.clone();
+    let entity_entries = world
+        .get_resource::<CellSearchState>()?
+        .entity_entries
+        .clone();
 
     if !open {
         return Ok(());
     }
 
-    let mut pending_selected_obj: Option<ObjectId> =
-        world.get_resource::<CellSearchState>()?.selected_obj;
-    let mut pending_clicked_obj: Option<ObjectId> =
-        world.get_resource::<CellSearchState>()?.clicked_obj;
-    let mut pending_obj_filter: String =
-        world.get_resource::<CellSearchState>()?.obj_filter.clone();
-    let mut pending_delete: Option<ObjectId> = None;
+    let mut pending_selected_entity: Option<EntityId> =
+        world.get_resource::<CellSearchState>()?.selected_entity;
+    let mut pending_clicked_entity: Option<EntityId> =
+        world.get_resource::<CellSearchState>()?.clicked_entity;
+    let mut pending_entity_filter: String = world
+        .get_resource::<CellSearchState>()?
+        .entity_filter
+        .clone();
+    let mut pending_delete: Option<EntityId> = None;
     let mut pending_add = false;
-    let mut object_to_copy: Option<Object> = None;
-    let mut renaming_id: Option<ObjectId> = world.get_resource::<CellSearchState>()?.renaming_obj;
+    let mut entity_to_copy: Option<EntityBlob> = None;
+    let mut renaming_id: Option<EntityId> =
+        world.get_resource::<CellSearchState>()?.renaming_entity;
     let mut rename_buf: String = world.get_resource::<CellSearchState>()?.rename_buf.clone();
     let mut rename_request_focus: bool = world
         .get_resource::<CellSearchState>()?
         .rename_request_focus;
-    let mut pending_rename: Option<(ObjectId, String)> = None;
+    let mut pending_rename: Option<(EntityId, String)> = None;
 
     let mut selected_cell: Option<Vector3<i32>> =
         world.get_resource::<CellSearchState>()?.selected_cell;
@@ -212,7 +217,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let window = window
         .resizable(true)
         .movable(true)
-        .frame(style.window_frame(&ctx))
+        .frame(style.window_frame(&ctx).inner_margin(Margin {
+            bottom: 8,
+            left: 8,
+            right: 8,
+            top: 0,
+        }))
         .show(&ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
 
@@ -244,7 +254,11 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let avail_w = ui.available_width();
 
                             // title
-                            let title = if show_worldspaces { "Worldspaces" } else { "Cells" };
+                            let title = if show_worldspaces {
+                                "Worldspaces"
+                            } else {
+                                "Cells"
+                            };
                             let (title_rect, _) = ui
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
                             ui.painter().rect_filled(
@@ -303,12 +317,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     Sense::hover(),
                                 );
                                 ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
-                                for (label, offset) in [
-                                    ("Name", 0.0_f32),
-                                    ("Interior", ws_name_w),
-                                ] {
+                                for (label, offset) in [("Name", 0.0_f32), ("Interior", ws_name_w)]
+                                {
                                     ui.painter().text(
-                                        Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
+                                        Pos2::new(
+                                            hdr_rect.left() + offset + 6.0,
+                                            hdr_rect.center().y,
+                                        ),
                                         egui::Align2::LEFT_CENTER,
                                         label,
                                         font_hdr.clone(),
@@ -337,7 +352,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             .read()
                                             .ok()
                                             .map(|r| {
-                                                let mut names: Vec<String> = r.worldspaces.keys().cloned().collect();
+                                                let mut names: Vec<String> =
+                                                    r.worldspaces.keys().cloned().collect();
                                                 names.sort();
                                                 names
                                             })
@@ -377,7 +393,11 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ws_name_w - 12.0,
                                                 ws_name,
                                                 font_row.clone(),
-                                                if is_current { style.text_col } else { style.dim_col },
+                                                if is_current {
+                                                    style.text_col
+                                                } else {
+                                                    style.dim_col
+                                                },
                                             );
 
                                             // check interior flag from registry
@@ -386,9 +406,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 .ok()
                                                 .and_then(|am| am.get_loader::<WorldspaceLoader>())
                                                 .and_then(|l| {
-                                                    l.registry.read().ok()?.worldspaces.get(ws_name).cloned()
+                                                    l.registry
+                                                        .read()
+                                                        .ok()?
+                                                        .worldspaces
+                                                        .get(ws_name)
+                                                        .cloned()
                                                 })
-                                                .and_then(|v| v.get("is_interior").and_then(|v| v.as_bool()))
+                                                .and_then(|v| {
+                                                    v.get("is_interior").and_then(|v| v.as_bool())
+                                                })
                                                 .unwrap_or(false);
                                             paint_clipped(
                                                 ui,
@@ -411,7 +438,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 }
                                                 ui.separator();
                                                 if ui.button("New Worldspace...").clicked() {
-                                                    if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+                                                    if let Ok(s) =
+                                                        world.get_resource_mut::<CellSearchState>()
+                                                    {
                                                         s.create_ws_open = true;
                                                         s.create_ws_name.clear();
                                                         s.create_ws_interior = false;
@@ -435,7 +464,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         // filler rows
                                         let rows_drawn = ws_names.len();
-                                        let remaining = (ui.available_height() / row_h).ceil() as usize;
+                                        let remaining =
+                                            (ui.available_height() / row_h).ceil() as usize;
                                         for i in 0..remaining {
                                             let idx = rows_drawn + i;
                                             let bg = if idx.is_multiple_of(2) {
@@ -451,7 +481,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             row_resp.context_menu(|ui| {
                                                 ui.set_min_width(120.0);
                                                 if ui.button("New Worldspace...").clicked() {
-                                                    if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
+                                                    if let Ok(s) =
+                                                        world.get_resource_mut::<CellSearchState>()
+                                                    {
                                                         s.create_ws_open = true;
                                                         s.create_ws_name.clear();
                                                         s.create_ws_interior = false;
@@ -465,8 +497,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             );
                                             ui.painter().line_segment(
                                                 [
-                                                    Pos2::new(row_rect.left() + ws_name_w, row_rect.top()),
-                                                    Pos2::new(row_rect.left() + ws_name_w, row_rect.bottom()),
+                                                    Pos2::new(
+                                                        row_rect.left() + ws_name_w,
+                                                        row_rect.top(),
+                                                    ),
+                                                    Pos2::new(
+                                                        row_rect.left() + ws_name_w,
+                                                        row_rect.bottom(),
+                                                    ),
                                                 ],
                                                 Stroke::new(1.0, style.div_col),
                                             );
@@ -490,7 +528,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     ("Ref count", name_w + pos_w),
                                 ] {
                                     ui.painter().text(
-                                        Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
+                                        Pos2::new(
+                                            hdr_rect.left() + offset + 6.0,
+                                            hdr_rect.center().y,
+                                        ),
                                         egui::Align2::LEFT_CENTER,
                                         label,
                                         font_hdr.clone(),
@@ -526,7 +567,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             );
                                             ui.painter().rect_filled(row_rect, 0.0, style.dark_bg);
                                             ui.painter().text(
-                                                Pos2::new(row_rect.left() + 6.0, row_rect.center().y),
+                                                Pos2::new(
+                                                    row_rect.left() + 6.0,
+                                                    row_rect.center().y,
+                                                ),
                                                 egui::Align2::LEFT_CENTER,
                                                 "No loaded cells",
                                                 font_row.clone(),
@@ -535,8 +579,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             for offset in [name_w, name_w + pos_w] {
                                                 ui.painter().line_segment(
                                                     [
-                                                        Pos2::new(row_rect.left() + offset, row_rect.top()),
-                                                        Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                        Pos2::new(
+                                                            row_rect.left() + offset,
+                                                            row_rect.top(),
+                                                        ),
+                                                        Pos2::new(
+                                                            row_rect.left() + offset,
+                                                            row_rect.bottom(),
+                                                        ),
                                                     ],
                                                     Stroke::new(1.0, style.div_col),
                                                 );
@@ -581,9 +631,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                     Pos2::new(rl + 2.0, row_rect.top() + 1.0),
                                                     Vec2::new(name_w - 4.0, row_h - 2.0),
                                                 );
-                                                let te =
-                                                    egui::TextEdit::singleline(&mut cell_rename_buf)
-                                                        .font(font_row.clone());
+                                                let te = egui::TextEdit::singleline(
+                                                    &mut cell_rename_buf,
+                                                )
+                                                .font(font_row.clone());
                                                 let te_resp = ui.put(edit_rect, te);
                                                 if cell_rename_focus {
                                                     te_resp.request_focus();
@@ -670,7 +721,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         // filler rows
                                         let rows_drawn = cell_entries.len();
-                                        let remaining = (ui.available_height() / row_h).ceil() as usize;
+                                        let remaining =
+                                            (ui.available_height() / row_h).ceil() as usize;
                                         for i in 0..remaining {
                                             let idx = rows_drawn + i;
                                             let bg = if idx.is_multiple_of(2) {
@@ -690,8 +742,14 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             for offset in [name_w, name_w + pos_w] {
                                                 ui.painter().line_segment(
                                                     [
-                                                        Pos2::new(row_rect.left() + offset, row_rect.top()),
-                                                        Pos2::new(row_rect.left() + offset, row_rect.bottom()),
+                                                        Pos2::new(
+                                                            row_rect.left() + offset,
+                                                            row_rect.top(),
+                                                        ),
+                                                        Pos2::new(
+                                                            row_rect.left() + offset,
+                                                            row_rect.bottom(),
+                                                        ),
                                                     ],
                                                     Stroke::new(1.0, style.div_col),
                                                 );
@@ -704,7 +762,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                     let gap = total_w - frame.response.rect.size().x;
                     ui.add_space(gap);
 
-                    // RIGHT: object ref list
+                    // RIGHT: entity ref list
                     let right_rect =
                         Rect::from_min_size(ui.cursor().min, Vec2::new(panel_w, panel_h));
                     let mut right = ui.new_child(
@@ -739,7 +797,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             ui.painter().text(
                                 title_rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "Object Search",
+                                "Entity Search",
                                 font_hdr.clone(),
                                 style.text_col,
                             );
@@ -754,7 +812,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 ui.add_space(4.0);
                                 ui.add_sized(
                                     Vec2::new(avail_w - 8.0, row_h),
-                                    egui::TextEdit::singleline(&mut pending_obj_filter)
+                                    egui::TextEdit::singleline(&mut pending_entity_filter)
                                         .hint_text("Placeholder..."),
                                 )
                                 .on_hover_text(concat!(
@@ -781,7 +839,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let (hdr_rect, _) = ui
                                 .allocate_exact_size(Vec2::new(avail_w, header_h), Sense::hover());
                             ui.painter().rect_filled(hdr_rect, 0.0, style.header_bg);
-                            for (label, offset) in [("Obj Name", 0.0_f32), ("Id", name_w)] {
+                            for (label, offset) in [("entity Name", 0.0_f32), ("Id", name_w)] {
                                 ui.painter().text(
                                     Pos2::new(hdr_rect.left() + offset + 6.0, hdr_rect.center().y),
                                     egui::Align2::LEFT_CENTER,
@@ -804,18 +862,20 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                             // parse filter
                             let filter_splits =
-                                pending_obj_filter.split(':').collect::<Vec<&str>>();
+                                pending_entity_filter.split(':').collect::<Vec<&str>>();
                             let (filter_type, filter_value) = if filter_splits.len() > 1 {
                                 (filter_splits[0].to_string(), filter_splits[1].to_string())
                             } else {
                                 (String::new(), filter_splits[0].to_string())
                             };
 
-                            let filtered: Vec<&ObjectRefEntry> = obj_entries
+                            let filtered: Vec<&EntityRefEntry> = entity_entries
                                 .iter()
                                 .filter(|e| {
-                                    let Some(cell) = selected_cell else { return false };
-                                    if e.object_id.cell != cell {
+                                    let Some(cell) = selected_cell else {
+                                        return false;
+                                    };
+                                    if e.entity_id.cell != cell {
                                         return false;
                                     }
                                     if filter_value.trim().is_empty() {
@@ -824,66 +884,68 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     let val = filter_value.trim().to_lowercase();
                                     match filter_type.trim().to_lowercase().as_str() {
                                         "id" => e.id.to_lowercase().contains(&val),
-                                        "name" => e.obj_name.to_lowercase().contains(&val),
-                                        _ => e.obj_name.to_lowercase().contains(&val),
+                                        "name" => e.entity_name.to_lowercase().contains(&val),
+                                        _ => e.entity_name.to_lowercase().contains(&val),
                                     }
                                 })
                                 .collect();
 
                             if ui.input(|i| i.key_pressed(egui::Key::F2))
-                                && let Some(id) = pending_selected_obj
-                                && let Some(entry) = obj_entries.iter().find(|e| e.object_id == id)
+                                && let Some(id) = pending_selected_entity
+                                && let Some(entry) =
+                                    entity_entries.iter().find(|e| e.entity_id == id)
                             {
                                 renaming_id = Some(id);
-                                rename_buf = entry.obj_name.clone();
+                                rename_buf = entry.entity_name.clone();
                                 rename_request_focus = true;
                             }
 
                             let table_h = ui.available_height();
                             ScrollArea::vertical()
-                                .id_salt("obj_scroll")
+                                .id_salt("entity_scroll")
                                 .auto_shrink([false; 2])
                                 .max_height(table_h)
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                                     for (idx, entry) in filtered.iter().enumerate() {
-                                        let is_sel = pending_selected_obj == Some(entry.object_id);
+                                        let is_sel =
+                                            pending_selected_entity == Some(entry.entity_id);
                                         let is_clicked =
-                                            pending_clicked_obj == Some(entry.object_id);
+                                            pending_clicked_entity == Some(entry.entity_id);
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
                                             Sense::click(),
                                         );
                                         if row_resp.double_clicked() {
-                                            renaming_id = Some(entry.object_id);
-                                            rename_buf = entry.obj_name.clone();
+                                            renaming_id = Some(entry.entity_id);
+                                            rename_buf = entry.entity_name.clone();
                                             rename_request_focus = true;
                                         }
                                         if row_resp.clicked() {
-                                            pending_selected_obj = Some(entry.object_id);
-                                            pending_clicked_obj = Some(entry.object_id);
+                                            pending_selected_entity = Some(entry.entity_id);
+                                            pending_clicked_entity = Some(entry.entity_id);
                                         }
 
                                         row_resp.context_menu(|ui| {
                                             if ui.button("Rename").clicked() {
-                                                renaming_id = Some(entry.object_id);
-                                                rename_buf = entry.obj_name.clone();
+                                                renaming_id = Some(entry.entity_id);
+                                                rename_buf = entry.entity_name.clone();
                                                 rename_request_focus = true;
                                                 ui.close();
                                             }
-                                            if ui.button("Teleport to Object").clicked() {
+                                            if ui.button("Teleport to Entity").clicked() {
                                                 ui.close();
                                             }
-                                            if ui.button("Delete Object").clicked() {
-                                                pending_delete = Some(entry.object_id);
+                                            if ui.button("Delete Entity").clicked() {
+                                                pending_delete = Some(entry.entity_id);
                                                 ui.close();
                                             }
-                                            if ui.button("Add new Object").clicked() {
+                                            if ui.button("Add new Entity").clicked() {
                                                 pending_add = true;
                                                 ui.close();
                                             }
                                             if ui.button("Inspect").clicked() {
-                                                pending_selected_obj = Some(entry.object_id);
+                                                pending_selected_entity = Some(entry.entity_id);
                                                 if let Ok(inspector_state) =
                                                     world.get_resource_mut::<InspectorPanelState>()
                                                 {
@@ -897,31 +959,23 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ui.copy_text(entry.id.clone());
                                                 ui.close();
                                             }
-                                            if ui.button("Copy Object").clicked() {
-                                                object_to_copy = Some(
-                                                    world
-                                                        .get_object(entry.object_id)
-                                                        .unwrap()
-                                                        .clone(),
-                                                );
+                                            if ui.button("Copy Entity").clicked() {
+                                                entity_to_copy =
+                                                    world.capture_entity(entry.entity_id);
                                                 ui.close();
                                             }
-                                            if ui.button("Cut Object").clicked() {
-                                                object_to_copy = Some(
-                                                    world
-                                                        .get_object(entry.object_id)
-                                                        .unwrap()
-                                                        .clone(),
-                                                );
-                                                pending_delete = Some(entry.object_id);
+                                            if ui.button("Cut Entity").clicked() {
+                                                entity_to_copy =
+                                                    world.capture_entity(entry.entity_id);
+                                                pending_delete = Some(entry.entity_id);
                                                 ui.close();
                                             }
-                                            if ui.button("Paste Object").clicked() {
+                                            if ui.button("Paste Entity").clicked() {
                                                 let s = world
                                                     .get_resource::<CellSearchState>()
                                                     .unwrap();
-                                                if let Some(obj) = s.copied_obj.clone() {
-                                                    world.add_object(obj);
+                                                if let Some(blob) = s.copied_entity.clone() {
+                                                    world.spawn_from_blob(&blob);
                                                 }
                                                 ui.close();
                                             }
@@ -942,7 +996,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
                                         let rl = row_rect.left();
                                         let cy = row_rect.center().y;
-                                        if renaming_id == Some(entry.object_id) {
+                                        if renaming_id == Some(entry.entity_id) {
                                             let name_rect = Rect::from_min_size(
                                                 Pos2::new(rl + 2.0, row_rect.top() + 1.0),
                                                 Vec2::new(name_w - 4.0, row_h - 2.0),
@@ -960,7 +1014,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ui.input(|i| i.key_pressed(egui::Key::Enter));
                                             if (te_resp.lost_focus() && !escape) || enter {
                                                 pending_rename =
-                                                    Some((entry.object_id, rename_buf.clone()));
+                                                    Some((entry.entity_id, rename_buf.clone()));
                                                 renaming_id = None;
                                             } else if escape {
                                                 renaming_id = None;
@@ -970,7 +1024,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ui,
                                                 Pos2::new(rl + 6.0, cy),
                                                 name_w - 10.0,
-                                                &entry.obj_name,
+                                                &entry.entity_name,
                                                 font_row.clone(),
                                                 style.dim_col,
                                             );
@@ -1013,16 +1067,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             Sense::click(),
                                         );
                                         row_resp.context_menu(|ui| {
-                                            if ui.button("Add new Object").clicked() {
+                                            if ui.button("Add new Entity").clicked() {
                                                 pending_add = true;
                                                 ui.close();
                                             }
-                                            if ui.button("Paste Object").clicked() {
+                                            if ui.button("Paste Entity").clicked() {
                                                 let s = world
                                                     .get_resource::<CellSearchState>()
                                                     .unwrap();
-                                                if let Some(obj) = s.copied_obj.clone() {
-                                                    world.add_object(obj);
+                                                if let Some(blob) = s.copied_entity.clone() {
+                                                    world.spawn_from_blob(&blob);
                                                 }
                                                 ui.close();
                                             }
@@ -1051,10 +1105,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
     {
         let s = world.get_resource_mut::<CellSearchState>()?;
-        s.selected_obj = pending_selected_obj;
-        s.clicked_obj = pending_clicked_obj;
-        s.obj_filter = pending_obj_filter;
-        s.renaming_obj = renaming_id;
+        s.selected_entity = pending_selected_entity;
+        s.clicked_entity = pending_clicked_entity;
+        s.entity_filter = pending_entity_filter;
+        s.renaming_entity = renaming_id;
         s.rename_buf = rename_buf;
         s.rename_request_focus = rename_request_focus;
         s.open = open;
@@ -1073,11 +1127,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if let Some((id, new_name)) = pending_rename {
-        let old_name = world
-            .get_object(id)
-            .map(|o| o.name.clone())
-            .unwrap_or_default();
-        let mut cmd = Box::new(crate::systems::history::RenameObjectCmd {
+        let old_name = world.get_name(id).unwrap_or_default().to_string();
+        let mut cmd = Box::new(crate::systems::history::RenameEntityCmd {
             id,
             old_name,
             new_name,
@@ -1089,8 +1140,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if to_delete
-        && let Some(id) = world.get_resource::<CellSearchState>()?.selected_obj
-        && let Some(mut cmd) = RemoveObjectCmd::new(id, world).map(Box::new)
+        && let Some(id) = world.get_resource::<CellSearchState>()?.selected_entity
+        && let Some(mut cmd) = RemoveEntityCmd::new(id, world).map(Box::new)
     {
         cmd.execute(world)?;
         world.get_resource_mut::<History>()?.push(cmd);
@@ -1098,7 +1149,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
 
     if let Some(id) = pending_delete
         && let Some(mut cmd) =
-            crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new)
+            crate::systems::history::RemoveEntityCmd::new(id, world).map(Box::new)
     {
         cmd.execute(world)?;
         world
@@ -1106,20 +1157,44 @@ pub fn cell_search(world: &mut World) -> Result<()> {
             .push(cmd);
     }
 
-    if object_to_copy.is_some() {
+    if entity_to_copy.is_some() {
         let s = world.get_resource_mut::<CellSearchState>()?;
-        s.copied_obj = object_to_copy;
+        s.copied_entity = entity_to_copy;
     }
 
     if pending_add {
-        let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(
-            Object::default(),
-            selected_cell,
-        ));
-        cmd.execute(world)?;
-        world
-            .get_resource_mut::<crate::systems::history::History>()?
-            .push(cmd);
+        // Position the new entity ~10 units in front of the editor camera.
+        let front_pos = world
+            .get_entity_with_tag::<EditorCamera>()
+            .ok()
+            .and_then(|cam_id| world.get_component::<Transform>(cam_id))
+            .map(|cam| cam.global_position + cam.global_rotation * Vector3::new(0.0, 0.0, -10.0));
+
+        // Spawn a fresh blank entity blob
+        let blank_id = match selected_cell {
+            Some(coord) => world.spawn_in_cell(coord).id(),
+            None => world.spawn().id(),
+        };
+        world.set_name(blank_id, "Entity");
+        world.add_component(
+            blank_id,
+            Transform {
+                local_position: front_pos.unwrap_or_else(|| Vector3::new(0.0, 0.0, 0.0)),
+                ..Default::default()
+            },
+        );
+        // Capture it as a blob for the undo command
+        if let Some(blob) = world.capture_entity(blank_id) {
+            // We already spawned it; set the history cmd to track it
+            let cmd = Box::new(crate::systems::history::AddEntityCmd {
+                blob,
+                cell: selected_cell,
+                added_id: Some(blank_id),
+            });
+            world
+                .get_resource_mut::<crate::systems::history::History>()?
+                .push(cmd);
+        }
     }
 
     if let Some((coord, new_name)) = pending_cell_rename {
@@ -1131,7 +1206,10 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     }
 
     if world.get_resource::<CellSearchState>()?.create_ws_open {
-        let mut ws_name = world.get_resource::<CellSearchState>()?.create_ws_name.clone();
+        let mut ws_name = world
+            .get_resource::<CellSearchState>()?
+            .create_ws_name
+            .clone();
         let mut is_interior = world.get_resource::<CellSearchState>()?.create_ws_interior;
         let ctx_clone = ctx.clone();
         let mut open = true;
@@ -1147,14 +1225,18 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                 ui.horizontal(|ui| {
                     if ui.button("Create").clicked() && !ws_name.trim().is_empty() {
                         let name = ws_name.trim().to_string();
-                        let scenes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
+                        let scenes_dir =
+                            Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
                         let path = scenes_dir.join(format!("{}.yaml", name));
                         let mut doc = serde_yaml::Mapping::new();
                         doc.insert("name".into(), name.clone().into());
                         doc.insert("namespace".into(), "game".into());
                         doc.insert("class".into(), "worldspace".into());
                         doc.insert("is_interior".into(), is_interior.into());
-                        doc.insert("cells".into(), serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+                        doc.insert(
+                            "cells".into(),
+                            serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+                        );
                         let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(doc)).unwrap();
                         let _ = std::fs::write(&path, yaml);
                         if let Ok(am) = world.get_resource_mut::<AssetManager>() {
@@ -1178,7 +1260,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
             world.get_resource_mut::<CellSearchState>()?.create_ws_open = false;
         } else {
             world.get_resource_mut::<CellSearchState>()?.create_ws_name = ws_name;
-            world.get_resource_mut::<CellSearchState>()?.create_ws_interior = is_interior;
+            world
+                .get_resource_mut::<CellSearchState>()?
+                .create_ws_interior = is_interior;
         }
     }
 
@@ -1196,7 +1280,7 @@ fn ow_scene_load_internal(world: &mut World, name: &str) {
         EditorPreferences::save_last_scene(name);
         let _ = load_worldspace(world, &value, &["EditorCamera"]);
         if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-            s.selected_obj = None;
+            s.selected_entity = None;
         }
     }
 }
@@ -1227,8 +1311,8 @@ fn ow_scene_delete_internal(world: &mut World, name: &str) {
 
 /// Moves the editor camera to the center of cell on the X & Z planes
 fn goto_cell(world: &mut World, coord: Vector3<i32>) {
-    if let Ok(camera) = world.get_object_with_tag_mut::<EditorCamera>()
-        && let Ok(transform) = camera.get_component_mut::<Transform>()
+    if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>()
+        && let Some(transform) = world.get_component_mut::<Transform>(cam_id)
     {
         let size = CELL_SIZE as f32;
         transform.local_position.x = coord.x as f32 * size + size / 2.0;

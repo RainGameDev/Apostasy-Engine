@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     egui,
-    objects::{
+    ecs::{
         resources::input_manager::{InputManager, KeyBind, ModifierKeys},
         world::World,
         worldspace_streaming::{MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, WorldspaceStreaming},
@@ -25,7 +25,7 @@ use super::{
     keybind_widget::{KeybindCapture, is_modifier_key, keybind_editor, pretty_bind},
     style::Theme,
 };
-use crate::{objects::editor_camera::EditorCameraSettings, ui::viewport_panel::EditorGraphics};
+use crate::{ecs::editor_camera::EditorCameraSettings, ui::viewport_panel::EditorGraphics};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct EditorPreferences {

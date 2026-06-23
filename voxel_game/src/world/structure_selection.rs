@@ -4,16 +4,17 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::{Vector3, Zero},
     log, log_warn,
-    objects::{
-        Object, components::transform::Transform, resources::input_manager::InputManager,
+    ecs::{
+        components::transform::Transform, resources::input_manager::InputManager,
         tags::Player, world::World,
     },
+    physics::raycast::Direction,
     rendering::components::{camera::GameCamera, model_renderer::ModelRenderer},
     serde_yaml, update,
     voxels::{
         structure::{StructureAsset, StructureBlock},
         voxel::VoxelRegistry,
-        voxel_raycast::{Direction, voxel_raycast},
+        voxel_raycast::voxel_raycast,
     },
 };
 use apostasy_macros::{Resource, Tag};
@@ -47,10 +48,9 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
 
     let inputs = world.get_resource::<InputManager>()?;
     let registry = world.get_resource::<VoxelRegistry>()?.clone();
-    let camera = world
-        .get_object_with_tag::<GameCamera>()?
-        .get_component::<Transform>()
-        .unwrap()
+    let cam_id = world.get_entity_with_tag::<GameCamera>()?;
+    let camera = world.get_component::<Transform>(cam_id)
+        .ok_or_else(|| apostasy_core::anyhow::anyhow!("GameCamera has no Transform"))?
         .clone();
 
     let save = inputs.is_keybind_active("SaveStructure");
@@ -60,10 +60,9 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
     let set_start = inputs.is_keybind_active("SetStructureStart");
     let set_end = inputs.is_keybind_active("SetStructureEnd");
 
-    let player = world
-        .get_object_with_tag::<Player>()?
-        .get_component::<Transform>()
-        .unwrap()
+    let player_id = world.get_entity_with_tag::<Player>()?;
+    let player = world.get_component::<Transform>(player_id)
+        .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Transform"))?
         .global_position;
 
     if toggle_selection {
@@ -182,22 +181,22 @@ pub fn structure_selection(world: &mut World) -> Result<()> {
             println!("Created: {}", filepath.display());
         }
 
-        if let Ok(selection_area) = world.get_object_with_tag_mut::<StructureSelectionArea>() {
-            let transform = selection_area.get_component_mut::<Transform>().unwrap();
-            transform.local_scale = Vector3::new(size.x as f32, size.y as f32, size.z as f32);
-            transform.local_position = Vector3::new(
-                (min.x + max.x) as f32 / 2.0,
-                (min.y + max.y) as f32 / 2.0,
-                (min.z + max.z) as f32 / 2.0,
-            );
+        if let Ok(sel_id) = world.get_entity_with_tag::<StructureSelectionArea>() {
+            if let Some(transform) = world.get_component_mut::<Transform>(sel_id) {
+                transform.local_scale = Vector3::new(size.x as f32, size.y as f32, size.z as f32);
+                transform.local_position = Vector3::new(
+                    (min.x + max.x) as f32 / 2.0,
+                    (min.y + max.y) as f32 / 2.0,
+                    (min.z + max.z) as f32 / 2.0,
+                );
+            }
         } else {
             let mut model_renderer = ModelRenderer::from_path("centered_cube.glb");
             model_renderer.is_wireframe = true;
-            let object = Object::new()
-                .add_component(Transform::default())
-                .add_component(model_renderer)
-                .add_tag(StructureSelectionArea);
-            world.add_object(object);
+            let sel_id = world.spawn().id();
+            world.add_component(sel_id, Transform::default());
+            world.add_component(sel_id, model_renderer);
+            world.add_tag::<StructureSelectionArea>(sel_id);
         }
     } else {
         world.insert_resource(StructureSelection::default());

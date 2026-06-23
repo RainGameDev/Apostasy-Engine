@@ -5,7 +5,7 @@ use apostasy_macros::Resource;
 use hashbrown::HashMap;
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
 
-use crate::objects::component::{BoxedComponent, Component};
+use crate::ecs::component::{BoxedComponent, Component};
 
 #[derive(Debug, Clone)]
 pub struct VoxelTextures {

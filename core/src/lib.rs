@@ -25,14 +25,14 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
-use crate::objects::component::InspectorRegistry;
-use crate::objects::components::transform::Transform;
-use crate::objects::resources::cursor_manager::CursorManager;
-use crate::objects::resources::input_manager::InputManager;
-use crate::objects::resources::input_manager::KeyAction;
-use crate::objects::resources::input_manager::KeyBind;
-use crate::objects::resources::window_manager::WindowManager;
-use crate::objects::systems::EngineTimer;
+use crate::ecs::component::InspectorRegistry;
+use crate::ecs::components::transform::Transform;
+use crate::ecs::resources::cursor_manager::CursorManager;
+use crate::ecs::resources::input_manager::InputManager;
+use crate::ecs::resources::input_manager::KeyAction;
+use crate::ecs::resources::input_manager::KeyBind;
+use crate::ecs::resources::window_manager::WindowManager;
+use crate::ecs::systems::EngineTimer;
 use crate::packages::Packages;
 use crate::packages::add_package;
 use crate::rendering::WindowInfo;
@@ -50,7 +50,7 @@ use crate::rendering::lighting::gpu_light::{
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::frustrum::Frustum;
-use crate::rendering::shared::frustrum::ObjectsDrawing;
+use crate::rendering::shared::frustrum::EntitiesDrawing;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{
@@ -75,14 +75,14 @@ use crate::voxels::texture_atlas::PendingAtlas;
 use crate::voxels::texture_atlas::VoxelTextureAtlas;
 use crate::voxels::texture_atlas::upload_atlas;
 use crate::{
-    objects::world::World,
+    ecs::world::World,
     rendering::{RenderingBackend, RenderingInfo},
 };
 use winit::application::ApplicationHandler;
 
 pub mod assets;
 pub mod items;
-pub mod objects;
+pub mod ecs;
 pub mod packages;
 pub mod physics;
 pub mod rendering;
@@ -92,6 +92,7 @@ pub mod terrain;
 pub mod ui;
 pub mod utils;
 pub mod voxels;
+pub mod worldspaces;
 
 #[derive(Clone, Resource, Default)]
 pub struct ReloadShadersRequest(pub bool);
@@ -167,7 +168,7 @@ impl Core {
 
         world.insert_resource(PushConstants::default());
         world.insert_resource(ModelPushConstants::default());
-        world.insert_resource(ObjectsDrawing(0));
+        world.insert_resource(EntitiesDrawing(0));
         world.insert_resource(EngineTimer(0.0));
         world.insert_resource(Profiler::default());
 
@@ -218,7 +219,7 @@ impl Core {
                 }
                 WindowEvent::RedrawRequested => {
                     let frame_start = std::time::Instant::now();
-                    let mut objects_dawn = 0;
+                    let mut entities_dawn = 0;
                     let mut world = self.world.lock().unwrap();
                     let asset_manager = world.get_resource::<AssetManager>().unwrap().clone();
 
@@ -249,18 +250,18 @@ impl Core {
                         return;
                     };
 
-                    // If an EditorCamera exists, only render from an object that has
+                    // If an EditorCamera exists, only render from an entity that has
                     // both ActiveCamera + EditorCamera. If no EditorCamera is in the
                     // world (game / standalone mode), fall back to any ActiveCamera.
-                    let has_editor_cam = !world.get_objects_with_tag::<EditorCamera>().is_empty();
-                    let active_with_ids = world.get_objects_with_tag_with_ids::<ActiveCamera>();
+                    let has_editor_cam = !world.get_entities_with_tag::<EditorCamera>().is_empty();
+                    let active_ids = world.get_entities_with_tag::<ActiveCamera>();
                     let camera_id = if has_editor_cam {
-                        active_with_ids
+                        active_ids
                             .iter()
-                            .find(|(_, obj)| obj.has_tag::<EditorCamera>())
-                            .map(|(id, _)| *id)
+                            .find(|&&id| world.has_tag::<EditorCamera>(id))
+                            .copied()
                     } else {
-                        active_with_ids.first().map(|(id, _)| *id)
+                        active_ids.first().copied()
                     };
                     let Some(camera_id) = camera_id else {
                         // No camera yet. Still run a minimal frame so the window is presented
@@ -276,12 +277,13 @@ impl Core {
                         }
                         return;
                     };
-                    let Some(camera) = world.get_object(camera_id) else {
+                    let Some(camera_transform) = world.get_component::<Transform>(camera_id).cloned() else {
                         return;
                     };
-                    let camera_transform = camera.get_component::<Transform>().unwrap().clone();
+                    let Some(camera_comp) = world.get_component::<Camera>(camera_id).cloned() else {
+                        return;
+                    };
                     let camera_pos = camera_transform.global_position;
-                    let camera_comp = camera.get_component::<Camera>().unwrap().clone();
                     let camera_near = camera_comp.near;
                     let camera_far = camera_comp.far;
                     let view = get_view_matrix(&camera_transform);
@@ -291,17 +293,14 @@ impl Core {
                     } else {
                         renderer.get_aspect()
                     };
-                    let proj = get_perspective_projection(
-                        camera.get_component::<Camera>().unwrap(),
-                        aspect,
-                    );
+                    let proj = get_perspective_projection(&camera_comp, aspect);
 
                     let view_proj = proj * view;
 
-                    push_constants.set_camera_constants(camera.to_owned(), aspect);
+                    push_constants.set_camera_constants(&camera_transform, &camera_comp, aspect);
 
                     if !world
-                        .get_objects_with_tag_with_ids::<NeedsRemeshing>()
+                        .get_entities_with_tag::<NeedsRemeshing>()
                         .is_empty()
                     {
                         dispatch_remesh_jobs(&mut world).expect("Failed to dispatch remesh jobs");
@@ -318,7 +317,7 @@ impl Core {
                     }
 
                     if !world
-                        .get_objects_with_tag_with_ids::<NeedsTerrainRebuild>()
+                        .get_entities_with_tag::<NeedsTerrainRebuild>()
                         .is_empty()
                     {
                         if let Ok(command_pool) = renderer.get_command_pool() {
@@ -348,14 +347,14 @@ impl Core {
                     }
 
                     // Collect active lights and upload to GPU, preserving order for shadow indexing.
-                    let light_objects = world.get_objects_with_component::<Light>();
-                    let emitting_lights: Vec<_> = light_objects
+                    let light_ids = world.get_entities_with_component::<Light>();
+                    let emitting_lights: Vec<_> = light_ids
                         .iter()
-                        .filter_map(|obj| {
-                            let light = obj.get_component::<Light>().ok()?;
-                            let transform = obj.get_component::<Transform>().ok()?;
+                        .filter_map(|&id| {
+                            let light = world.get_component::<Light>(id)?;
+                            let transform = world.get_component::<Transform>(id)?;
                             if light.is_emitting {
-                                Some((light, transform))
+                                Some((light.clone(), transform.clone()))
                             } else {
                                 None
                             }
@@ -467,6 +466,7 @@ impl Core {
                         },
                     });
 
+
                     // Find first point light for omnidirectional shadow casting.
                     let point_shadow_data: Option<PointShadowData> = emitting_lights
                         .iter()
@@ -526,11 +526,7 @@ impl Core {
 
                     // Pre-collect model IDs once to avoid re-borrowing per cascade.
                     let shadow_model_ids: Vec<_> = if cascade_count > 0 {
-                        world
-                            .get_objects_with_component_with_ids::<ModelRenderer>()
-                            .iter()
-                            .map(|o| o.0)
-                            .collect()
+                        world.get_entities_with_component::<ModelRenderer>()
                     } else {
                         vec![]
                     };
@@ -555,67 +551,59 @@ impl Core {
 
                         // Shadow models
                         for &id in &shadow_model_ids {
-                            if let Some(object) = world.get_object(id) {
-                                let model_renderer =
-                                    object.get_component::<ModelRenderer>().unwrap();
-                                if let Some(model) = &model_renderer.model {
-                                    let transform = object.get_component::<Transform>().unwrap();
-                                    let pc = ShadowModelPushConstants::new(
-                                        cascade_matrix,
-                                        transform.global_position.into(),
-                                        transform.global_scale.into(),
-                                        [
-                                            transform.global_rotation.v.x,
-                                            transform.global_rotation.v.y,
-                                            transform.global_rotation.v.z,
-                                            transform.global_rotation.s,
-                                        ],
-                                    );
-                                    for mesh in &model.meshes {
-                                        if let Err(e) = renderer
-                                            .shadow_model_render(Box::new(mesh.clone()), &pc)
-                                        {
-                                            log_error!("Failed shadow model render: {}", e);
-                                        }
-                                    }
+                            let Some(model_renderer) = world.get_component::<ModelRenderer>(id) else { continue };
+                            let Some(model) = model_renderer.model.as_ref() else { continue };
+                            let model = model.clone();
+                            let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                            let pc = ShadowModelPushConstants::new(
+                                cascade_matrix,
+                                transform.global_position.into(),
+                                transform.global_scale.into(),
+                                [
+                                    transform.global_rotation.v.x,
+                                    transform.global_rotation.v.y,
+                                    transform.global_rotation.v.z,
+                                    transform.global_rotation.s,
+                                ],
+                            );
+                            for mesh in &model.meshes {
+                                if let Err(e) = renderer
+                                    .shadow_model_render(Box::new(mesh.clone()), &pc)
+                                {
+                                    log_error!("Failed shadow model render: {}", e);
                                 }
                             }
                         }
 
                         // Shadow terrain
                         if self.packages.contains(&Packages::Terrain) {
-                            let terrain_ids: Vec<_> = world
-                                .get_objects_with_component_with_ids::<TerrainMesh>()
-                                .iter()
-                                .map(|(id, _)| *id)
-                                .collect();
+                            let terrain_ids = world.get_entities_with_component::<TerrainMesh>();
                             for id in terrain_ids {
-                                if let Some(object) = world.get_object(id) {
-                                    let terrain_mesh =
-                                        object.get_component::<TerrainMesh>().unwrap();
-                                    if terrain_mesh.index_count == 0 {
-                                        continue;
-                                    }
-                                    let pc = ShadowModelPushConstants::new(
-                                        cascade_matrix,
-                                        [0.0, 0.0, 0.0],
-                                        [1.0, 1.0, 1.0],
-                                        [0.0, 0.0, 0.0, 1.0],
-                                    );
-                                    if let Err(e) = renderer
-                                        .shadow_model_render(Box::new(terrain_mesh.clone()), &pc)
-                                    {
-                                        log_error!("Failed shadow terrain render: {}", e);
-                                    }
+                                let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id) else { continue };
+                                if terrain_mesh.index_count == 0 {
+                                    continue;
+                                }
+                                let terrain_mesh = terrain_mesh.clone();
+                                let pc = ShadowModelPushConstants::new(
+                                    cascade_matrix,
+                                    [0.0, 0.0, 0.0],
+                                    [1.0, 1.0, 1.0],
+                                    [0.0, 0.0, 0.0, 1.0],
+                                );
+                                if let Err(e) = renderer
+                                    .shadow_model_render(Box::new(terrain_mesh), &pc)
+                                {
+                                    log_error!("Failed shadow terrain render: {}", e);
                                 }
                             }
                         }
 
                         // Shadow voxels
                         if self.packages.contains(&Packages::Voxel) {
-                            for object in world.get_objects_with_component::<VoxelChunkMesh>() {
-                                let transform = object.get_component::<VoxelTransform>().unwrap();
-                                let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                            let voxel_ids = world.get_entities_with_component::<VoxelChunkMesh>();
+                            for id in voxel_ids {
+                                let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
+                                let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
                                 let pc = ShadowVoxelPushConstants::new(
                                     cascade_matrix,
                                     [
@@ -624,8 +612,9 @@ impl Core {
                                         transform.position.z * 32,
                                     ],
                                 );
+                                let voxel_mesh = voxel_mesh.clone();
                                 if let Err(e) =
-                                    renderer.shadow_voxel_render(Box::new(voxel_mesh.clone()), &pc)
+                                    renderer.shadow_voxel_render(Box::new(voxel_mesh), &pc)
                                 {
                                     log_error!("Failed shadow voxel render: {}", e);
                                 }
@@ -640,11 +629,7 @@ impl Core {
 
                     // Point light shadow pre-pass - 6 faces for the cube shadow map.
                     if let Some(ref ps) = point_shadow_data {
-                        let point_model_ids: Vec<_> = world
-                            .get_objects_with_component_with_ids::<ModelRenderer>()
-                            .iter()
-                            .map(|o| o.0)
-                            .collect();
+                        let point_model_ids = world.get_entities_with_component::<ModelRenderer>();
 
                         for face in 0..6usize {
                             let face_matrix = ps.face_matrices[face];
@@ -659,50 +644,45 @@ impl Core {
                             }
 
                             for &id in &point_model_ids {
-                                if let Some(object) = world.get_object(id) {
-                                    let model_renderer =
-                                        object.get_component::<ModelRenderer>().unwrap();
-                                    if let Some(model) = &model_renderer.model {
-                                        let transform =
-                                            object.get_component::<Transform>().unwrap();
-                                        let pc = ShadowPointModelPushConstants::new(
-                                            [
-                                                gpu_lights[ps.light_index as usize].position[0],
-                                                gpu_lights[ps.light_index as usize].position[1],
-                                                gpu_lights[ps.light_index as usize].position[2],
-                                            ],
-                                            ps.far,
-                                            face_matrix,
-                                            transform.global_position.into(),
-                                            transform.global_scale.into(),
-                                            [
-                                                transform.global_rotation.v.x,
-                                                transform.global_rotation.v.y,
-                                                transform.global_rotation.v.z,
-                                                transform.global_rotation.s,
-                                            ],
+                                let Some(model_renderer) = world.get_component::<ModelRenderer>(id) else { continue };
+                                let Some(model) = model_renderer.model.as_ref() else { continue };
+                                let model = model.clone();
+                                let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                                let pc = ShadowPointModelPushConstants::new(
+                                    [
+                                        gpu_lights[ps.light_index as usize].position[0],
+                                        gpu_lights[ps.light_index as usize].position[1],
+                                        gpu_lights[ps.light_index as usize].position[2],
+                                    ],
+                                    ps.far,
+                                    face_matrix,
+                                    transform.global_position.into(),
+                                    transform.global_scale.into(),
+                                    [
+                                        transform.global_rotation.v.x,
+                                        transform.global_rotation.v.y,
+                                        transform.global_rotation.v.z,
+                                        transform.global_rotation.s,
+                                    ],
+                                );
+                                for mesh in &model.meshes {
+                                    if let Err(e) = renderer.shadow_point_model_render(
+                                        Box::new(mesh.clone()),
+                                        &pc,
+                                    ) {
+                                        log_error!(
+                                            "Failed point shadow model render: {}",
+                                            e
                                         );
-                                        for mesh in &model.meshes {
-                                            if let Err(e) = renderer.shadow_point_model_render(
-                                                Box::new(mesh.clone()),
-                                                &pc,
-                                            ) {
-                                                log_error!(
-                                                    "Failed point shadow model render: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
                                     }
                                 }
                             }
 
                             if self.packages.contains(&Packages::Voxel) {
-                                for object in world.get_objects_with_component::<VoxelChunkMesh>() {
-                                    let transform =
-                                        object.get_component::<VoxelTransform>().unwrap();
-                                    let voxel_mesh =
-                                        object.get_component::<VoxelChunkMesh>().unwrap();
+                                let voxel_ids = world.get_entities_with_component::<VoxelChunkMesh>();
+                                for id in voxel_ids {
+                                    let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
+                                    let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
                                     let pc = ShadowPointVoxelPushConstants::new(
                                         [
                                             gpu_lights[ps.light_index as usize].position[0],
@@ -717,8 +697,9 @@ impl Core {
                                             transform.position.z * 32,
                                         ],
                                     );
+                                    let voxel_mesh = voxel_mesh.clone();
                                     if let Err(e) = renderer.shadow_point_voxel_render(
-                                        Box::new(voxel_mesh.clone()),
+                                        Box::new(voxel_mesh),
                                         &pc,
                                     ) {
                                         log_error!("Failed point shadow voxel render: {}", e);
@@ -757,6 +738,14 @@ impl Core {
                     let world_fixed_update_ns =
                         world_fixed_update_start.elapsed().as_nanos() as u64;
 
+                    // Refresh the view matrix with the camera's post-update transform so the
+                    // viewport render uses this frame's position rather than last frame's.
+                    if let Some(cam_t) = world.get_component::<Transform>(camera_id).cloned() {
+                        if let Some(cam_c) = world.get_component::<Camera>(camera_id).cloned() {
+                            push_constants.set_camera_constants(&cam_t, &cam_c, aspect);
+                        }
+                    }
+
                     let viewport_render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_viewport_render() {
                         log_error!("Failed to begin viewport render: {}", e);
@@ -793,45 +782,34 @@ impl Core {
                         })
                         .unwrap_or_default();
 
-                    let object_ids: Vec<_> = world
-                        .get_objects_with_component_with_ids::<ModelRenderer>()
-                        .iter()
-                        .map(|o| o.0)
-                        .collect();
+                    let entity_ids = world.get_entities_with_component::<ModelRenderer>();
 
-                    for id in object_ids {
-                        let object = world.get_object_mut(id).unwrap();
-
-                        if object
-                            .get_component::<ModelRenderer>()
-                            .unwrap()
-                            .model
-                            .is_none()
-                        {
-                            let model_path = object
-                                .get_component::<ModelRenderer>()
-                                .unwrap()
-                                .model_path
-                                .clone();
-
+                    for id in entity_ids {
+                        // Lazily load model if needed
+                        if world.get_component::<ModelRenderer>(id).map(|mr| mr.model.is_none()).unwrap_or(false) {
+                            let model_path = match world.get_component::<ModelRenderer>(id) {
+                                Some(mr) => mr.model_path.clone(),
+                                None => continue,
+                            };
                             let Some(model) = model_registry.paths.get(&model_path) else {
                                 continue;
                             };
-                            object.get_component_mut::<ModelRenderer>().unwrap().model =
-                                Some(Box::new(model.clone()));
+                            let model = model.clone();
+                            if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
+                                mr.model = Some(Box::new(model));
+                            }
                         }
 
-                        let model_renderer = object.get_component::<ModelRenderer>().unwrap();
-                        let Some(model) = object
-                            .get_component::<ModelRenderer>()
-                            .unwrap()
-                            .model
-                            .clone()
-                        else {
+                        let model_renderer = match world.get_component::<ModelRenderer>(id) {
+                            Some(mr) => mr.clone(),
+                            None => continue,
+                        };
+                        let Some(model) = model_renderer.model.clone() else {
                             continue;
                         };
 
-                        let transform = object.get_component::<Transform>().unwrap();
+                        let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                        let transform = transform.clone();
 
                         let mut model_push = model_push_constants.clone();
                         model_push.world_position = transform.global_position;
@@ -923,24 +901,20 @@ impl Core {
                             .ok()
                             .map(|a| a.descriptor_set);
 
-                        let terrain_ids: Vec<_> = world
-                            .get_objects_with_component_with_ids::<TerrainMesh>()
-                            .iter()
-                            .map(|(id, _)| *id)
-                            .collect();
+                        let terrain_ids = world.get_entities_with_component::<TerrainMesh>();
                         for id in terrain_ids {
-                            let object = world.get_object(id).unwrap();
-                            let terrain_mesh = object.get_component::<TerrainMesh>().unwrap();
+                            let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id) else { continue };
                             if terrain_mesh.index_count == 0 {
                                 continue;
                             }
+                            let terrain_mesh = terrain_mesh.clone();
                             let mut terrain_push = model_push_constants.clone();
                             terrain_push.world_position = Vector3::new(0.0, 0.0, 0.0);
                             terrain_push.world_scale = Vector3::new(1.0, 1.0, 1.0);
                             terrain_push.world_rotation =
                                 cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
                             // Fill in per-chunk active layer IDs for the splatting shader.
-                            if let Ok(chunk) = object.get_component::<TerrainChunk>() {
+                            if let Some(chunk) = world.get_component::<TerrainChunk>(id) {
                                 terrain_push.active_layer_ids_packed = ModelPushConstants::pack_layer_ids(
                                     &chunk.active_layer_ids,
                                     chunk.active_layer_count,
@@ -948,7 +922,7 @@ impl Core {
                                 terrain_push.layer_count = chunk.active_layer_count as u32;
                             }
                             if let Err(e) = renderer.render(
-                                Box::new(terrain_mesh.clone()),
+                                Box::new(terrain_mesh),
                                 push_constants.clone(),
                                 &terrain_push,
                                 terrain_atlas_ds,
@@ -971,13 +945,15 @@ impl Core {
                             PushConstants,
                             VoxelPushConstants,
                         )> = Vec::new();
-                        for object in world.get_objects_with_component::<VoxelChunkMesh>() {
-                            let transform = object.get_component::<VoxelTransform>().unwrap();
+                        let voxel_chunk_ids = world.get_entities_with_component::<VoxelChunkMesh>();
+                        for id in voxel_chunk_ids {
+                            let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
                             let world_pos = Vector3::new(
                                 transform.position.x as f32 * 32.0,
                                 transform.position.y as f32 * 32.0,
                                 transform.position.z as f32 * 32.0,
                             );
+                            let transform_pos = transform.position;
 
                             if !frustum.contains_aabb(
                                 world_pos,
@@ -985,8 +961,10 @@ impl Core {
                             ) {
                                 continue;
                             }
-                            objects_dawn += 1;
-                            let voxel_mesh = object.get_component::<VoxelChunkMesh>().unwrap();
+                            entities_dawn += 1;
+                            let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
+                            let voxel_mesh = voxel_mesh.clone();
+                            let water_mesh = world.get_component::<WaterMesh>(id).cloned();
 
                             let delta = world.get_resource::<EngineTimer>().unwrap();
 
@@ -995,13 +973,13 @@ impl Core {
 
                             voxel_chunk_push.time = delta.0;
                             voxel_chunk_push.set_position(Vector3::new(
-                                transform.position.x * 32,
-                                transform.position.y * 32,
-                                transform.position.z * 32,
+                                transform_pos.x * 32,
+                                transform_pos.y * 32,
+                                transform_pos.z * 32,
                             ));
 
                             if let Err(e) = renderer.voxel_render(
-                                Box::new(voxel_mesh.clone()),
+                                Box::new(voxel_mesh),
                                 texture_atlas,
                                 &chunk_push,
                                 &voxel_chunk_push,
@@ -1009,12 +987,12 @@ impl Core {
                                 log_error!("Failed to render voxel: {}", e);
                             }
 
-                            if let Ok(water_mesh) = object.get_component::<WaterMesh>() {
+                            if let Some(water_mesh) = water_mesh {
                                 let chunk_center = world_pos + Vector3::new(16.0, 16.0, 16.0);
                                 let distance = (chunk_center - camera_pos).magnitude2();
                                 water_draws.push((
                                     distance,
-                                    Box::new(water_mesh.clone()),
+                                    Box::new(water_mesh),
                                     chunk_push.clone(),
                                     voxel_chunk_push.clone(),
                                 ));
@@ -1036,7 +1014,7 @@ impl Core {
                         }
                     }
 
-                    world.get_resource_mut::<ObjectsDrawing>().unwrap().0 = objects_dawn;
+                    world.get_resource_mut::<EntitiesDrawing>().unwrap().0 = entities_dawn;
                     if let Err(e) = renderer.end_viewport_render() {
                         log_error!("Failed to end viewport render: {}", e);
                     }

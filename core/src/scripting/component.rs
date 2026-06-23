@@ -1,8 +1,8 @@
 use apostasy_macros::Component;
 
-use crate::objects::component::Inspect;
+use crate::ecs::component::Inspect;
 
-/// Attaches a WASM script to an object.
+/// Attaches a WASM script to an entity.
 /// The script at `path` must export `on_start` and/or `on_update`.
 #[derive(Component, Clone, Debug, Default)]
 pub struct ScriptComponent {

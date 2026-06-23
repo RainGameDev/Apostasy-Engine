@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_core::{
-    objects::world::World,
+    ecs::world::World,
     rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing, shadow_settings::ShadowDistance},
     start,
     ui::{FontRegistry, ui_context::ViewportSize},
@@ -24,7 +24,7 @@ pub mod ui_manager;
 pub mod viewport_panel;
 
 use asset_editor::AssetEditorState;
-use assets_panel::ObjectWindowState;
+use assets_panel::EntityWindowState;
 use cell_panel::CellSearchState;
 use inspector_panel::InspectorPanelState;
 use preferences_panel::EditorPreferences;
@@ -44,8 +44,8 @@ pub fn init(world: &mut World) -> Result<()> {
         open: layout.viewport_open,
         ..Default::default()
     });
-    world.insert_resource(ObjectWindowState {
-        open: layout.object_window_open,
+    world.insert_resource(EntityWindowState {
+        open: layout.entity_window_open,
         ..Default::default()
     });
     world.insert_resource(CellSearchState {
@@ -74,7 +74,7 @@ pub fn init(world: &mut World) -> Result<()> {
         reg.set_active(prefs.active_font);
     }
 
-    use crate::objects::editor_camera::EditorCameraSettings;
+    use crate::ecs::editor_camera::EditorCameraSettings;
     world.insert_resource(EditorCameraSettings {
         move_speed: prefs.camera_speed,
     });

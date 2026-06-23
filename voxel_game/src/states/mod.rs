@@ -1,6 +1,6 @@
 use apostasy_core::{
     anyhow::Result,
-    objects::{
+    ecs::{
         resources::{
             cursor_manager::{CursorLockMode, CursorManager},
             input_manager::InputManager,

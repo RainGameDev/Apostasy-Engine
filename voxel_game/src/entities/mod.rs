@@ -2,12 +2,12 @@ use apostasy_core::{
     Component,
     anyhow::Result,
     cgmath::{self, InnerSpace, Vector3, Zero},
-    objects::{Object, components::transform::Transform, world::World},
-    physics::{Gravity, collider::Collider, velocity::Velocity},
+    ecs::{components::{transform::Transform, Inspect}, world::World},
+    physics::{Gravity, collider::Collider, raycast::Direction, velocity::Velocity},
     rand::{RngExt, rng},
     serde_yaml::Value,
     start, update,
-    voxels::voxel_raycast::{Direction, voxel_raycast},
+    voxels::voxel_raycast::voxel_raycast,
 };
 
 use crate::entities::spawn_point::NeedsSpawnPoint;
@@ -31,6 +31,8 @@ impl Default for PassiveAI {
     }
 }
 
+impl Inspect for PassiveAI {}
+
 impl PassiveAI {
     pub fn deserialize(&mut self, _value: &Value) -> Result<()> {
         Ok(())
@@ -39,28 +41,26 @@ impl PassiveAI {
 
 #[update]
 pub fn entity_process(world: &mut World) -> Result<()> {
-    let objects: Vec<_> = world
-        .get_objects_with_component_with_ids::<PassiveAI>()
-        .iter()
-        .map(|o| o.0)
-        .collect();
+    let ids: Vec<_> = world.get_entities_with_component::<PassiveAI>();
 
-    for id in objects {
+    for id in ids {
         let (has_location, location, global_position) = {
-            let object = world.get_object(id).unwrap();
-            let passive_ai = object.get_component::<PassiveAI>()?;
-            let transform = object.get_component::<Transform>()?;
-            (
-                passive_ai.has_location,
-                passive_ai.location,
-                transform.global_position,
-            )
+            let (hl, loc) = match world.get_component::<PassiveAI>(id) {
+                Some(c) => (c.has_location, c.location),
+                None => continue,
+            };
+            let global_pos = match world.get_component::<Transform>(id) {
+                Some(t) => t.global_position,
+                None => continue,
+            };
+            (hl, loc, global_pos)
         };
 
         if has_location {
             if (global_position - location).magnitude2() < 3.0 {
-                let object = world.get_object_mut(id).unwrap();
-                object.get_component_mut::<PassiveAI>()?.has_location = false;
+                if let Some(ai) = world.get_component_mut::<PassiveAI>(id) {
+                    ai.has_location = false;
+                }
             } else {
                 let diff = location - global_position;
                 let dir = if diff.magnitude2() > 0.0 {
@@ -68,23 +68,24 @@ pub fn entity_process(world: &mut World) -> Result<()> {
                 } else {
                     cgmath::Vector3::unit_x()
                 };
-                let object = world.get_object_mut(id).unwrap();
-                object.get_component_mut::<Velocity>()?.linear_velocity.x = dir.x * 1.0;
-                object.get_component_mut::<Velocity>()?.linear_velocity.z = dir.z * 1.0;
+                if let Some(vel) = world.get_component_mut::<Velocity>(id) {
+                    vel.linear_velocity.x = dir.x * 1.0;
+                    vel.linear_velocity.z = dir.z * 1.0;
+                }
             }
         } else {
             let location_transform = {
-                let object = world.get_object(id).unwrap();
-                let transform = object.get_component::<Transform>()?;
+                let transform = match world.get_component::<Transform>(id) {
+                    Some(t) => t,
+                    None => continue,
+                };
                 let mut rng = rng();
-
                 let random_position_x = rng.random_range(
                     transform.global_position.x - 16.0..=transform.global_position.x + 16.0,
                 );
                 let random_position_z = rng.random_range(
                     transform.global_position.z - 16.0..=transform.global_position.z + 16.0,
                 );
-
                 Transform {
                     local_position: Vector3::new(random_position_x, 256.0, random_position_z),
                     global_position: Vector3::new(random_position_x, 256.0, random_position_z),
@@ -93,14 +94,14 @@ pub fn entity_process(world: &mut World) -> Result<()> {
             };
 
             if let Some(hit) = voxel_raycast(world, &location_transform, 1000.0, Direction::Down) {
-                let object = world.get_object_mut(id).unwrap();
-                let passive_ai = object.get_component_mut::<PassiveAI>()?;
-                passive_ai.has_location = true;
-                passive_ai.location = Vector3::new(
-                    hit.voxel_pos.x as f32,
-                    hit.voxel_pos.y as f32,
-                    hit.voxel_pos.z as f32,
-                );
+                if let Some(ai) = world.get_component_mut::<PassiveAI>(id) {
+                    ai.has_location = true;
+                    ai.location = Vector3::new(
+                        hit.voxel_pos.x as f32,
+                        hit.voxel_pos.y as f32,
+                        hit.voxel_pos.z as f32,
+                    );
+                }
             }
         }
     }
@@ -109,16 +110,13 @@ pub fn entity_process(world: &mut World) -> Result<()> {
 
 #[start]
 pub fn entity_init(world: &mut World) -> Result<()> {
-    let sheep = Object::new()
-        .add_component(PassiveAI::default())
-        .add_component(Transform::default())
-        .add_component(Gravity::default())
-        .add_component(Collider::default())
-        .add_component(Velocity::default())
-        // .add_component(ModelRenderer::from_path("model.glb"))
-        .add_tag(NeedsSpawnPoint);
-
-    world.add_object(sheep);
+    let sheep_id = world.spawn().id();
+    world.add_component(sheep_id, PassiveAI::default());
+    world.add_component(sheep_id, Transform::default());
+    world.add_component(sheep_id, Gravity::default());
+    world.add_component(sheep_id, Collider::default());
+    world.add_component(sheep_id, Velocity::default());
+    world.add_tag::<NeedsSpawnPoint>(sheep_id);
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use cgmath::{Deg, InnerSpace, Matrix4, PerspectiveFov, Point3, Quaternion, SquareMatrix, Vector3};
 
 use crate::{
-    objects::components::transform::Transform,
+    ecs::components::transform::Transform,
     rendering::components::lighting::{Light, LightType},
 };
 

@@ -2,7 +2,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
     egui, log,
-    objects::world::World,
+    ecs::world::World,
     rand::{RngExt, rng},
     states::ShouldExit,
     ui::ui_context::EguiContext,

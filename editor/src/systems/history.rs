@@ -1,15 +1,14 @@
 use anyhow::Result;
 use apostasy_core::{
-    objects::{
-        Object,
-        cell::{CellCoord, ObjectId},
-        cell_streaming::CellMigrations,
+    ecs::{
+        cell::{CellCoord, EntityBlob, EntityId},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         world::World,
     },
     start, ui::ui_context::EguiContext, update,
     winit::keyboard::{KeyCode, PhysicalKey},
+    worldspaces::cell_streaming::CellMigrations,
 };
 use apostasy_macros::Resource;
 
@@ -26,8 +25,8 @@ impl<T: EditorCommand + Clone + 'static> EditorCommandClone for T {
 pub trait EditorCommand: Send + Sync + EditorCommandClone {
     fn execute(&mut self, world: &mut World) -> Result<()>;
     fn undo(&mut self, world: &mut World) -> Result<()>;
-    /// Called after cell migration to update any stale ObjectIds.
-    fn remap_ids(&mut self, _lookup: &dyn Fn(ObjectId) -> Option<ObjectId>) {}
+    /// Called after cell migration to update any stale EntityIds.
+    fn remap_ids(&mut self, _lookup: &dyn Fn(EntityId) -> Option<EntityId>) {}
 }
 
 impl Clone for Box<dyn EditorCommand> {
@@ -52,23 +51,23 @@ impl History {
 // ========== Commands ==========
 
 #[derive(Clone)]
-pub struct AddObjectCmd {
-    pub object: Object,
+pub struct AddEntityCmd {
+    pub blob: EntityBlob,
     pub cell: Option<CellCoord>,
-    added_id: Option<ObjectId>,
+    pub(crate) added_id: Option<EntityId>,
 }
 
-impl AddObjectCmd {
-    pub fn new(object: Object, cell: Option<CellCoord>) -> Self {
-        Self { object, cell, added_id: None }
+impl AddEntityCmd {
+    pub fn new(blob: EntityBlob, cell: Option<CellCoord>) -> Self {
+        Self { blob, cell, added_id: None }
     }
 }
 
-impl EditorCommand for AddObjectCmd {
+impl EditorCommand for AddEntityCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
         let id = match self.cell {
-            Some(coord) => world.add_object_to_cell(coord, self.object.clone()),
-            None => world.add_object(self.object.clone()),
+            Some(coord) => world.spawn_from_blob_in_cell(&self.blob, coord),
+            None => world.spawn_from_blob(&self.blob),
         };
         self.added_id = Some(id);
         Ok(())
@@ -76,12 +75,12 @@ impl EditorCommand for AddObjectCmd {
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
         if let Some(id) = self.added_id.take() {
-            world.remove_object(id);
+            world.despawn(id);
         }
         Ok(())
     }
 
-    fn remap_ids(&mut self, lookup: &dyn Fn(ObjectId) -> Option<ObjectId>) {
+    fn remap_ids(&mut self, lookup: &dyn Fn(EntityId) -> Option<EntityId>) {
         if let Some(id) = self.added_id {
             if let Some(new_id) = lookup(id) {
                 self.added_id = Some(new_id);
@@ -91,32 +90,30 @@ impl EditorCommand for AddObjectCmd {
 }
 
 #[derive(Clone)]
-pub struct RemoveObjectCmd {
-    pub object: Object,
-    // Tracks the live ObjectId: starts as the original, updated each time undo re-adds the object.
-    // Slotmap assigns a new key on every insertion, so we must follow it across undo/redo cycles.
-    current_id: ObjectId,
+pub struct RemoveEntityCmd {
+    pub blob: EntityBlob,
+    current_id: EntityId,
 }
 
-impl RemoveObjectCmd {
-    pub fn new(id: ObjectId, world: &World) -> Option<Self> {
-        let object = world.get_object(id)?.clone();
-        Some(Self { object, current_id: id })
+impl RemoveEntityCmd {
+    pub fn new(id: EntityId, world: &World) -> Option<Self> {
+        let blob = world.capture_entity(id)?;
+        Some(Self { blob, current_id: id })
     }
 }
 
-impl EditorCommand for RemoveObjectCmd {
+impl EditorCommand for RemoveEntityCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        world.remove_object(self.current_id);
+        world.despawn(self.current_id);
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        self.current_id = world.add_object(self.object.clone());
+        self.current_id = world.spawn_from_blob(&self.blob);
         Ok(())
     }
 
-    fn remap_ids(&mut self, lookup: &dyn Fn(ObjectId) -> Option<ObjectId>) {
+    fn remap_ids(&mut self, lookup: &dyn Fn(EntityId) -> Option<EntityId>) {
         if let Some(new_id) = lookup(self.current_id) {
             self.current_id = new_id;
         }
@@ -124,28 +121,24 @@ impl EditorCommand for RemoveObjectCmd {
 }
 
 #[derive(Clone)]
-pub struct RenameObjectCmd {
-    pub id: ObjectId,
+pub struct RenameEntityCmd {
+    pub id: EntityId,
     pub old_name: String,
     pub new_name: String,
 }
 
-impl EditorCommand for RenameObjectCmd {
+impl EditorCommand for RenameEntityCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            obj.name = self.new_name.clone();
-        }
+        world.set_name(self.id, &self.new_name);
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            obj.name = self.old_name.clone();
-        }
+        world.set_name(self.id, &self.old_name);
         Ok(())
     }
 
-    fn remap_ids(&mut self, lookup: &dyn Fn(ObjectId) -> Option<ObjectId>) {
+    fn remap_ids(&mut self, lookup: &dyn Fn(EntityId) -> Option<EntityId>) {
         if let Some(new_id) = lookup(self.id) {
             self.id = new_id;
         }
@@ -153,32 +146,28 @@ impl EditorCommand for RenameObjectCmd {
 }
 
 #[derive(Clone)]
-pub struct MoveObjectCmd {
-    pub id: ObjectId,
+pub struct MoveEntityCmd {
+    pub id: EntityId,
     pub old_transform: Transform,
     pub new_transform: Transform,
 }
 
-impl EditorCommand for MoveObjectCmd {
+impl EditorCommand for MoveEntityCmd {
     fn execute(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = self.new_transform.clone();
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(self.id) {
+            *t = self.new_transform.clone();
         }
         Ok(())
     }
 
     fn undo(&mut self, world: &mut World) -> Result<()> {
-        if let Some(obj) = world.get_object_mut(self.id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = self.old_transform.clone();
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(self.id) {
+            *t = self.old_transform.clone();
         }
         Ok(())
     }
 
-    fn remap_ids(&mut self, lookup: &dyn Fn(ObjectId) -> Option<ObjectId>) {
+    fn remap_ids(&mut self, lookup: &dyn Fn(EntityId) -> Option<EntityId>) {
         if let Some(new_id) = lookup(self.id) {
             self.id = new_id;
         }
@@ -210,7 +199,7 @@ pub fn remap_history_after_migration(world: &mut World) -> Result<()> {
         _ => return Ok(()),
     };
 
-    let lookup = |id: ObjectId| remap.get(&id).copied();
+    let lookup = |id: EntityId| remap.get(&id).copied();
 
     if let Ok(history) = world.get_resource_mut::<History>() {
         for cmd in history.undo_stack.iter_mut().chain(history.redo_stack.iter_mut()) {

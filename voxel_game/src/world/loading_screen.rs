@@ -1,4 +1,4 @@
-use apostasy_core::{anyhow::Result, egui, update, ui::ui_context::EguiContext, objects::world::World};
+use apostasy_core::{anyhow::Result, egui, update, ui::ui_context::EguiContext, ecs::world::World};
 use crate::world::loading_state::LoadingState;
 
 #[update]

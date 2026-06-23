@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     egui::{self, Pos2, Slider},
-    objects::world::World,
+    ecs::world::World,
     ui::ui_context::EguiContext,
     update,
 };

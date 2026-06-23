@@ -9,9 +9,8 @@ use hashbrown::HashMap;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::biome_loader::BiomeLoader;
-use crate::objects::Object;
-use crate::objects::cell::ObjectId;
-use crate::objects::world::World;
+use crate::ecs::cell::EntityId;
+use crate::ecs::world::World;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::vertex::VertexDefinition;
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;
@@ -193,37 +192,31 @@ const MAX_MESH_JOBS_PER_FRAME: usize = 32;
 const MAX_MESH_RESULTS_PER_FRAME: usize = 16;
 
 // builds a flat position -> id lookup for every loaded chunk
-fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), ObjectId> {
+fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), EntityId> {
     world
-        .get_objects_with_component_with_ids::<VoxelTransform>()
+        .get_entities_with_component::<VoxelTransform>()
         .into_iter()
-        .filter_map(|(id, obj)| {
-            let t = obj.get_component::<VoxelTransform>().ok()?;
-            obj.has_component::<Chunk>()
+        .filter_map(|id| {
+            let t = world.get_component::<VoxelTransform>(id)?;
+            world.has_component::<Chunk>(id)
                 .then_some(((t.position.x, t.position.y, t.position.z), id))
         })
         .collect()
 }
 
 // collects all chunks needing a remesh, voxel-break jobs sorted first
-fn sorted_remesh_candidates(world: &World) -> Vec<(ObjectId, Vector3<i32>)> {
-    let mut candidates: Vec<(ObjectId, Vector3<i32>)> = world
-        .get_objects_with_tag_with_ids::<NeedsRemeshing>()
+fn sorted_remesh_candidates(world: &World) -> Vec<(EntityId, Vector3<i32>)> {
+    let mut candidates: Vec<(EntityId, Vector3<i32>)> = world
+        .get_entities_with_tag::<NeedsRemeshing>()
         .into_iter()
-        .filter_map(|(id, _)| {
-            let pos = world
-                .get_object(id)?
-                .get_component::<VoxelTransform>()
-                .ok()?
-                .position;
+        .filter_map(|id| {
+            let pos = world.get_component::<VoxelTransform>(id)?.position;
             Some((id, pos))
         })
         .collect();
 
     candidates.sort_by_key(|(id, _)| {
-        !world
-            .get_object(*id)
-            .is_some_and(|o| o.has_tag::<VoxelBreakRemesh>())
+        !world.has_tag::<VoxelBreakRemesh>(*id)
     });
 
     candidates
@@ -233,19 +226,18 @@ fn sorted_remesh_candidates(world: &World) -> Vec<(ObjectId, Vector3<i32>)> {
 fn get_neighbour(
     pos: Vector3<i32>,
     offset: Vector3<i32>,
-    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    chunk_positions: &HashMap<(i32, i32, i32), EntityId>,
     world: &World,
 ) -> Option<Chunk> {
     let key = (pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
     chunk_positions
         .get(&key)
-        .and_then(|&id| world.get_object(id))
-        .and_then(|obj| obj.get_component::<Chunk>().ok().cloned())
+        .and_then(|&id| world.get_component::<Chunk>(id).cloned())
 }
 
 fn gather_neighbours(
     pos: Vector3<i32>,
-    chunk_positions: &HashMap<(i32, i32, i32), ObjectId>,
+    chunk_positions: &HashMap<(i32, i32, i32), EntityId>,
     world: &World,
 ) -> ChunkNeighbours {
     ChunkNeighbours {
@@ -293,7 +285,7 @@ fn all_neighbours_ready(
 }
 
 struct Job {
-    id: ObjectId,
+    id: EntityId,
     pos: Vector3<i32>,
     chunk: Chunk,
     neighbours: ChunkNeighbours,
@@ -349,10 +341,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
         let Some(&chunk_id) = chunk_positions.get(&(pos.x, pos.y, pos.z)) else {
             continue;
         };
-        let Some(chunk) = world
-            .get_object(chunk_id)
-            .and_then(|o| o.get_component::<Chunk>().ok().cloned())
-        else {
+        let Some(chunk) = world.get_component::<Chunk>(chunk_id).cloned() else {
             continue;
         };
 
@@ -365,10 +354,8 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
         // no visible faces means nothing to mesh
         if !chunk.has_visible_faces(&neighbours) {
-            if let Some(obj) = world.get_object_mut(id) {
-                obj.remove_tag::<NeedsRemeshing>();
-                obj.remove_tag::<VoxelBreakRemesh>();
-            }
+            world.remove_tag::<NeedsRemeshing>(id);
+            world.remove_tag::<VoxelBreakRemesh>(id);
             continue;
         }
 
@@ -386,10 +373,8 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
 
     // phase 2: remove tags and submit jobs for the ready set
     for job in &ready {
-        if let Some(obj) = world.get_object_mut(job.id) {
-            obj.remove_tag::<NeedsRemeshing>();
-            obj.remove_tag::<VoxelBreakRemesh>();
-        }
+        world.remove_tag::<NeedsRemeshing>(job.id);
+        world.remove_tag::<VoxelBreakRemesh>(job.id);
     }
 
     for Job {
@@ -444,7 +429,8 @@ fn destroy_now(device: &ash::Device, buffer: vk::Buffer, memory: vk::DeviceMemor
 }
 
 fn upload_opaque_mesh(
-    object: &mut Object,
+    world: &mut World,
+    id: EntityId,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     vertices: &[VoxelVertex],
@@ -452,7 +438,7 @@ fn upload_opaque_mesh(
     graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>,
 ) -> Result<()> {
     // queue old buffers for deferred cleanup
-    if let Ok(old) = object.get_component::<VoxelChunkMesh>() {
+    if let Some(old) = world.get_component::<VoxelChunkMesh>(id) {
         defer_destroy(graveyard, old.vertex_buffer, old.vertex_buffer_memory);
         defer_destroy(graveyard, old.index_buffer, old.index_buffer_memory);
     }
@@ -460,11 +446,11 @@ fn upload_opaque_mesh(
     let (vb, vbm) = ctx.create_vertex_buffer(vertices, command_pool)?;
     let (ib, ibm) = ctx.create_index_buffer(indices, command_pool)?;
 
-    if !object.has_component::<VoxelChunkMesh>() {
-        object.add_component(VoxelChunkMesh::default());
+    if !world.has_component::<VoxelChunkMesh>(id) {
+        world.add_component(id, VoxelChunkMesh::default());
     }
 
-    let mesh = object.get_component_mut::<VoxelChunkMesh>().unwrap();
+    let mesh = world.get_component_mut::<VoxelChunkMesh>(id).unwrap();
     mesh.vertex_buffer = vb;
     mesh.vertex_buffer_memory = vbm;
     mesh.index_buffer = ib;
@@ -475,14 +461,15 @@ fn upload_opaque_mesh(
 }
 
 fn upload_water_mesh(
-    object: &mut Object,
+    world: &mut World,
+    id: EntityId,
     ctx: &VulkanRenderingContext,
     command_pool: CommandPool,
     vertices: &[VoxelVertex],
     indices: &[u32],
 ) -> Result<()> {
     // water buffers are destroyed immediately rather than deferred
-    if let Ok(old) = object.get_component::<WaterMesh>() {
+    if let Some(old) = world.get_component::<WaterMesh>(id) {
         destroy_now(&ctx.device, old.vertex_buffer, old.vertex_buffer_memory);
         destroy_now(&ctx.device, old.index_buffer, old.index_buffer_memory);
     }
@@ -490,11 +477,11 @@ fn upload_water_mesh(
     let (vb, vbm) = ctx.create_vertex_buffer(vertices, command_pool)?;
     let (ib, ibm) = ctx.create_index_buffer(indices, command_pool)?;
 
-    if !object.has_component::<WaterMesh>() {
-        object.add_component(WaterMesh::default());
+    if !world.has_component::<WaterMesh>(id) {
+        world.add_component(id, WaterMesh::default());
     }
 
-    let mesh = object.get_component_mut::<WaterMesh>().unwrap();
+    let mesh = world.get_component_mut::<WaterMesh>(id).unwrap();
     mesh.vertex_buffer = vb;
     mesh.vertex_buffer_memory = vbm;
     mesh.index_buffer = ib;
@@ -524,12 +511,12 @@ pub fn receive_meshes(
     }
 
     // build position -> id map once for all results
-    let pos_to_id: HashMap<Vector3<i32>, ObjectId> = world
-        .get_objects_with_component_with_ids::<VoxelTransform>()
-        .iter()
-        .filter_map(|(id, obj)| {
-            let pos = obj.get_component::<VoxelTransform>().ok()?.position;
-            Some((pos, *id))
+    let pos_to_id: HashMap<Vector3<i32>, EntityId> = world
+        .get_entities_with_component::<VoxelTransform>()
+        .into_iter()
+        .filter_map(|id| {
+            let pos = world.get_component::<VoxelTransform>(id)?.position;
+            Some((pos, id))
         })
         .collect();
 
@@ -538,9 +525,10 @@ pub fn receive_meshes(
         let Some(&id) = pos_to_id.get(&mesh_data.position) else {
             continue;
         };
-        let Some(object) = world.get_object_mut(id) else {
+
+        if !world.is_alive(id) {
             continue;
-        };
+        }
 
         let has_opaque =
             !mesh_data.opaque_vertices.is_empty() && !mesh_data.opaque_indices.is_empty();
@@ -552,7 +540,8 @@ pub fn receive_meshes(
 
         if has_opaque {
             upload_opaque_mesh(
-                object,
+                world,
+                id,
                 ctx,
                 command_pool,
                 &mesh_data.opaque_vertices,
@@ -563,7 +552,8 @@ pub fn receive_meshes(
 
         if has_water {
             upload_water_mesh(
-                object,
+                world,
+                id,
                 ctx,
                 command_pool,
                 &mesh_data.water_vertices,

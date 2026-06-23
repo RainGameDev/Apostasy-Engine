@@ -2,7 +2,7 @@ use apostasy_macros::Resource;
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::objects::cell::ObjectId;
+use crate::ecs::cell::EntityId;
 
 #[derive(Resource, Clone)]
 pub struct ChunkLoadBounds {
@@ -13,12 +13,12 @@ pub struct ChunkLoadBounds {
 
 #[derive(Resource, Clone, Default)]
 pub struct ChunkPositionMap {
-    pub position_to_id: HashMap<Vector3<i32>, ObjectId>,
+    pub position_to_id: HashMap<Vector3<i32>, EntityId>,
     pub position_to_lod: HashMap<Vector3<i32>, u8>,
 }
 
 impl ChunkPositionMap {
-    pub fn on_chunk_added(&mut self, id: ObjectId, position: Vector3<i32>, lod: u8) {
+    pub fn on_chunk_added(&mut self, id: EntityId, position: Vector3<i32>, lod: u8) {
         self.position_to_id.insert(position, id);
         self.position_to_lod.insert(position, lod);
     }

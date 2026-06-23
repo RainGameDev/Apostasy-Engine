@@ -3,7 +3,7 @@ use ash::vk::CommandPool;
 use cgmath::Vector3;
 
 use crate::{
-    objects::cell::CELL_SIZE,
+    ecs::cell::CELL_SIZE,
     rendering::{shared::vertex::Vertex, vulkan::rendering_context::VulkanRenderingContext},
 };
 

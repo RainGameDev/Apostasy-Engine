@@ -1,0 +1,497 @@
+use anyhow::Result;
+use std::path::Path;
+
+use cgmath::Vector3;
+use hashbrown::HashMap;
+
+use crate::{
+    ecs::{
+        cell::{CellCoord, EntityId},
+        components::{
+            get_component_registration,
+            transform::Transform,
+        },
+        tag::get_tag_registration,
+        world::World,
+        worldspace_streaming::WorldspaceStreaming,
+    },
+    physics::{
+        collider::{Collider, ColliderShape},
+    },
+    rendering::components::{
+        camera::Camera,
+        lighting::{Light, LightType},
+        model_renderer::ModelRenderer,
+    },
+};
+
+fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
+    serde_yaml::Value::Sequence(vec![
+        serde_yaml::Value::Number(serde_yaml::Number::from(v.x as f64)),
+        serde_yaml::Value::Number(serde_yaml::Number::from(v.y as f64)),
+        serde_yaml::Value::Number(serde_yaml::Number::from(v.z as f64)),
+    ])
+}
+
+fn serialize_component_transform(t: &Transform) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Transform".into());
+    map.insert("local_position".into(), vec3_to_yaml(t.local_position));
+    map.insert("local_euler_angles".into(), vec3_to_yaml(t.local_euler_angles));
+    map.insert("local_scale".into(), vec3_to_yaml(t.local_scale));
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_model_renderer(mr: &ModelRenderer) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "ModelRenderer".into());
+    map.insert("model_path".into(), mr.model_path.clone().into());
+    map.insert("material_override".into(), mr.material_override.clone().unwrap_or_default().into());
+    map.insert("is_wireframe".into(), mr.is_wireframe.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_camera(c: &Camera) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Camera".into());
+    map.insert("fov_y".into(), (c.fov_y as f64).into());
+    map.insert("near".into(), (c.near as f64).into());
+    map.insert("far".into(), (c.far as f64).into());
+    map.insert("is_main".into(), c.is_main.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_collider(col: &Collider) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Collider".into());
+    match &col.shape {
+        ColliderShape::Cuboid { size } => {
+            map.insert("shape".into(), "Cuboid".into());
+            map.insert("size".into(), vec3_to_yaml(*size));
+        }
+        ColliderShape::Sphere { radius } => {
+            map.insert("shape".into(), "Sphere".into());
+            map.insert("radius".into(), (*radius as f64).into());
+        }
+        ColliderShape::Capsule { radius, height } => {
+            map.insert("shape".into(), "Capsule".into());
+            map.insert("radius".into(), (*radius as f64).into());
+            map.insert("height".into(), (*height as f64).into());
+        }
+        ColliderShape::Cylinder { radius, height } => {
+            map.insert("shape".into(), "Cylinder".into());
+            map.insert("radius".into(), (*radius as f64).into());
+            map.insert("height".into(), (*height as f64).into());
+        }
+        ColliderShape::Mesh { model_path, .. } => {
+            map.insert("shape".into(), "Mesh".into());
+            map.insert("model_path".into(), model_path.clone().into());
+        }
+    }
+    map.insert("offset".into(), vec3_to_yaml(col.offset));
+    map.insert("is_static".into(), col.is_static.into());
+    map.insert("is_area".into(), col.is_area.into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_velocity(v: &crate::physics::velocity::Velocity) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Velocity".into());
+    map.insert("mass".into(), (v.mass as f64).into());
+    map.insert("process".into(), v.process.into());
+    map.insert("mu_static".into(), (v.mu_static as f64).into());
+    map.insert("mu_kinetic".into(), (v.mu_kinetic as f64).into());
+    map.insert("restitution".into(), (v.restitution as f64).into());
+    map.insert("linear_damping".into(), (v.linear_damping as f64).into());
+    map.insert("angular_damping".into(), (v.angular_damping as f64).into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_gravity(g: &crate::physics::Gravity) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Gravity".into());
+    map.insert("strength".into(), (g.strength as f64).into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_component_light(l: &Light) -> Option<serde_yaml::Value> {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("type".into(), "Light".into());
+    match l.light_type {
+        LightType::Point { radius } => {
+            map.insert("light_type".into(), "Point".into());
+            map.insert("radius".into(), (radius as f64).into());
+        }
+        LightType::Directional => {
+            map.insert("light_type".into(), "Directional".into());
+        }
+        LightType::Spot { length, angle } => {
+            map.insert("light_type".into(), "Spot".into());
+            map.insert("length".into(), (length as f64).into());
+            map.insert("angle".into(), (angle as f64).into());
+        }
+    }
+    let mut color = serde_yaml::Mapping::new();
+    color.insert("r".into(), (l.color.x as f64).into());
+    color.insert("g".into(), (l.color.y as f64).into());
+    color.insert("b".into(), (l.color.z as f64).into());
+    map.insert("color".into(), serde_yaml::Value::Mapping(color));
+    map.insert("intensity".into(), (l.intensity as f64).into());
+    map.insert("is_emitting".into(), l.is_emitting.into());
+    map.insert("is_flickering".into(), l.is_flickering.into());
+    map.insert("intensity_min".into(), (l.intensity_min as f64).into());
+    map.insert("intensity_max".into(), (l.intensity_max as f64).into());
+    map.insert("radius_min".into(), (l.radius_min as f64).into());
+    map.insert("radius_max".into(), (l.radius_max as f64).into());
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
+    // Skip editor/internal entities
+    if world.has_tag::<crate::rendering::components::camera::EditorCamera>(id)
+        || world.has_tag::<crate::ecs::tags::skips_serilization::SkipsSerilization>(id)
+    {
+        return None;
+    }
+
+    let name = world.get_name(id).unwrap_or("Entity").to_string();
+    let children_ids = world.get_children_ids(id);
+
+    // Serialize known component types
+    let mut components_data: serde_yaml::Sequence = Vec::new();
+    if let Some(c) = world.get_component::<Transform>(id) {
+        if let Some(v) = serialize_component_transform(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<ModelRenderer>(id) {
+        if let Some(v) = serialize_component_model_renderer(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Camera>(id) {
+        if let Some(v) = serialize_component_camera(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Collider>(id) {
+        if let Some(v) = serialize_component_collider(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<crate::physics::velocity::Velocity>(id) {
+        if let Some(v) = serialize_component_velocity(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<crate::physics::Gravity>(id) {
+        if let Some(v) = serialize_component_gravity(c) { components_data.push(v); }
+    }
+    if let Some(c) = world.get_component::<Light>(id) {
+        if let Some(v) = serialize_component_light(c) { components_data.push(v); }
+    }
+
+    // Serialize known persistent tag types (excluding editor/transient tags)
+    let mut tags_data: serde_yaml::Sequence = Vec::new();
+    if world.has_tag::<crate::ecs::tags::Player>(id) {
+        tags_data.push(serde_yaml::Value::String("Player".to_string()));
+    }
+
+    let (name, children_ids, components_data, tags_data) = (name, children_ids, components_data, tags_data);
+
+    let children: serde_yaml::Sequence = children_ids
+        .iter()
+        .filter_map(|&child_id| serialize_entity(world, child_id))
+        .collect();
+
+    let mut map = serde_yaml::Mapping::new();
+    map.insert("name".into(), name.into());
+    map.insert(
+        "components".into(),
+        serde_yaml::Value::Sequence(components_data),
+    );
+    map.insert("tags".into(), serde_yaml::Value::Sequence(tags_data));
+    map.insert("children".into(), serde_yaml::Value::Sequence(children));
+
+    Some(serde_yaml::Value::Mapping(map))
+}
+
+fn coord_key(coord: CellCoord) -> String {
+    format!("{},{},{}", coord.x, coord.y, coord.z)
+}
+
+fn parse_coord_key(key: &str) -> Option<CellCoord> {
+    let mut parts = key.split(',').map(|p| p.trim().parse::<i32>());
+    let x = parts.next()?.ok()?;
+    let y = parts.next()?.ok()?;
+    let z = parts.next()?.ok()?;
+    Some(Vector3::new(x, y, z))
+}
+
+/// Serializes a single loaded cell into its on-disk `{ name, entities }` mapping.
+/// Returns `None` when the cell is not currently loaded.
+pub fn serialize_cell(world: &World, coord: CellCoord) -> Option<serde_yaml::Value> {
+    let cell = world.worldspace().get_cell(coord)?;
+    let root_ids = cell.get_root_ids();
+    let cell_name = cell.name.clone();
+    let mut entities = serde_yaml::Sequence::new();
+    for id in root_ids {
+        if let Some(entity_value) = serialize_entity(world, id) {
+            entities.push(entity_value);
+        }
+    }
+    let mut cell_map = serde_yaml::Mapping::new();
+    cell_map.insert("name".into(), cell_name.into());
+    cell_map.insert("entities".into(), serde_yaml::Value::Sequence(entities));
+    Some(serde_yaml::Value::Mapping(cell_map))
+}
+
+/// Loads a single cell's `{ name, entities }` mapping (as produced by
+/// [`serialize_cell`]) into `coord`. Used by the streaming system to bring cells
+/// back into memory once they re-enter render distance.
+pub fn load_cell(world: &mut World, coord: CellCoord, value: &serde_yaml::Value) -> Result<()> {
+    let (name, entities) = match value {
+        serde_yaml::Value::Mapping(_) => (
+            value.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            value.get("entities").and_then(|v| v.as_sequence()),
+        ),
+        _ => ("", value.as_sequence()),
+    };
+    if !name.is_empty() {
+        world.worldspace_mut().set_cell_name(coord, name);
+    }
+    if let Some(entities) = entities {
+        for entity_value in entities {
+            load_entity(world, entity_value, None, coord)?;
+        }
+    }
+    Ok(())
+}
+
+/// Saves the active worldspace to a single YAML file
+pub fn save_worldspace(world: &World, name: &str, namespace: &str, path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut cells = serde_yaml::Mapping::new();
+    let cell_coords: Vec<CellCoord> = world.worldspace().loaded_cell_coords();
+    for coord in cell_coords {
+        let cell = match world.worldspace().get_cell(coord) {
+            Some(c) => c,
+            None => continue,
+        };
+        let root_ids = cell.get_root_ids();
+        let cell_name = cell.name.clone();
+        let cell_coord = cell.coord;
+        let mut entities = serde_yaml::Sequence::new();
+        for id in root_ids {
+            if let Some(entity_value) = serialize_entity(world, id) {
+                entities.push(entity_value);
+            }
+        }
+        // Persist a cell if it has serialized entities or a user-assigned name.
+        if entities.is_empty() && cell_name.is_empty() {
+            continue;
+        }
+        let mut cell_map = serde_yaml::Mapping::new();
+        cell_map.insert("name".into(), cell_name.into());
+        cell_map.insert("entities".into(), serde_yaml::Value::Sequence(entities));
+        cells.insert(
+            coord_key(cell_coord).into(),
+            serde_yaml::Value::Mapping(cell_map),
+        );
+    }
+
+    // Include cells that have been streamed out of memory but still belong to this
+    // worldspace, so unloaded regions are not lost on save.
+    if let Ok(streaming) = world.get_resource::<WorldspaceStreaming>() {
+        for (coord, value) in &streaming.source {
+            let key: serde_yaml::Value = coord_key(*coord).into();
+            if cells.contains_key(&key) {
+                continue; // a currently-loaded cell already covers this coord
+            }
+            let has_entities = value
+                .get("entities")
+                .and_then(|v| v.as_sequence())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            let has_name = value
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|n| !n.is_empty())
+                .unwrap_or(false);
+            if has_entities || has_name {
+                cells.insert(key, value.clone());
+            }
+        }
+    }
+
+    let mut doc = serde_yaml::Mapping::new();
+    doc.insert("name".into(), name.into());
+    doc.insert("namespace".into(), namespace.into());
+    doc.insert("class".into(), "worldspace".into());
+    doc.insert("is_interior".into(), world.worldspace().is_interior.into());
+    doc.insert("cells".into(), serde_yaml::Value::Mapping(cells));
+
+    let yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(doc))?;
+    std::fs::write(path, yaml)?;
+
+    Ok(())
+}
+
+fn populate_entity(world: &mut World, id: EntityId, value: &serde_yaml::Value) {
+    let name = value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Entity");
+    world.set_name(id, name);
+
+    if let Some(components) = value.get("components").and_then(|v| v.as_sequence()) {
+        for comp_value in components {
+            let type_name = comp_value
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Some(reg) = get_component_registration(type_name) {
+                let mut component = (reg.create)();
+                let _ = (reg.deserialize)(&mut component, comp_value);
+                (reg.add_to_world)(world, id, component);
+            }
+        }
+    }
+
+    if let Some(tags) = value.get("tags").and_then(|v| v.as_sequence()) {
+        for tag_value in tags {
+            if let Some(tag_name) = tag_value.as_str() {
+                if let Some(reg) = get_tag_registration(tag_name) {
+                    (reg.add_to_world)(world, id);
+                }
+            }
+        }
+    }
+}
+
+/// Loads an entity, and its children, into `cell_coord`,
+/// Root entities are placed directly in the given cell so the on-disk layout is preserved exactly
+/// Children follow their parent's cell
+fn load_entity(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    parent_id: Option<EntityId>,
+    cell_coord: CellCoord,
+) -> Result<()> {
+    let entity_id = world.spawn_in_cell(cell_coord).id();
+    populate_entity(world, entity_id, value);
+
+    if let Some(pid) = parent_id {
+        world.set_parent(entity_id, Some(pid))?;
+    }
+
+    if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
+        for child_value in children {
+            load_entity(world, child_value, Some(entity_id), cell_coord)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn load_worldspace(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    keep_tags: &[&str],
+) -> Result<()> {
+    let root_ids = world.get_root_ids();
+
+    // Resolve keep_tags names → TypeIds once before the loop.
+    let keep_type_ids: Vec<std::any::TypeId> = keep_tags
+        .iter()
+        .filter_map(|name| get_tag_registration(name))
+        .map(|reg| (reg.type_id)())
+        .collect();
+
+    for id in root_ids {
+        let entity_tag_ids = world.worldspace().get_entity_tag_type_ids(id);
+        let should_keep = keep_type_ids
+            .iter()
+            .any(|keep_id| entity_tag_ids.contains(keep_id));
+
+        if !should_keep {
+            world.despawn(id);
+        }
+    }
+
+    if let Some(v) = value.get("is_interior").and_then(|v| v.as_bool()) {
+        world.worldspace_mut().is_interior = v;
+    }
+
+    if let Some(cells) = value.get("cells").and_then(|v| v.as_mapping()) {
+        for (coord_value, cell_value) in cells {
+            let Some(coord) = coord_value.as_str().and_then(parse_coord_key) else {
+                continue;
+            };
+
+            // New format: { name, entities }. Legacy: a bare entities sequence.
+            let (name, entities) = match cell_value {
+                serde_yaml::Value::Mapping(_) => (
+                    cell_value
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                    cell_value.get("entities").and_then(|v| v.as_sequence()),
+                ),
+                _ => ("", cell_value.as_sequence()),
+            };
+
+            if !name.is_empty() {
+                world.worldspace_mut().set_cell_name(coord, name);
+            }
+            if let Some(entities) = entities {
+                for entity_value in entities {
+                    load_entity(world, entity_value, None, coord)?;
+                }
+            }
+        }
+    } else if let Some(entities) = value.get("entities").and_then(|v| v.as_sequence()) {
+        // Legacy flat scene format: place each entity by its transform position.
+        for entity_value in entities {
+            load_legacy_entity(world, entity_value, None)?;
+        }
+    }
+
+    // Snapshot every loaded cell so the streaming system can unload far-away cells
+    // and rebuild them when they re-enter render distance. Preserve any existing
+    // render-distance configuration across worldspace switches.
+    let mut source: HashMap<CellCoord, serde_yaml::Value> = HashMap::new();
+    for coord in world.worldspace().loaded_cell_coords() {
+        if let Some(snapshot) = serialize_cell(world, coord) {
+            source.insert(coord, snapshot);
+        }
+    }
+    let mut streaming = world
+        .get_resource::<WorldspaceStreaming>()
+        .cloned()
+        .unwrap_or_default();
+    // Every snapshotted cell is materialized in the world right now, so mark them
+    // all as streamed-in; the streaming system unloads the far ones from here.
+    streaming.loaded = source.keys().copied().collect();
+    streaming.source = source;
+    world.insert_resource(streaming);
+
+    Ok(())
+}
+
+/// Legacy loader for the old flat `entities` scene format. Root entities are placed
+/// in cell (0,0,0) by default (or the position-inferred cell for root entities).
+fn load_legacy_entity(
+    world: &mut World,
+    value: &serde_yaml::Value,
+    parent_id: Option<EntityId>,
+) -> Result<()> {
+    let entity_id = world.spawn().id();
+    populate_entity(world, entity_id, value);
+
+    if let Some(pid) = parent_id {
+        world.set_parent(entity_id, Some(pid))?;
+    }
+
+    if let Some(children) = value.get("children").and_then(|v| v.as_sequence()) {
+        for child_value in children {
+            load_legacy_entity(world, child_value, Some(entity_id))?;
+        }
+    }
+
+    Ok(())
+}
+

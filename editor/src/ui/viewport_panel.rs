@@ -2,8 +2,8 @@ use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
     egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
-    objects::{
-        cell::ObjectId, components::transform::Transform, resources::input_manager::InputManager,
+    ecs::{
+        cell::EntityId, components::transform::Transform, resources::input_manager::InputManager,
         world::World,
     },
     physics::collider::Collider,
@@ -24,7 +24,7 @@ use apostasy_macros::Resource;
 
 #[derive(Resource, Default, Clone)]
 pub struct ViewportContextMenu {
-    pub hit_obj: Option<ObjectId>,
+    pub hit_entity: Option<EntityId>,
 }
 
 #[derive(Resource, Clone)]
@@ -46,8 +46,8 @@ impl Default for ViewportInfo {
 
 use super::EditorStyle;
 use crate::{
-    objects::editor_camera::EditorCameraSettings,
-    systems::object_focus::IsObjectFocused,
+    ecs::editor_camera::EditorCameraSettings,
+    systems::entity_focus::IsEntityFocused,
     terrain::TerrainToolState,
     ui::{
         cell_panel::CellSearchState, gizmo::GizmoMode, inspector_panel::InspectorPanelState,
@@ -97,7 +97,10 @@ impl EditorGraphics {
     }
 }
 
-#[update(mode = "editor")]
+// Runs before `editor_raycasting` (priority 0) so the gizmo's `consuming` flag is
+// computed for the current frame before the selection raycast reads it. This gives
+// gizmo handles click priority over the colliders behind them.
+#[update(mode = "editor", priority = 1)]
 pub fn viewport(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportInfo>() {
         world.insert_resource(ViewportInfo::default());
@@ -154,12 +157,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
     if !world.has_resource::<ViewportContextMenu>() {
         world.insert_resource(ViewportContextMenu::default());
     }
-    let ctx_obj_id: Option<ObjectId> = world
+    let ctx_obj_id: Option<EntityId> = world
         .get_resource::<ViewportContextMenu>()
         .ok()
-        .and_then(|r| r.hit_obj);
+        .and_then(|r| r.hit_entity);
     let ctx_obj_name: Option<String> =
-        ctx_obj_id.and_then(|id| world.get_object(id).map(|o| o.name.clone()));
+        ctx_obj_id.and_then(|id| world.get_name(id).map(|n| n.to_string()));
 
     let mut pending_focus = false;
     let mut pending_inspect = false;
@@ -177,7 +180,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .cloned()
         .unwrap_or_default();
     let gizmo_data: Option<(
-        ObjectId,
+        EntityId,
         Transform,
         apostasy_core::cgmath::Matrix4<f32>,
         Option<Collider>,
@@ -185,28 +188,14 @@ pub fn viewport(world: &mut World) -> Result<()> {
         let sel_id = world
             .get_resource::<CellSearchState>()
             .ok()
-            .and_then(|s| s.selected_obj);
+            .and_then(|s| s.selected_entity);
         sel_id.and_then(|id| {
-            let obj_t = world
-                .get_object(id)?
-                .get_component::<Transform>()
-                .ok()?
-                .clone();
-            let collider = world
-                .get_object(id)
-                .and_then(|o| o.get_component::<Collider>().ok().cloned());
-            let cam_t = world
-                .get_objects_with_component::<Camera>()
-                .first()?
-                .get_component::<Transform>()
-                .ok()?
-                .clone();
-            let cam_c = world
-                .get_objects_with_component::<Camera>()
-                .first()?
-                .get_component::<Camera>()
-                .ok()?
-                .clone();
+            let obj_t = world.get_component::<Transform>(id)?.clone();
+            let collider = world.get_component::<Collider>(id).cloned();
+            let cam_ids = world.get_entities_with_component::<Camera>();
+            let first_cam = *cam_ids.first()?;
+            let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+            let cam_c = world.get_component::<Camera>(first_cam)?.clone();
             let aspect = world
                 .get_resource::<ViewportSize>()
                 .map(|v| v.logical_width / v.logical_height)
@@ -231,10 +220,10 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .ok()?
             .hit_pos?;
         let radius = world.get_resource::<TerrainToolState>().ok()?.brush_radius;
-        let cam_objs = world.get_objects_with_component::<Camera>();
-        let cam_obj = cam_objs.first()?;
-        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
-        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let cam_ids = world.get_entities_with_component::<Camera>();
+        let first_cam = *cam_ids.first()?;
+        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -247,12 +236,12 @@ pub fn viewport(world: &mut World) -> Result<()> {
     let light_selected_id = world
         .get_resource::<CellSearchState>()
         .ok()
-        .and_then(|s| s.selected_obj);
+        .and_then(|s| s.selected_entity);
     let light_view_proj: Option<apostasy_core::cgmath::Matrix4<f32>> = (|| {
-        let cam_objs = world.get_objects_with_component::<Camera>();
-        let cam_obj = cam_objs.first()?;
-        let cam_t = cam_obj.get_component::<Transform>().ok()?.clone();
-        let cam_c = cam_obj.get_component::<Camera>().ok()?.clone();
+        let cam_ids = world.get_entities_with_component::<Camera>();
+        let first_cam = *cam_ids.first()?;
+        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
+        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -260,20 +249,20 @@ pub fn viewport(world: &mut World) -> Result<()> {
         Some(get_perspective_projection(&cam_c, aspect) * get_view_matrix(&cam_t))
     })();
     let light_entries: Vec<(
-        ObjectId,
+        EntityId,
         Transform,
         apostasy_core::rendering::components::lighting::LightType,
         Vector3<f32>,
-    )> = world
-        .get_objects_with_component_with_ids::<Light>()
-        .into_iter()
-        .filter_map(|(id, obj)| {
-            let t = obj.get_component::<Transform>().ok()?.clone();
-            let l = obj.get_component::<Light>().ok()?;
-            Some((id, t, l.light_type, l.color))
-        })
-        .collect();
-    let mut light_clicked: Option<ObjectId> = None;
+    )> = {
+        let light_ids = world.get_entities_with_component::<Light>();
+        light_ids.into_iter().filter_map(|id| {
+            let t = world.get_component::<Transform>(id)?.clone();
+            let light_type = world.get_component::<Light>(id)?.light_type;
+            let color = world.get_component::<Light>(id)?.color;
+            Some((id, t, light_type, color))
+        }).collect()
+    };
+    let mut light_clicked: Option<EntityId> = None;
 
     {
         let viewport_hovered = world
@@ -519,27 +508,27 @@ pub fn viewport(world: &mut World) -> Result<()> {
             if ctx_obj_id.is_some() {
                 frame_resp.context_menu(|ui| {
                     ui.set_min_width(190.0);
-                    ui.weak(ctx_obj_name.as_deref().unwrap_or("Object"));
+                    ui.weak(ctx_obj_name.as_deref().unwrap_or("Entity"));
                     ui.separator();
-                    if ui.button("Teleport to Object").clicked() {
+                    if ui.button("Teleport to Entity").clicked() {
                         pending_focus = true;
                         ui.close();
                     }
-                    if ui.button("Inspect Object").clicked() {
+                    if ui.button("Inspect Entity").clicked() {
                         pending_inspect = true;
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Copy Object").clicked() {
+                    if ui.button("Copy Entity").clicked() {
                         pending_copy = true;
                         ui.close();
                     }
-                    if ui.button("Duplicate Object").clicked() {
+                    if ui.button("Duplicate Entity").clicked() {
                         pending_duplicate = true;
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Delete Object").clicked() {
+                    if ui.button("Delete Entity").clicked() {
                         pending_delete = true;
                         ui.close();
                     }
@@ -582,18 +571,16 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_focus {
         if let Some(id) = ctx_obj_id {
-            let selected_transform = world
-                .get_object(id)
-                .and_then(|o| o.get_component::<Transform>().ok())
-                .map(|t| t.clone());
-            if let Some(selected_transform) = selected_transform {
-                world.insert_resource(IsObjectFocused);
-                if let Ok(editor_camera) = world.get_object_with_tag_mut::<EditorCamera>() {
-                    if let Ok(transform) = editor_camera.get_component_mut::<Transform>() {
-                        transform.local_position = selected_transform.global_position
+            let selected_pos = world.get_component::<Transform>(id)
+                .map(|t| t.global_position);
+            if let Some(sel_pos) = selected_pos {
+                world.insert_resource(IsEntityFocused);
+                if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>() {
+                    if let Some(transform) = world.get_component_mut::<Transform>(cam_id) {
+                        transform.local_position = sel_pos
                             - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
                         transform.global_position = transform.local_position;
-                        transform.look_at(selected_transform.global_position);
+                        transform.look_at(sel_pos);
                     }
                 }
             }
@@ -603,7 +590,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
     if pending_inspect {
         if let Some(id) = ctx_obj_id {
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-                s.selected_obj = Some(id);
+                s.selected_entity = Some(id);
             }
             if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
                 s.visible = true;
@@ -613,7 +600,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if let Some(id) = light_clicked {
         if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-            s.selected_obj = Some(id);
+            s.selected_entity = Some(id);
         }
         if let Ok(s) = world.get_resource_mut::<InspectorPanelState>() {
             s.visible = true;
@@ -622,9 +609,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_copy {
         if let Some(id) = ctx_obj_id {
-            if let Some(obj) = world.get_object(id).cloned() {
+            if let Some(blob) = world.capture_entity(id) {
                 if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-                    s.copied_obj = Some(obj);
+                    s.copied_entity = Some(blob);
                 }
             }
         }
@@ -632,9 +619,9 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_duplicate {
         if let Some(id) = ctx_obj_id {
-            if let Some(obj) = world.get_object(id).cloned() {
+            if let Some(blob) = world.capture_entity(id) {
                 use crate::systems::history::EditorCommand;
-                let mut cmd = Box::new(crate::systems::history::AddObjectCmd::new(obj, None));
+                let mut cmd = Box::new(crate::systems::history::AddEntityCmd::new(blob, None));
                 cmd.execute(world).ok();
                 if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
                     h.push(cmd);
@@ -659,21 +646,17 @@ pub fn viewport(world: &mut World) -> Result<()> {
         }
     }
     if let (Some(new_t), Some((id, _, _, _))) = (gizmo_transform_out, gizmo_data) {
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                *t = new_t;
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(id) {
+            *t = new_t;
         }
     }
 
     // Record one history entry per completed gizmo drag
     if drag_just_ended {
         if let (Some(old_t), Some(id)) = (drag_start_transform, gizmo_obj_id) {
-            let new_t = world
-                .get_object(id)
-                .and_then(|obj| obj.get_component::<Transform>().ok().cloned());
+            let new_t = world.get_component::<Transform>(id).cloned();
             if let Some(new_t) = new_t {
-                let cmd = Box::new(crate::systems::history::MoveObjectCmd {
+                let cmd = Box::new(crate::systems::history::MoveEntityCmd {
                     id,
                     old_transform: old_t,
                     new_transform: new_t,
@@ -689,7 +672,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         if let Some(id) = ctx_obj_id {
             use crate::systems::history::EditorCommand;
             if let Some(mut cmd) =
-                crate::systems::history::RemoveObjectCmd::new(id, world).map(Box::new)
+                crate::systems::history::RemoveEntityCmd::new(id, world).map(Box::new)
             {
                 cmd.execute(world).ok();
                 if let Ok(h) = world.get_resource_mut::<crate::systems::history::History>() {
@@ -697,18 +680,18 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 }
             }
             if let Ok(s) = world.get_resource_mut::<CellSearchState>() {
-                if s.selected_obj == Some(id) {
-                    s.selected_obj = None;
+                if s.selected_entity == Some(id) {
+                    s.selected_entity = None;
                 }
-                if s.clicked_obj == Some(id) {
-                    s.clicked_obj = None;
+                if s.clicked_entity == Some(id) {
+                    s.clicked_entity = None;
                 }
-                if s.renaming_obj == Some(id) {
-                    s.renaming_obj = None;
+                if s.renaming_entity == Some(id) {
+                    s.renaming_entity = None;
                 }
             }
             if let Ok(s) = world.get_resource_mut::<ViewportContextMenu>() {
-                s.hit_obj = None;
+                s.hit_entity = None;
             }
         }
     }

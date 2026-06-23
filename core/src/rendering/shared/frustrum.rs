@@ -49,4 +49,4 @@ impl Frustum {
 }
 
 #[derive(Resource, Clone)]
-pub struct ObjectsDrawing(pub u32);
+pub struct EntitiesDrawing(pub u32);

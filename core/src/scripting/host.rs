@@ -2,21 +2,22 @@ use anyhow::Result;
 use cgmath::Vector3;
 use wasmtime::{Caller, Linker};
 
-use crate::objects::{
-    cell::ObjectId,
-    components::transform::Transform,
+use crate::ecs::{
+    cell::EntityId,
+    components::{get_component_registration, transform::Transform},
+    tag::get_tag_registration,
     world::World,
 };
 use crate::physics::collider::{Collider, ColliderShape};
 use crate::rendering::components::model_renderer::ModelRenderer;
-use crate::objects::systems::{DeltaTime, EngineTimer};
+use crate::ecs::systems::{DeltaTime, EngineTimer};
 
 /// Host state threaded through each wasmtime Store for the duration of one script call.
 pub struct HostState {
     /// Raw pointer to the engine World. Valid only while the script call is in progress.
     pub world: *mut World,
-    /// Per-call handle table mapping guest i32 handles to engine ObjectIds.
-    pub handles: Vec<ObjectId>,
+    /// Per-call handle table mapping guest i32 handles to engine EntityIds.
+    pub handles: Vec<EntityId>,
 }
 
 unsafe impl Send for HostState {}
@@ -27,13 +28,13 @@ impl HostState {
         Self { world, handles: Vec::new() }
     }
 
-    pub fn push_id(&mut self, id: ObjectId) -> i32 {
+    pub fn push_id(&mut self, id: EntityId) -> i32 {
         let idx = self.handles.len() as i32;
         self.handles.push(id);
         idx
     }
 
-    pub fn get_id(&self, handle: i32) -> Option<ObjectId> {
+    pub fn get_id(&self, handle: i32) -> Option<EntityId> {
         self.handles.get(handle as usize).copied()
     }
 
@@ -57,37 +58,37 @@ fn read_str(caller: &mut Caller<'_, HostState>, ptr: u32, len: u32) -> String {
 
 /// Registers all engine host functions on `linker`.
 pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
-    // Spawns an object with the given name and returns its guest handle.
+    // Spawns an entity with the given name and returns its guest handle.
     linker.func_wrap("env", "host_spawn", |mut caller: Caller<'_, HostState>, name_ptr: u32, name_len: u32| -> i32 {
         let name = read_str(&mut caller, name_ptr, name_len);
-        let id = caller.data_mut().world_mut().add_new_object();
-        if let Some(obj) = caller.data_mut().world_mut().get_object_mut(id) {
-            obj.set_name(&name);
-        }
+        let world = caller.data_mut().world_mut();
+        let id = world.spawn().id();
+        world.set_name(id, &name);
         caller.data_mut().push_id(id)
     })?;
 
-    // Adds a named component to the object at `handle`.
+    // Adds a named component to the entity at `handle`.
     linker.func_wrap("env", "host_add_component", |mut caller: Caller<'_, HostState>, handle: i32, name_ptr: u32, name_len: u32| {
         let name = read_str(&mut caller, name_ptr, name_len);
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            let _ = obj.add_component_by_name(&name);
+        if let Some(reg) = get_component_registration(&name) {
+            let component = (reg.create)();
+            (reg.add_to_world)(world, id, component);
         }
     })?;
 
-    // Adds a named tag to the object at `handle`.
+    // Adds a named tag to the entity at `handle`.
     linker.func_wrap("env", "host_add_tag", |mut caller: Caller<'_, HostState>, handle: i32, name_ptr: u32, name_len: u32| {
         let name = read_str(&mut caller, name_ptr, name_len);
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            let _ = obj.add_tag_by_name(&name);
+        if let Some(reg) = get_tag_registration(&name) {
+            (reg.add_to_world)(world, id);
         }
     })?;
 
-    // Sets Transform fields on the object at `handle`.
+    // Sets Transform fields on the entity at `handle`.
     linker.func_wrap("env", "host_set_transform", |mut caller: Caller<'_, HostState>,
         handle: i32,
         px: f32, py: f32, pz: f32,
@@ -96,12 +97,10 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
     | {
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                t.local_position = Vector3::new(px, py, pz);
-                t.local_euler_angles = Vector3::new(ex, ey, ez);
-                t.local_scale = Vector3::new(sx, sy, sz);
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(id) {
+            t.local_position = Vector3::new(px, py, pz);
+            t.local_euler_angles = Vector3::new(ex, ey, ez);
+            t.local_scale = Vector3::new(sx, sy, sz);
         }
     })?;
 
@@ -110,11 +109,9 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
         let path = read_str(&mut caller, ptr, len);
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(mr) = obj.get_component_mut::<ModelRenderer>() {
-                mr.model_path = path;
-                mr.model = None;
-            }
+        if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
+            mr.model_path = path;
+            mr.model = None;
         }
     })?;
 
@@ -123,10 +120,8 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
         let name = read_str(&mut caller, ptr, len);
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(mr) = obj.get_component_mut::<ModelRenderer>() {
-                mr.material_override = if name.is_empty() { None } else { Some(name) };
-            }
+        if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
+            mr.material_override = if name.is_empty() { None } else { Some(name) };
         }
     })?;
 
@@ -134,10 +129,8 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
     linker.func_wrap("env", "host_set_collider_cuboid", |mut caller: Caller<'_, HostState>, handle: i32, sx: f32, sy: f32, sz: f32| {
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(col) = obj.get_component_mut::<Collider>() {
-                col.shape = ColliderShape::Cuboid { size: Vector3::new(sx, sy, sz) };
-            }
+        if let Some(col) = world.get_component_mut::<Collider>(id) {
+            col.shape = ColliderShape::Cuboid { size: Vector3::new(sx, sy, sz) };
         }
     })?;
 
@@ -145,21 +138,17 @@ pub fn register_host_fns(linker: &mut Linker<HostState>) -> Result<()> {
     linker.func_wrap("env", "host_set_collider_sphere", |mut caller: Caller<'_, HostState>, handle: i32, radius: f32| {
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(col) = obj.get_component_mut::<Collider>() {
-                col.shape = ColliderShape::Sphere { radius };
-            }
+        if let Some(col) = world.get_component_mut::<Collider>(id) {
+            col.shape = ColliderShape::Sphere { radius };
         }
     })?;
 
-    // Moves the object at `handle` by (dx, dy, dz) in world space.
+    // Moves the entity at `handle` by (dx, dy, dz) in world space.
     linker.func_wrap("env", "host_translate", |mut caller: Caller<'_, HostState>, handle: i32, dx: f32, dy: f32, dz: f32| {
         let Some(id) = caller.data().get_id(handle) else { return };
         let world = caller.data_mut().world_mut();
-        if let Some(obj) = world.get_object_mut(id) {
-            if let Ok(t) = obj.get_component_mut::<Transform>() {
-                t.local_position += Vector3::new(dx, dy, dz);
-            }
+        if let Some(t) = world.get_component_mut::<Transform>(id) {
+            t.local_position += Vector3::new(dx, dy, dz);
         }
     })?;
 

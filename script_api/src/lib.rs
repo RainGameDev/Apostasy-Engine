@@ -25,10 +25,10 @@ unsafe extern "C" {
 
 // --- Free functions ---
 
-/// Spawns a named object in the world and returns its handle.
-pub fn spawn(name: &str) -> ObjectHandle {
+/// Spawns a named entity in the world and returns its handle.
+pub fn spawn(name: &str) -> EntityHandle {
     let handle = unsafe { host_spawn(name.as_ptr() as u32, name.len() as u32) };
-    ObjectHandle(handle)
+    EntityHandle(handle)
 }
 
 /// Prints a message to the engine log.
@@ -46,13 +46,13 @@ pub fn time() -> f32 {
     unsafe { host_time() as f32 }
 }
 
-// --- Object handle ---
+// --- Entity handle ---
 
-/// A lightweight handle to a world object returned by `spawn`.
+/// A lightweight handle to a world entity returned by `spawn`.
 #[derive(Clone, Copy)]
-pub struct ObjectHandle(i32);
+pub struct EntityHandle(i32);
 
-impl ObjectHandle {
+impl EntityHandle {
     /// Adds a component and initializes it from `value`, then returns self for chaining.
     pub fn with<T: Component>(self, value: T) -> Self {
         let name = T::NAME;
@@ -66,14 +66,14 @@ impl ObjectHandle {
         self.with(T::default())
     }
 
-    /// Adds a tag to this object, then returns self for chaining.
+    /// Adds a tag to this entity, then returns self for chaining.
     pub fn add_tag<T: Tag>(self) -> Self {
         let name = T::NAME;
         unsafe { host_add_tag(self.0, name.as_ptr() as u32, name.len() as u32) };
         self
     }
 
-    /// Moves the object by the given world-space offset.
+    /// Moves the entity by the given world-space offset.
     pub fn translate(&self, dx: f32, dy: f32, dz: f32) {
         unsafe { host_translate(self.0, dx, dy, dz) };
     }
@@ -81,7 +81,7 @@ impl ObjectHandle {
 
 // --- Traits ---
 
-/// Implemented by each mirror component type so `ObjectHandle::with` can apply it.
+/// Implemented by each mirror component type so `EntityHandle::with` can apply it.
 pub trait Component {
     const NAME: &'static str;
 
@@ -89,7 +89,7 @@ pub trait Component {
     fn apply(&self, handle: i32);
 }
 
-/// Implemented by each mirror tag type so `ObjectHandle::add_tag` can look up the name.
+/// Implemented by each mirror tag type so `EntityHandle::add_tag` can look up the name.
 pub trait Tag {
     const NAME: &'static str;
 }
@@ -279,7 +279,7 @@ impl Component for Collider {
 
 // --- Mirror tag types ---
 
-/// Marks the camera object used for rendering.
+/// Marks the camera entity used for rendering.
 pub struct ActiveCamera;
 impl Tag for ActiveCamera { const NAME: &'static str = "ActiveCamera"; }
 
@@ -291,6 +291,6 @@ impl Tag for GameCamera { const NAME: &'static str = "GameCamera"; }
 pub struct EditorCamera;
 impl Tag for EditorCamera { const NAME: &'static str = "EditorCamera"; }
 
-/// Marks a player-controlled object.
+/// Marks a player-controlled entity.
 pub struct Player;
 impl Tag for Player { const NAME: &'static str = "Player"; }

@@ -6,7 +6,7 @@ use cgmath::Vector3;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    objects::{Object, cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
+    ecs::{cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
     terrain::{
         TerrainAtlasNeedsRebuild, TerrainChunkMap, TerrainSettings,
         chunk::{NeedsTerrainRebuild, TerrainChunk, MAX_ACTIVE_LAYERS},
@@ -70,18 +70,12 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
         .map(|s| s.texture_layers.clone())
         .unwrap_or_default();
 
-    let terrain_ids: Vec<_> = world
-        .get_objects_with_component_with_ids::<TerrainChunk>()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
+    let terrain_ids = world.get_entities_with_component::<TerrainChunk>();
 
     for id in terrain_ids {
-        if let Some(obj) = world.get_object(id) {
-            if let Ok(chunk) = obj.get_component::<TerrainChunk>() {
-                let filename = cell_filename(chunk.cell_coord);
-                write_terrain_cell(chunk, &texture_layers, &dir.join(&filename))?;
-            }
+        if let Some(chunk) = world.get_component::<TerrainChunk>(id) {
+            let filename = cell_filename(chunk.cell_coord);
+            write_terrain_cell(chunk, &texture_layers, &dir.join(&filename))?;
         }
     }
 
@@ -92,7 +86,7 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Loads all `.terrain` files from `dir`, creating or updating terrain objects in `world`.
+/// Loads all `.terrain` files from `dir`, creating or updating terrain entities in `world`.
 pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
     if !dir.exists() {
         // Still try to load standalone texture list even without terrain dir.
@@ -179,25 +173,22 @@ pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
             .get_resource::<TerrainChunkMap>()
             .ok()
             .and_then(|m| m.0.get(&coord).copied())
-            .filter(|&id| world.get_object(id).is_some());
+            .filter(|&id| world.is_alive(id));
 
-        if let Some(obj_id) = existing_id {
-            if let Some(obj) = world.get_object_mut(obj_id) {
-                if let Ok(existing) = obj.get_component_mut::<TerrainChunk>() {
-                    *existing = chunk.clone();
-                }
-                obj.add_tag(NeedsTerrainRebuild);
+        if let Some(entity_id) = existing_id {
+            if let Some(existing) = world.get_component_mut::<TerrainChunk>(entity_id) {
+                *existing = chunk.clone();
             }
+            world.add_tag::<NeedsTerrainRebuild>(entity_id);
         } else {
-            let mut obj = Object::default();
-            obj.name = format!("Terrain ({},{})", coord.x, coord.z);
-            obj.add_component(chunk.clone());
-            obj.add_tag(NeedsTerrainRebuild);
-            obj.add_tag(SkipsSerilization);
+            let entity_id = world.spawn_in_cell(coord).id();
+            world.set_name(entity_id, &format!("Terrain ({},{})", coord.x, coord.z));
+            world.add_component(entity_id, chunk.clone());
+            world.add_tag::<NeedsTerrainRebuild>(entity_id);
+            world.add_tag::<SkipsSerilization>(entity_id);
 
-            let obj_id = world.add_object_to_cell(coord, obj);
             if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
-                map.0.insert(coord, obj_id);
+                map.0.insert(coord, entity_id);
             }
         }
     }

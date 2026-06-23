@@ -2,8 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use apostasy_core::noise::Perlin;
-use apostasy_core::objects::Object;
-use apostasy_core::objects::components::transform::FORWARD;
+use apostasy_core::ecs::components::transform::FORWARD;
 use apostasy_core::rand::{RngExt, rng};
 use apostasy_core::voxels::biome::{CONTINENTAL_NOISE, HUMIDITY_NOISE, NOISE, TEMPERATURE_NOISE};
 use apostasy_core::voxels::chunk::{ChunkGenQueue, GeneratedChunkData};
@@ -12,7 +11,7 @@ use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
     log,
-    objects::{components::transform::Transform, scene::ObjectId, tags::Player, world::World},
+    ecs::{cell::EntityId, components::transform::Transform, tags::Player, world::World},
     voxels::{
         VoxelTransform, biome::BiomeRegistry, chunk::Chunk, meshes::NeedsRemeshing,
         structure::StructureRegistry, voxel::VoxelRegistry,
@@ -85,15 +84,18 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         return Ok(());
     }
 
-    let player = world.get_object_with_tag::<Player>()?;
-    let player_transform = player.get_component::<Transform>()?;
-
-    let player_chunk_pos = Vector3::new(
-        (player_transform.global_position.x / 32.0).floor() as i32,
-        (player_transform.global_position.y / 32.0).floor() as i32,
-        (player_transform.global_position.z / 32.0).floor() as i32,
-    );
-    let player_forward_chunk = player_transform.global_rotation * FORWARD;
+    let player_id_pre = world.get_entity_with_tag::<Player>()?;
+    let (player_chunk_pos, player_forward_chunk) = {
+        let t = world.get_component::<Transform>(player_id_pre)
+            .ok_or_else(|| apostasy_core::anyhow::anyhow!("Player has no Transform"))?;
+        let pos = Vector3::new(
+            (t.global_position.x / 32.0).floor() as i32,
+            (t.global_position.y / 32.0).floor() as i32,
+            (t.global_position.z / 32.0).floor() as i32,
+        );
+        let fwd = t.global_rotation * FORWARD;
+        (pos, fwd)
+    };
 
     let (last_chunk_pos, load_radius, v_load_radius, lod_distances) = {
         let loader = world.get_resource_mut::<ChunkLoader>()?;
@@ -137,7 +139,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
     }
 
     // unload out of range chunks
-    let unload_ids: Vec<ObjectId> = {
+    let unload_ids: Vec<EntityId> = {
         let map = world.get_resource::<ChunkPositionMap>()?;
         map.position_to_id
             .iter()
@@ -154,11 +156,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
             .collect()
     };
     for id in unload_ids {
-        // copy the position out so the immutable borrow on obj is dropped
-        let position = world
-            .get_object(id)
-            .and_then(|obj| obj.get_component::<VoxelTransform>().ok())
-            .map(|t| t.position);
+        let position = world.get_component::<VoxelTransform>(id).map(|t| t.position);
 
         if let Some(pos) = position {
             let map = world.get_resource_mut::<ChunkPositionMap>()?;
@@ -167,7 +165,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         }
 
         world.unregister_chunk(id);
-        world.remove_object(id);
+        world.despawn(id);
     }
     world
         .get_resource_mut::<ChunkGenQueue>()?
@@ -242,13 +240,11 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
 
         if let Some(current_lod) = current_lod {
             if current_lod != lod {
-                if let Some(id) = current_id
-                    && let Some(obj) = world.get_object_mut(id)
-                {
-                    if let Ok(chunk) = obj.get_component_mut::<Chunk>() {
+                if let Some(id) = current_id {
+                    if let Some(chunk) = world.get_component_mut::<Chunk>(id) {
                         chunk.lod = lod;
                     }
-                    obj.add_tag(NeedsRemeshing);
+                    world.add_tag::<NeedsRemeshing>(id);
                 }
                 world
                     .get_resource_mut::<ChunkPositionMap>()?
@@ -286,7 +282,7 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
 
     // --- remesh neighbours of updated positions ---
     let new_pos_set: HashSet<Vector3<i32>> = new_positions.iter().cloned().collect();
-    let mut remesh_ids: Vec<ObjectId> = Vec::new();
+    let mut remesh_ids: HashSet<EntityId> = HashSet::new();
 
     {
         let map = world.get_resource::<ChunkPositionMap>()?;
@@ -296,19 +292,14 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
                 if !new_pos_set.contains(&neighbour)
                     && let Some(&id) = map.position_to_id.get(&neighbour)
                 {
-                    remesh_ids.push(id);
+                    remesh_ids.insert(id);
                 }
             }
         }
     }
 
-    remesh_ids.sort_unstable();
-    remesh_ids.dedup();
-
     for id in remesh_ids {
-        if let Some(obj) = world.get_object_mut(id) {
-            obj.add_tag(NeedsRemeshing);
-        }
+        world.add_tag::<NeedsRemeshing>(id);
     }
 
     Ok(())
@@ -344,20 +335,15 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
             .in_flight
             .remove(&data.position);
 
-        // make a new object
-        let mut object = Object::new();
-        object.set_name("Chunk".to_string());
-        object.add_component(VoxelTransform {
-            position: data.position,
-        });
-        object.add_component(Chunk {
+        let id = world.spawn().id();
+        world.set_name(id, "Chunk");
+        world.add_component(id, VoxelTransform { position: data.position });
+        world.add_component(id, Chunk {
             voxels: data.voxels,
             lod: data.lod,
             biome: data.biome,
         });
-        object.add_tag(NeedsRemeshing);
-
-        let id = world.add_object(object);
+        world.add_tag::<NeedsRemeshing>(id);
         world.register_chunk(id);
 
         // update the persistent map
@@ -371,7 +357,7 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
     // read directly from the persistent map no allocation, no scan
     let map = world.get_resource::<ChunkPositionMap>()?;
 
-    let mut remesh_ids: Vec<ObjectId> = Vec::new();
+    let mut remesh_ids: HashSet<EntityId> = HashSet::new();
 
     for pos in &added_positions {
         for offset in &NEIGHBOUR_OFFSETS {
@@ -380,18 +366,13 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
             if !added_positions.contains(&neighbour)
                 && let Some(&id) = map.position_to_id.get(&neighbour)
             {
-                remesh_ids.push(id);
+                remesh_ids.insert(id);
             }
         }
     }
 
-    remesh_ids.sort_unstable();
-    remesh_ids.dedup();
-
     for id in remesh_ids {
-        if let Some(obj) = world.get_object_mut(id) {
-            obj.add_tag(NeedsRemeshing);
-        }
+        world.add_tag::<NeedsRemeshing>(id);
     }
 
     Ok(())
@@ -400,7 +381,7 @@ pub fn receive_chunks(world: &mut World, _delta: f32) -> Result<()> {
 #[fixed_update]
 pub fn chunk_amount_update(world: &mut World, _delta: f32) -> Result<()> {
     // Update loading state with current chunk count
-    let chunk_count = world.get_objects_with_component::<Chunk>().len();
+    let chunk_count = world.get_entities_with_component::<Chunk>().len();
     if let Ok(loading_state) = world.get_resource_mut::<LoadingState>()
         && !loading_state.is_complete
     {

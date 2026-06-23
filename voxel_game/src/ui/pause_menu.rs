@@ -1,7 +1,7 @@
 use apostasy_core::{
     anyhow::Result,
     egui,
-    objects::{tags::Player, world::World},
+    ecs::{tags::Player, world::World},
     start,
     ui::ui_context::EguiContext,
     update,
@@ -89,18 +89,13 @@ pub fn hud(world: &mut World) -> Result<()> {
                 ui.add_space(6.0);
                 if ui.button("Quit Game").clicked() {
                     world.remove_resource::<HasInitGeneration>();
-                    let chunk_ids: Vec<_> = world
-                        .get_objects_with_component_with_ids::<Chunk>()
-                        .iter()
-                        .map(|(id, _)| id.clone())
-                        .collect();
-
+                    let chunk_ids = world.get_entities_with_component::<Chunk>();
                     for id in chunk_ids {
-                        world.remove_object(id);
+                        world.despawn(id);
                     }
 
-                    let player = world.get_object_with_tag_mut::<Player>().unwrap();
-                    player.add_tag(LoadingGate);
+                    let player_id = world.get_entity_with_tag::<Player>().unwrap();
+                    world.add_tag::<LoadingGate>(player_id);
                 }
 
                 // version

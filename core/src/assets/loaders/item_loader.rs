@@ -9,7 +9,7 @@ use crate::{
     assets::loader::YamlAssetLoader,
     items::{ItemDefinition, ItemId, ItemRegistry},
     log_warn,
-    objects::component::{BoxedComponent, get_component_registration},
+    ecs::component::{BoxedComponent, get_component_registration},
 };
 
 #[derive(Clone)]

@@ -1,5 +1,5 @@
 use crate::{
-    objects::world::World,
+    ecs::world::World,
     packages::{item_system_package::add_item_system_package, terrain_package::add_terrain_package, voxel_package::add_voxel_package},
 };
 

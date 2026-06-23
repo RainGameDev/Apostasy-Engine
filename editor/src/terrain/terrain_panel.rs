@@ -7,7 +7,7 @@ use apostasy_core::{
     egui::{
         self, Color32, DragValue, Margin, Pos2, RichText, ScrollArea, Slider, Vec2, Window,
     },
-    objects::world::World,
+    ecs::world::World,
     terrain::{TerrainAtlasNeedsRebuild, TerrainSettings, load_terrain_texture},
     ui::DRAG_SIZE,
     update,

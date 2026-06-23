@@ -17,7 +17,7 @@ Each binary crate has its own `Cargo.lock` and `res/` directory.
 ## Core modules (`core/src/`)
 
 - `lib.rs` — `Core` struct (winit `ApplicationHandler`), main frame loop, `init_core` / `init_core_with_mode` entry points
-- `objects/` — World, Object, Component, Tag, Resource, system registration, worldspace/scene, cells
+- `ecs/` — World, Entity, Component, Tag, Resource, system registration, worldspace/scene, cells
 - `rendering/` — `RenderingAPI` trait (backend abstraction), Vulkan impl, shared push constants, materials, frustum culling, lighting, shadow maps
 - `terrain/` — Chunk-based heightmap terrain: atlas, mesh building, paint, persistence, texture library
 - `voxels/` — 32³ voxel chunks: meshing (threaded), water mesh, texture atlas
@@ -28,41 +28,55 @@ Each binary crate has its own `Cargo.lock` and `res/` directory.
 - `states/` — `ShouldExit` and similar marker resources
 - `utils/` — Profiler, misc helpers
 
-## Object / Component / Tag / Resource system
+## Entity / Component / Tag / Resource system
 
-Everything lives in `World`. The engine is not a true ECS — it stores `Object`s, each of which holds a `Vec<BoxedComponent>` and a `Vec<BoxedTag>`.
+Everything lives in `World`. Entities are identified by `EntityId` (a stable handle embedding a `CellCoord` and a hecs `Entity`). Components and tags are stored per-entity; all mutations go through `World` methods by ID.
 
 - **Component**: data + behaviour, derive `#[derive(Component)]`. The macro enforces `Clone + Send + Sync + 'static`. You must also `impl Default`, `impl Debug`, and provide a `fn deserialize(&mut self, value: &serde_yaml::Value) -> Result<()>` method (can be a no-op stub). Registered globally via `inventory`.
-- **Tag**: zero-size marker, derive `#[derive(Tag)]`. Used to query objects (e.g. `ActiveCamera`, `EditorCamera`, `NeedsRemeshing`).
+- **Tag**: zero-size marker, derive `#[derive(Tag)]`. Used to query entities (e.g. `ActiveCamera`, `EditorCamera`, `NeedsRemeshing`).
 - **Resource**: singleton data stored on `World`, derive `#[derive(Resource)]`. The macro enforces `Clone + Send + Sync + 'static`. Access via `world.get_resource::<T>()` / `world.insert_resource(...)`.
 
 ### World query API
 
 ```rust
-// Objects by component
-world.get_objects_with_component::<T>()               // Vec<&Object>
-world.get_objects_with_component_mut::<T>()           // Vec<&mut Object>
-world.get_objects_with_component_with_ids::<T>()      // Vec<(ObjectId, &Object)>
+// Spawn / despawn
+world.spawn()                                         // EntityBuilder<'_>
+world.spawn_at_position(pos)                          // EntityBuilder<'_>
+world.spawn_in_cell(coord)                            // EntityBuilder<'_>
+world.despawn(id)
 
-// Objects by tag
-world.get_objects_with_tag::<T>()                     // Vec<&Object>
-world.get_objects_with_tag_mut::<T>()                 // Vec<&mut Object>
-world.get_objects_with_tag_with_ids::<T>()            // Vec<(ObjectId, &Object)>
-world.get_object_with_tag::<T>()                      // Result<&Object>  (first match)
-world.get_object_with_tag_mut::<T>()                  // Result<&mut Object>
+// Entities by component (returns EntityId list)
+world.get_entities_with_component::<T>()              // Vec<EntityId>
 
-// By ID
-world.get_object(id)                                  // Option<&Object>
-world.get_object_mut(id)                              // Option<&mut Object>
-world.add_object(object)                              // ObjectId
-world.add_child_object(parent_id, object)             // Result<ObjectId>
-world.remove_object(id)
+// Entities by tag
+world.get_entity_with_tag::<T>()                      // Result<EntityId>  (first match)
+world.get_entities_with_tag::<T>()                    // Vec<EntityId>
+
+// Component access by id
+world.get_component::<T>(id)                          // Option<&T>
+world.get_component_mut::<T>(id)                      // Option<&mut T>
+world.add_component(id, component)
+world.remove_component::<T>(id)
+world.has_component::<T>(id)                          // bool
+
+// Tag access by id
+world.add_tag::<T>(id)
+world.remove_tag::<T>(id)
+world.has_tag::<T>(id)                                // bool
 
 // Hierarchy
-world.get_children(id) / world.get_children_ids(id)
-world.get_parent(id) / world.get_parent_id(id)
 world.set_parent(child_id, Some(parent_id))
-world.get_all_objects()                               // Vec<(ObjectId, &Object)>
+world.detach(id)
+world.get_parent_id(id)                               // Option<EntityId>
+world.get_children_ids(id)                            // Vec<EntityId>
+world.get_ancestors(id)                               // Vec<EntityId>
+world.get_descendants(id)                             // Vec<EntityId>
+world.get_all_ids()                                   // Vec<EntityId>
+world.get_root_ids()                                  // Vec<EntityId>
+
+// Naming
+world.set_name(id, name)
+world.get_name(id)                                    // Option<&str>
 
 // Resources
 world.insert_resource(value)
@@ -74,7 +88,7 @@ world.remove_resource::<T>()
 
 ### Cells
 
-The worldspace is divided into 128-unit XZ cells (infinite in Y). `ObjectId` embeds a `CellCoord` — moving an object across a cell boundary changes its ID. Most users just call `world.add_object(object)` which places into cell (0,0,0). Use `world.add_object_to_cell(coord, object)` to place into a specific cell.
+The worldspace is divided into 128-unit XZ cells (infinite in Y). `EntityId` embeds a `CellCoord` — moving an entity across a cell boundary changes its ID. Most users just call `world.spawn()` which places into cell (0,0,0). Use `world.spawn_in_cell(coord)` to place into a specific cell.
 
 ### Exit
 
@@ -157,13 +171,13 @@ glTF files in `res/` are auto-discovered and loaded into `ModelRegistry`. Refere
 
 | Component | Location | Purpose |
 |---|---|---|
-| `Transform` | `objects/components/transform.rs` | Position/rotation/scale; local fields set manually, global fields derived each frame |
+| `Transform` | `ecs/components/transform.rs` | Position/rotation/scale; local fields set manually, global fields derived each frame |
 | `ModelRenderer` | `rendering/components/model_renderer.rs` | Renders a glTF model; set `model_path`, optionally `material_override` |
 | `Camera` | `rendering/components/camera.rs` | Perspective camera; pair with `ActiveCamera` tag |
 | `Light` | `rendering/components/lighting.rs` | `LightType::Directional`, `Point { radius }`, `Spot { length, angle }` |
 | `Collider` | `physics/collider.rs` | Shapes: `Cuboid`, `Sphere`, `Capsule`, `Cylinder`, `Mesh` |
 | `Velocity` | `physics/velocity.rs` | Linear velocity (integrated by physics system) |
-| `VoxelTransform` | `voxels/mod.rs` | Chunk-space position (in 32-unit chunks) for voxel objects |
+| `VoxelTransform` | `voxels/mod.rs` | Chunk-space position (in 32-unit chunks) for voxel entities |
 | `TerrainChunk` | `terrain/chunk.rs` | Data for a heightmap terrain chunk |
 
 ### Key tags

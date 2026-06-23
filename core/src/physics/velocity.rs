@@ -4,15 +4,15 @@ use cgmath::{InnerSpace, Quaternion, Rotation3, Vector3, Zero};
 
 use crate::{
     log,
-    objects::{
+    ecs::{
         component::Inspect, components::transform::Transform, systems::DeltaTime, tags::Player,
         world::World,
     },
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
-/// Rigid body physics state for an object.
-/// Set `mass` to `0.0` or `process` to `false` to make the object immovable.
+/// Rigid body physics state for an entity.
+/// Set `mass` to `0.0` or `process` to `false` to make the entity immovable.
 #[derive(Component, Clone, Debug)]
 pub struct Velocity {
     pub angular_velocity: Vector3<f32>,
@@ -20,7 +20,7 @@ pub struct Velocity {
     pub mass: f32,
     /// Set by the collision system each frame, `true` if resting on a surface.
     pub is_grounded: bool,
-    /// Whether physics simulation is applied to this object each frame.
+    /// Whether physics simulation is applied to this entity each frame.
     pub process: bool,
 
     pub inertia_tensor: Vector3<f32>,
@@ -99,8 +99,8 @@ impl Default for Velocity {
 }
 
 impl Velocity {
-    /// Creates a zero-mass, non-processing velocity for immovable objects.
-    pub fn static_object() -> Self {
+    /// Creates a zero-mass, non-processing velocity for immovable entities.
+    pub fn static_entity() -> Self {
         Self {
             angular_velocity: Vector3::zero(),
             linear_velocity: Vector3::zero(),
@@ -179,45 +179,51 @@ impl Velocity {
 fn velocity_process(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
 
-    for object in world.get_objects_with_component_mut::<Velocity>() {
+    let ids = world.get_entities_with_component::<Velocity>();
+    for id in ids {
         let (linear, angular, grounded) = {
-            let vel = object.get_component_mut::<Velocity>()?;
+            let vel = match world.get_component_mut::<Velocity>(id) {
+                Some(v) => v,
+                None => continue,
+            };
             if vel.mass == 0.0 || !vel.process {
                 continue;
             }
             (vel.linear_velocity, vel.angular_velocity, vel.is_grounded)
         };
 
-        let transform = object.get_component_mut::<Transform>()?;
-        transform.local_position += linear * delta;
+        if let Some(transform) = world.get_component_mut::<Transform>(id) {
+            transform.local_position += linear * delta;
 
-        if angular.magnitude2() > 0.01 {
-            let angle = angular.magnitude();
-            let axis = angular / angle;
-            let dq = Quaternion::from_axis_angle(axis, cgmath::Rad(angle * delta));
-            transform.local_rotation = (dq * transform.local_rotation).normalize();
-        }
-
-        let vel = object.get_component_mut::<Velocity>()?;
-        if grounded {
-            let tangential = Vector3::new(vel.linear_velocity.x, 0.0, vel.linear_velocity.z);
-            let speed = tangential.magnitude();
-            if speed < 0.2 {
-                vel.linear_velocity.x = 0.0;
-                vel.linear_velocity.z = 0.0;
-            } else {
-                let friction_acc = vel.mu_kinetic * 9.8;
-                let friction_delta = friction_acc * delta;
-                let new_speed = (speed - friction_delta).max(0.0);
-                let tangential_dir = tangential / speed;
-                let new_tangential = tangential_dir * new_speed;
-                vel.linear_velocity.x = new_tangential.x;
-                vel.linear_velocity.z = new_tangential.z;
+            if angular.magnitude2() > 0.01 {
+                let angle = angular.magnitude();
+                let axis = angular / angle;
+                let dq = Quaternion::from_axis_angle(axis, cgmath::Rad(angle * delta));
+                transform.local_rotation = (dq * transform.local_rotation).normalize();
             }
         }
 
-        vel.linear_velocity *= vel.linear_damping.powf(delta);
-        vel.angular_velocity *= vel.angular_damping.powf(delta);
+        if let Some(vel) = world.get_component_mut::<Velocity>(id) {
+            if grounded {
+                let tangential = Vector3::new(vel.linear_velocity.x, 0.0, vel.linear_velocity.z);
+                let speed = tangential.magnitude();
+                if speed < 0.2 {
+                    vel.linear_velocity.x = 0.0;
+                    vel.linear_velocity.z = 0.0;
+                } else {
+                    let friction_acc = vel.mu_kinetic * 9.8;
+                    let friction_delta = friction_acc * delta;
+                    let new_speed = (speed - friction_delta).max(0.0);
+                    let tangential_dir = tangential / speed;
+                    let new_tangential = tangential_dir * new_speed;
+                    vel.linear_velocity.x = new_tangential.x;
+                    vel.linear_velocity.z = new_tangential.z;
+                }
+            }
+
+            vel.linear_velocity *= vel.linear_damping.powf(delta);
+            vel.angular_velocity *= vel.angular_damping.powf(delta);
+        }
     }
 
     Ok(())
@@ -225,9 +231,9 @@ fn velocity_process(world: &mut World) -> Result<()> {
 
 // #[fixed_update]
 pub fn physics_debug(world: &mut World, _: f32) -> Result<()> {
-    let player = world.get_object_with_tag::<Player>()?;
-    let transform = player.get_component::<Transform>()?;
-    let velocity = player.get_component::<Velocity>()?;
+    let player_id = world.get_entity_with_tag::<Player>()?;
+    let transform = world.get_component::<Transform>(player_id).ok_or_else(|| anyhow::anyhow!("no transform"))?;
+    let velocity = world.get_component::<Velocity>(player_id).ok_or_else(|| anyhow::anyhow!("no velocity"))?;
 
     log!(
         "local={:.2},{:.2},{:.2} global={:.2},{:.2},{:.2} vel={:.2},{:.2},{:.2} grounded={}",

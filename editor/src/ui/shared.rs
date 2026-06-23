@@ -1,5 +1,5 @@
 use anyhow::Result;
-use apostasy_core::{egui::{self, Pos2, Vec2}, objects::world::World};
+use apostasy_core::{egui::{self, Pos2, Vec2}, ecs::world::World};
 use apostasy_macros::{Resource, late_update};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -40,12 +40,12 @@ fn default_asset_editor() -> NormalizedWindow {
 #[derive(Clone, Resource, Serialize, Debug, Deserialize)]
 pub struct WindowLayout {
     pub cell_search: NormalizedWindow,
-    pub object_window: NormalizedWindow,
+    pub entity_window: NormalizedWindow,
     pub viewport: NormalizedWindow,
     #[serde(default = "default_true")]
     pub viewport_open: bool,
     #[serde(default = "default_true")]
-    pub object_window_open: bool,
+    pub entity_window_open: bool,
     #[serde(default = "default_true")]
     pub cell_open: bool,
     #[serde(default)]
@@ -66,10 +66,10 @@ impl Default for WindowLayout {
     fn default() -> Self {
         Self {
             cell_search: NormalizedWindow { pos: [96.0, 54.0], size: [768.0, 346.0] },
-            object_window: NormalizedWindow { pos: [58.0, 65.0], size: [634.0, 518.0] },
+            entity_window: NormalizedWindow { pos: [58.0, 65.0], size: [634.0, 518.0] },
             viewport: NormalizedWindow { pos: [960.0, 54.0], size: [960.0, 540.0] },
             viewport_open: true,
-            object_window_open: true,
+            entity_window_open: true,
             cell_open: true,
             inspector_visible: false,
             scenes_panel: default_scenes_panel(),

@@ -1,5 +1,5 @@
 use apostasy_core::{
-    anyhow::Result, egui, objects::world::World, ui::ui_context::EguiContext, update,
+    anyhow::Result, egui, ecs::world::World, ui::ui_context::EguiContext, update,
 };
 
 use crate::states::HasInitGeneration;

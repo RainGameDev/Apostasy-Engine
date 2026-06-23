@@ -1,8 +1,8 @@
 use anyhow::Result;
 use apostasy_core::{
     cgmath::{SquareMatrix, Vector3, Vector4},
-    objects::{
-        cell::{CELL_SIZE, CellCoord, ObjectId, world_to_cell},
+    ecs::{
+        cell::{CELL_SIZE, CellCoord, EntityId, world_to_cell},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
         tags::skips_serilization::SkipsSerilization,
@@ -164,7 +164,7 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
         .map(|s| s.resolution)
         .unwrap_or(128);
 
-    // Ensure all affected cells have terrain objects
+    // Ensure all affected cells have terrain entities
     for &cell in &affected_cells {
         ensure_terrain_chunk(world, cell, resolution);
     }
@@ -182,10 +182,10 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
     // Apply brush to each affected chunk
     for &cell in &affected_cells {
         let chunk_map = world.get_resource::<TerrainChunkMap>()?.clone();
-        if let Some(&obj_id) = chunk_map.0.get(&cell) {
+        if let Some(&entity_id) = chunk_map.0.get(&cell) {
             apply_brush(
                 world,
-                obj_id,
+                entity_id,
                 hit_pos,
                 &state,
                 flatten_target,
@@ -204,7 +204,7 @@ pub fn terrain_input(world: &mut World) -> Result<()> {
 
 fn compute_ray(world: &World) -> Option<(Vector3<f32>, Vector3<f32>)> {
     let input = world
-        .get_resource::<apostasy_core::objects::resources::input_manager::InputManager>()
+        .get_resource::<apostasy_core::ecs::resources::input_manager::InputManager>()
         .ok()?;
     let viewport = world.get_resource::<ViewportSize>().ok()?;
 
@@ -229,10 +229,11 @@ fn compute_ray(world: &World) -> Option<(Vector3<f32>, Vector3<f32>)> {
     let ndc_x = (vx / viewport.logical_width) * 2.0 - 1.0;
     let ndc_y = (vy / viewport.logical_height) * 2.0 - 1.0;
 
-    let cam_objs = world.get_objects_with_tag::<EditorCamera>();
-    let cam_obj = cam_objs.first()?;
-    let cam_t = cam_obj.get_component::<Transform>().ok()?;
-    let cam_c = cam_obj.get_component::<Camera>().ok()?;
+    let cam_id = world.get_entity_with_tag::<EditorCamera>().ok()?;
+    let cam_t_owned = world.get_component::<Transform>(cam_id)?.clone();
+    let cam_c_owned = world.get_component::<Camera>(cam_id)?.clone();
+    let cam_t = &cam_t_owned;
+    let cam_c = &cam_c_owned;
     let aspect = viewport.aspect_logical();
 
     let proj = get_perspective_projection(cam_c, aspect);
@@ -306,17 +307,13 @@ fn sample_height_at(world: &World, pos: Vector3<f32>) -> f32 {
         Ok(m) => m,
         Err(_) => return 0.0,
     };
-    let obj_id = match chunk_map.0.get(&cell) {
+    let entity_id = match chunk_map.0.get(&cell) {
         Some(&id) => id,
         None => return 0.0,
     };
-    let obj = match world.get_object(obj_id) {
-        Some(o) => o,
+    let chunk = match world.get_component::<TerrainChunk>(entity_id) {
+        Some(c) => c,
         None => return 0.0,
-    };
-    let chunk = match obj.get_component::<TerrainChunk>() {
-        Ok(c) => c,
-        Err(_) => return 0.0,
     };
 
     let r = chunk.resolution as f32;
@@ -354,7 +351,7 @@ fn cells_in_radius(pos: Vector3<f32>, radius: f32) -> Vec<CellCoord> {
     cells
 }
 
-/// Ensures a terrain chunk object exists for `cell`. Creates it if missing.
+/// Ensures a terrain chunk entity exists for `cell`. Creates it if missing.
 fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
     let exists = world
         .get_resource::<TerrainChunkMap>()
@@ -365,14 +362,11 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
         return;
     }
 
-    let mut obj = apostasy_core::objects::Object::default();
-    obj.name = format!("Terrain ({},{})", cell.x, cell.z);
-    let chunk = TerrainChunk::new(cell, resolution);
-    obj.add_component(chunk);
-    obj.add_tag(NeedsTerrainRebuild);
-    obj.add_tag(SkipsSerilization);
-
-    let id = world.add_object(obj);
+    let id = world.spawn().id();
+    world.set_name(id, &format!("Terrain ({},{})", cell.x, cell.z));
+    world.add_component(id, TerrainChunk::new(cell, resolution));
+    world.add_tag::<NeedsTerrainRebuild>(id);
+    world.add_tag::<SkipsSerilization>(id);
     if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
         map.0.insert(cell, id);
     }
@@ -382,7 +376,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
 }
 
 /// Copies neighbor edge heights into a freshly created chunk's border vertices.
-fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: ObjectId, resolution: u32) {
+fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: EntityId, resolution: u32) {
     let r = resolution as usize;
     let side = r + 1;
 
@@ -392,42 +386,28 @@ fn init_chunk_borders(world: &mut World, cell: CellCoord, new_id: ObjectId, reso
     };
 
     // Each block collects owned Vec<f32> — world borrow ends before the next block.
-    let left_col: Option<Vec<f32>> = {
-        chunk_map
-            .0
-            .get(&Vector3::new(cell.x - 1, 0, cell.z))
-            .and_then(|&nid| world.get_object(nid))
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-            .map(|c| (0..side).map(|z| c.heights[r + z * side]).collect())
-    };
-    let right_col: Option<Vec<f32>> = {
-        chunk_map
-            .0
-            .get(&Vector3::new(cell.x + 1, 0, cell.z))
-            .and_then(|&nid| world.get_object(nid))
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-            .map(|c| (0..side).map(|z| c.heights[z * side]).collect())
-    };
-    let top_row: Option<Vec<f32>> = {
-        chunk_map
-            .0
-            .get(&Vector3::new(cell.x, 0, cell.z - 1))
-            .and_then(|&nid| world.get_object(nid))
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-            .map(|c| (0..side).map(|x| c.heights[x + r * side]).collect())
-    };
-    let bottom_row: Option<Vec<f32>> = {
-        chunk_map
-            .0
-            .get(&Vector3::new(cell.x, 0, cell.z + 1))
-            .and_then(|&nid| world.get_object(nid))
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-            .map(|c| (0..side).map(|x| c.heights[x]).collect())
-    };
+    let left_col: Option<Vec<f32>> = chunk_map
+        .0
+        .get(&Vector3::new(cell.x - 1, 0, cell.z))
+        .and_then(|&nid| world.get_component::<TerrainChunk>(nid))
+        .map(|c| (0..side).map(|z| c.heights[r + z * side]).collect());
+    let right_col: Option<Vec<f32>> = chunk_map
+        .0
+        .get(&Vector3::new(cell.x + 1, 0, cell.z))
+        .and_then(|&nid| world.get_component::<TerrainChunk>(nid))
+        .map(|c| (0..side).map(|z| c.heights[z * side]).collect());
+    let top_row: Option<Vec<f32>> = chunk_map
+        .0
+        .get(&Vector3::new(cell.x, 0, cell.z - 1))
+        .and_then(|&nid| world.get_component::<TerrainChunk>(nid))
+        .map(|c| (0..side).map(|x| c.heights[x + r * side]).collect());
+    let bottom_row: Option<Vec<f32>> = chunk_map
+        .0
+        .get(&Vector3::new(cell.x, 0, cell.z + 1))
+        .and_then(|&nid| world.get_component::<TerrainChunk>(nid))
+        .map(|c| (0..side).map(|x| c.heights[x]).collect());
 
-    if let Some(obj) = world.get_object_mut(new_id)
-        && let Ok(chunk) = obj.get_component_mut::<TerrainChunk>()
-    {
+    if let Some(chunk) = world.get_component_mut::<TerrainChunk>(new_id) {
         if let Some(col) = left_col {
             for z in 0..side {
                 chunk.heights[z * side] = col[z];
@@ -489,43 +469,30 @@ fn stitch_x_border(
     };
 
     let avg: Vec<f32> = {
-        let l_col: Vec<f32> = match world
-            .get_object(left_id)
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        {
+        let l_col: Vec<f32> = match world.get_component::<TerrainChunk>(left_id) {
             Some(c) => (0..side).map(|z| c.heights[r + z * side]).collect(),
             None => return,
         };
-        let r_col: Vec<f32> = match world
-            .get_object(right_id)
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        {
+        let r_col: Vec<f32> = match world.get_component::<TerrainChunk>(right_id) {
             Some(c) => (0..side).map(|z| c.heights[z * side]).collect(),
             None => return,
         };
-        l_col
-            .iter()
-            .zip(&r_col)
-            .map(|(a, b)| (a + b) * 0.5)
-            .collect()
+        l_col.iter().zip(&r_col).map(|(a, b)| (a + b) * 0.5).collect()
     };
 
-    if let Some(obj) = world.get_object_mut(left_id) {
-        if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-            for z in 0..side {
-                chunk.heights[r + z * side] = avg[z];
-            }
+    if let Some(chunk) = world.get_component_mut::<TerrainChunk>(left_id) {
+        for z in 0..side {
+            chunk.heights[r + z * side] = avg[z];
         }
-        obj.add_tag(NeedsTerrainRebuild);
     }
-    if let Some(obj) = world.get_object_mut(right_id) {
-        if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-            for z in 0..side {
-                chunk.heights[z * side] = avg[z];
-            }
+    world.add_tag::<NeedsTerrainRebuild>(left_id);
+
+    if let Some(chunk) = world.get_component_mut::<TerrainChunk>(right_id) {
+        for z in 0..side {
+            chunk.heights[z * side] = avg[z];
         }
-        obj.add_tag(NeedsTerrainRebuild);
     }
+    world.add_tag::<NeedsTerrainRebuild>(right_id);
 }
 
 fn stitch_z_border(
@@ -543,43 +510,30 @@ fn stitch_z_border(
     };
 
     let avg: Vec<f32> = {
-        let t_row: Vec<f32> = match world
-            .get_object(top_id)
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        {
+        let t_row: Vec<f32> = match world.get_component::<TerrainChunk>(top_id) {
             Some(c) => (0..side).map(|x| c.heights[x + r * side]).collect(),
             None => return,
         };
-        let b_row: Vec<f32> = match world
-            .get_object(bot_id)
-            .and_then(|o| o.get_component::<TerrainChunk>().ok())
-        {
+        let b_row: Vec<f32> = match world.get_component::<TerrainChunk>(bot_id) {
             Some(c) => (0..side).map(|x| c.heights[x]).collect(),
             None => return,
         };
-        t_row
-            .iter()
-            .zip(&b_row)
-            .map(|(a, b)| (a + b) * 0.5)
-            .collect()
+        t_row.iter().zip(&b_row).map(|(a, b)| (a + b) * 0.5).collect()
     };
 
-    if let Some(obj) = world.get_object_mut(top_id) {
-        if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-            for x in 0..side {
-                chunk.heights[x + r * side] = avg[x];
-            }
+    if let Some(chunk) = world.get_component_mut::<TerrainChunk>(top_id) {
+        for x in 0..side {
+            chunk.heights[x + r * side] = avg[x];
         }
-        obj.add_tag(NeedsTerrainRebuild);
     }
-    if let Some(obj) = world.get_object_mut(bot_id) {
-        if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-            for x in 0..side {
-                chunk.heights[x] = avg[x];
-            }
+    world.add_tag::<NeedsTerrainRebuild>(top_id);
+
+    if let Some(chunk) = world.get_component_mut::<TerrainChunk>(bot_id) {
+        for x in 0..side {
+            chunk.heights[x] = avg[x];
         }
-        obj.add_tag(NeedsTerrainRebuild);
     }
+    world.add_tag::<NeedsTerrainRebuild>(bot_id);
 }
 
 /// Fixes the single corner vertex shared by up to 4 chunks after border stitching.
@@ -602,11 +556,10 @@ fn stitch_corners(
         let corner_idx = r + r * side;
 
         // Read phase: collect (id, index, height) for all present chunks
-        let mut entries: Vec<(ObjectId, usize, f32)> = Vec::with_capacity(4);
+        let mut entries: Vec<(EntityId, usize, f32)> = Vec::with_capacity(4);
         if let Some(&id) = chunk_map.0.get(&cell)
             && let Some(h) = world
-                .get_object(id)
-                .and_then(|o| o.get_component::<TerrainChunk>().ok())
+                .get_component::<TerrainChunk>(id)
                 .map(|c| c.heights[corner_idx])
         {
             entries.push((id, corner_idx, h));
@@ -614,8 +567,7 @@ fn stitch_corners(
         for &(nc, idx) in &neighbor_slots {
             if let Some(&id) = chunk_map.0.get(&nc)
                 && let Some(h) = world
-                    .get_object(id)
-                    .and_then(|o| o.get_component::<TerrainChunk>().ok())
+                    .get_component::<TerrainChunk>(id)
                     .map(|c| c.heights[idx])
             {
                 entries.push((id, idx, h));
@@ -629,19 +581,17 @@ fn stitch_corners(
 
         // Write phase
         for (id, idx, _) in entries {
-            if let Some(obj) = world.get_object_mut(id) {
-                if let Ok(chunk) = obj.get_component_mut::<TerrainChunk>() {
-                    chunk.heights[idx] = avg;
-                }
-                obj.add_tag(NeedsTerrainRebuild);
+            if let Some(chunk) = world.get_component_mut::<TerrainChunk>(id) {
+                chunk.heights[idx] = avg;
             }
+            world.add_tag::<NeedsTerrainRebuild>(id);
         }
     }
 }
 
 fn apply_brush(
     world: &mut World,
-    obj_id: ObjectId,
+    entity_id: EntityId,
     hit_pos: Vector3<f32>,
     state: &TerrainToolState,
     flatten_target: Option<f32>,
@@ -649,13 +599,9 @@ fn apply_brush(
     shift_pressed: bool,
     right_click_pressed: bool,
 ) {
-    let obj = match world.get_object_mut(obj_id) {
-        Some(o) => o,
+    let chunk = match world.get_component_mut::<TerrainChunk>(entity_id) {
+        Some(c) => c,
         None => return,
-    };
-    let chunk = match obj.get_component_mut::<TerrainChunk>() {
-        Ok(c) => c,
-        Err(_) => return,
     };
 
     let r = resolution as usize;
@@ -748,9 +694,7 @@ fn apply_brush(
     }
 
     // Mark dirty
-    if let Some(obj) = world.get_object_mut(obj_id) {
-        obj.add_tag(NeedsTerrainRebuild);
-    }
+    world.add_tag::<NeedsTerrainRebuild>(entity_id);
 }
 
 fn gaussian_weight(dist: f32, radius: f32) -> f32 {

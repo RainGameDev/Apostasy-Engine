@@ -7,8 +7,8 @@ use apostasy_core::{
         container::{Container, ContainerItem},
     },
     log, log_error,
-    objects::{
-        resources::input_manager::InputManager, scene::ObjectId, tags::Player, world::World,
+    ecs::{
+        cell::EntityId, resources::input_manager::InputManager, tags::Player, world::World,
     },
     utils::flatten::flatten,
     voxels::{
@@ -55,15 +55,14 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
         let registry = world.get_resource::<VoxelRegistry>()?.clone();
 
         // find the voxel id at the hit position
-        let voxel_id = world
-            .get_objects_with_component::<VoxelTransform>()
-            .iter()
-            .find_map(|obj| {
-                let t = obj.get_component::<VoxelTransform>().ok()?;
+        let voxel_id = {
+            let chunk_ids = world.get_entities_with_component::<VoxelTransform>();
+            chunk_ids.into_iter().find_map(|id| {
+                let t = world.get_component::<VoxelTransform>(id)?;
                 if t.position != raycast_hit.chunk_pos {
                     return None;
                 }
-                let chunk = obj.get_component::<Chunk>().ok()?;
+                let chunk = world.get_component::<Chunk>(id)?;
                 Some(
                     chunk.voxels[flatten(
                         raycast_hit.local_pos.x as u32,
@@ -72,7 +71,8 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
                         32,
                     )],
                 )
-            });
+            })
+        };
 
         let Some(voxel_id) = voxel_id else {
             world.remove_resource::<RaycastHit>();
@@ -106,16 +106,10 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
             if let Ok(drops) = def.get_component::<Drops>() {
                 if let Ok(item_registry) = world.get_resource::<ItemRegistry>() {
                     if let Some(_) = item_registry.name_to_id.get(&drops.0) {
-                        let player_id = world
-                            .get_objects_with_tag_with_ids::<Player>()
-                            .first()
-                            .map(|o| o.0);
+                        let player_id = world.get_entity_with_tag::<Player>().ok();
 
                         if let Some(pid) = player_id {
-                            let player = world.get_object_mut(pid).unwrap();
-
-                            if let Ok(container) = player.get_component_mut::<Container>() {
-                                // check if item already exists in container
+                            if let Some(container) = world.get_component_mut::<Container>(pid) {
                                 if let Some(existing) =
                                     container.items.iter_mut().find(|i| i.item == drops.0)
                                 {
@@ -156,27 +150,27 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
                 .remove(&hit_world_pos);
 
             // find and update the chunk
-            let mut chunks_to_update: Vec<ObjectId> = Vec::new();
-            for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
-                if let Ok(t) = obj.get_component::<VoxelTransform>() {
-                    if t.position == raycast_hit.chunk_pos {
-                        chunks_to_update.push(id);
-                    }
-                }
-            }
+            let chunks_to_update: Vec<EntityId> = {
+                let all_ids = world.get_entities_with_component::<VoxelTransform>();
+                all_ids.into_iter().filter(|&id| {
+                    world.get_component::<VoxelTransform>(id)
+                        .map(|t| t.position == raycast_hit.chunk_pos)
+                        .unwrap_or(false)
+                }).collect()
+            };
 
             world.remove_resource::<RaycastHit>();
             for id in chunks_to_update {
-                let obj = world.get_object_mut(id).unwrap();
-                obj.get_component_mut::<Chunk>()?.set(
-                    raycast_hit.local_pos.x as u32,
-                    raycast_hit.local_pos.y as u32,
-                    raycast_hit.local_pos.z as u32,
-                    Voxel { id: 0 },
-                );
-                // Mark with priority tag for voxel-breaking updates
-                obj.add_tag(NeedsRemeshing);
-                obj.add_tag(VoxelBreakRemesh);
+                if let Some(chunk) = world.get_component_mut::<Chunk>(id) {
+                    chunk.set(
+                        raycast_hit.local_pos.x as u32,
+                        raycast_hit.local_pos.y as u32,
+                        raycast_hit.local_pos.z as u32,
+                        Voxel { id: 0 },
+                    );
+                }
+                world.add_tag::<NeedsRemeshing>(id);
+                world.add_tag::<VoxelBreakRemesh>(id);
             }
 
             // Check if voxel is on chunk edge and mark neighbors for remeshing
@@ -212,16 +206,15 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
 
                 for offset in neighbor_offsets {
                     let neighbor_pos = raycast_hit.chunk_pos + offset;
-                    // Find and mark neighbor chunks for remeshing
-                    for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
-                        if let Ok(t) = obj.get_component::<VoxelTransform>() {
-                            if t.position == neighbor_pos {
-                                if let Some(obj) = world.get_object_mut(id) {
-                                    obj.add_tag(NeedsRemeshing);
-                                    obj.add_tag(VoxelBreakRemesh);
-                                }
-                                break;
-                            }
+                    let all_ids = world.get_entities_with_component::<VoxelTransform>();
+                    for id in all_ids {
+                        if world.get_component::<VoxelTransform>(id)
+                            .map(|t| t.position == neighbor_pos)
+                            .unwrap_or(false)
+                        {
+                            world.add_tag::<NeedsRemeshing>(id);
+                            world.add_tag::<VoxelBreakRemesh>(id);
+                            break;
                         }
                     }
                 }
@@ -263,14 +256,14 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
         )
     };
 
-    let mut chunks_to_update: Vec<ObjectId> = Vec::new();
-    for (id, obj) in world.get_objects_with_component_with_ids::<VoxelTransform>() {
-        if let Ok(t) = obj.get_component::<VoxelTransform>() {
-            if t.position == target_chunk_pos {
-                chunks_to_update.push(id);
-            }
-        }
-    }
+    let chunks_to_update: Vec<EntityId> = {
+        let all_ids = world.get_entities_with_component::<VoxelTransform>();
+        all_ids.into_iter().filter(|&id| {
+            world.get_component::<VoxelTransform>(id)
+                .map(|t| t.position == target_chunk_pos)
+                .unwrap_or(false)
+        }).collect()
+    };
 
     let world_pos = Vector3::new(
         target_local_pos.x * target_chunk_pos.x,
@@ -285,24 +278,24 @@ pub fn check_voxel_raycast(world: &mut World, _delta: f32) -> Result<()> {
             .unwrap()
             .has_component::<IsSolid>();
         for id in chunks_to_update {
-            let obj = world.get_object_mut(id).unwrap();
-            if target_voxel_solid {
-                obj.get_component_mut::<Chunk>()?.set(
-                    target_local_pos.x as u32,
-                    target_local_pos.y as u32,
-                    target_local_pos.z as u32,
-                    Voxel { id: set_to },
-                );
-            } else {
-                obj.get_component_mut::<Chunk>()?.set_if_empty(
-                    target_local_pos.x as u32,
-                    target_local_pos.y as u32,
-                    target_local_pos.z as u32,
-                    Voxel { id: set_to },
-                );
+            if let Some(chunk) = world.get_component_mut::<Chunk>(id) {
+                if target_voxel_solid {
+                    chunk.set(
+                        target_local_pos.x as u32,
+                        target_local_pos.y as u32,
+                        target_local_pos.z as u32,
+                        Voxel { id: set_to },
+                    );
+                } else {
+                    chunk.set_if_empty(
+                        target_local_pos.x as u32,
+                        target_local_pos.y as u32,
+                        target_local_pos.z as u32,
+                        Voxel { id: set_to },
+                    );
+                }
             }
-
-            obj.add_tag(NeedsRemeshing);
+            world.add_tag::<NeedsRemeshing>(id);
             break;
         }
 

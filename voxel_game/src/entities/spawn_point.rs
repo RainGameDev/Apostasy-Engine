@@ -1,9 +1,10 @@
 use apostasy_core::{
     anyhow::Result,
     cgmath::Vector3,
-    objects::{components::transform::Transform, world::World},
+    ecs::{components::transform::Transform, world::World},
+    physics::raycast::Direction,
     update,
-    voxels::voxel_raycast::{Direction, voxel_raycast},
+    voxels::voxel_raycast::voxel_raycast,
 };
 use apostasy_macros::Tag;
 
@@ -14,17 +15,10 @@ pub struct NeedsSpawnPoint;
 
 #[update]
 pub fn find_spawn_point(world: &mut World) -> Result<()> {
-    let object_ids: Vec<_> = world
-        .get_objects_with_tag_with_ids::<NeedsSpawnPoint>()
+    let entity_ids: Vec<_> = world
+        .get_entities_with_tag::<NeedsSpawnPoint>()
         .into_iter()
-        .filter(|(id, _)| {
-            // Only process spawn points for entities that don't have the loading gate
-            world
-                .get_object(id.clone())
-                .map(|obj| !obj.has_tag::<LoadingGate>())
-                .unwrap_or(false)
-        })
-        .map(|(id, _)| id)
+        .filter(|&id| !world.has_tag::<LoadingGate>(id))
         .collect();
 
     let transform = Transform {
@@ -33,7 +27,7 @@ pub fn find_spawn_point(world: &mut World) -> Result<()> {
         ..Default::default()
     };
 
-    for id in object_ids {
+    for id in entity_ids {
         if let Some(hit) = voxel_raycast(world, &transform, 1500.0, Direction::Down) {
             let spawn = Vector3::new(
                 hit.voxel_pos.x as f32,
@@ -41,11 +35,11 @@ pub fn find_spawn_point(world: &mut World) -> Result<()> {
                 hit.voxel_pos.z as f32,
             );
 
-            let object = world.get_object_mut(id.clone()).unwrap();
-            let t = object.get_component_mut::<Transform>()?;
-            t.local_position = spawn;
-            t.global_position = spawn;
-            object.remove_tag::<NeedsSpawnPoint>();
+            if let Some(t) = world.get_component_mut::<Transform>(id) {
+                t.local_position = spawn;
+                t.global_position = spawn;
+            }
+            world.remove_tag::<NeedsSpawnPoint>(id);
         }
     }
 

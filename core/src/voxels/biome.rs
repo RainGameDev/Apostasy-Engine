@@ -2,6 +2,7 @@ use std::sync::RwLock;
 
 use anyhow::{Error, Result};
 
+use apostasy_macros::Resource;
 use hashbrown::HashMap;
 use noise::{NoiseFn, Perlin};
 
@@ -11,7 +12,7 @@ pub type BiomeId = u16;
 ///
 /// `defs` contains all available biomes, and the hash maps allow lookup by
 /// biome name or id.
-#[derive(Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug)]
 pub struct BiomeRegistry {
     pub defs: Vec<BiomeDefinition>,
     pub name_to_id: HashMap<String, BiomeId>,
