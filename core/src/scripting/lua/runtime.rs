@@ -43,8 +43,8 @@ impl LuaRuntime {
         Ok(env)
     }
 
-    /// Loads a `.lua` file, runs its top-level code in a fresh sandbox, and stores it.
-    pub fn load_script(&self, path: &Path) -> Result<()> {
+    /// Reads, sandboxes, and executes a script's top-level code, returning its env.
+    fn exec_script(&self, path: &Path) -> Result<Table> {
         let source = std::fs::read_to_string(path)?;
         let env = self.make_env()?;
         self.lua
@@ -52,14 +52,42 @@ impl LuaRuntime {
             .set_name(path.to_string_lossy().to_string())
             .set_environment(env.clone())
             .exec()?;
+        Ok(env)
+    }
+
+    /// Loads a `.lua` file, runs its top-level code in a fresh sandbox, and stores it.
+    pub fn load_script(&self, path: &Path) -> Result<()> {
+        let env = self.exec_script(path)?;
         let last_modified = path.metadata().ok().and_then(|m| m.modified().ok());
         self.scripts.lock().unwrap().push(LoadedScript {
             path: path.to_path_buf(),
             env,
             last_modified,
         });
-        tracing::info!("[lua] loaded {:?}", path);
+        crate::log!("[lua] loaded {:?}", path);
         Ok(())
+    }
+
+    /// Re-executes any script whose file changed on disk since it was last loaded.
+    /// A fresh sandbox replaces the old one, so redefined `start`/`update` take over.
+    pub fn hot_reload(&self) {
+        let mut scripts = self.scripts.lock().unwrap();
+        for s in scripts.iter_mut() {
+            let current = s.path.metadata().ok().and_then(|m| m.modified().ok());
+            if current == s.last_modified {
+                continue;
+            }
+            match self.exec_script(&s.path) {
+                Ok(env) => {
+                    s.env = env;
+                    s.last_modified = current;
+                    crate::log!("[lua] reloaded {:?}", s.path);
+                }
+                Err(e) => {
+                    crate::log_error!("[lua] reload failed for {:?}: {e}", s.path);
+                }
+            }
+        }
     }
 
     /// Calls a top-level function named `event` (e.g. "start"/"update") in every
@@ -73,7 +101,7 @@ impl LuaRuntime {
             for s in scripts.iter() {
                 if let Ok(func) = s.env.get::<Function>(event) {
                     if let Err(e) = func.call::<()>(&world_ud) {
-                        tracing::error!("[lua] {event} error in {:?}: {e}", s.path);
+                        crate::log_error!("[lua] {event} error in {:?}: {e}", s.path);
                     }
                 }
             }
@@ -81,7 +109,7 @@ impl LuaRuntime {
         });
 
         if let Err(e) = result {
-            tracing::error!("[lua] scope failed for {event}: {e}");
+            crate::log_error!("[lua] scope failed for {event}: {e}");
         }
     }
 }

@@ -2,6 +2,7 @@ use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
 
 use super::component::{LuaComponentRegistry, ScriptComponents};
+use super::query::LuaQuery;
 use crate::ecs::{World, cell::EntityId};
 
 /// An entity reference for lua.
@@ -164,6 +165,35 @@ impl UserData for WorldHandle {
                     .is_some_and(|sc| sc.has(&name)))
             },
         );
+
+        methods.add_method("query", |_, this, names: mlua::Variadic<String>| {
+            Ok(LuaQuery::new(this.world, names.into_iter().collect()))
+        });
+
+        methods.add_method(
+            "has_tag",
+            |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
+                Ok(this.world().has_tag_by_name(id.0, &name))
+            },
+        );
+
+        methods.add_method("get_entity_with_tag", |_, this, name: String| {
+            Ok(this
+                .world()
+                .get_entities_with_tag_by_name(&name)
+                .first()
+                .copied()
+                .map(EntityHandle))
+        });
+
+        methods.add_method("get_entities_with_tag", |lua, this, name: String| {
+            let ids = this.world().get_entities_with_tag_by_name(&name);
+            let t = lua.create_table()?;
+            for (i, id) in ids.into_iter().enumerate() {
+                t.set(i + 1, EntityHandle(id))?;
+            }
+            Ok(t)
+        });
 
         methods.add_method("log_warn", |_, _this, msg: String| {
             crate::log_warn!("[lua] {msg}");

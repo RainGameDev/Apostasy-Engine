@@ -1,4 +1,5 @@
 pub mod component;
+pub mod query;
 pub mod runtime;
 pub mod world_api;
 
@@ -36,6 +37,7 @@ pub fn lua_scripting_update(world: &mut World) -> Result<()> {
         return Ok(());
     }
     let runtime = world.get_resource::<LuaRuntime>()?.clone();
+    runtime.hot_reload();
     runtime.run_event(world, "update");
     Ok(())
 }
