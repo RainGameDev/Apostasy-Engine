@@ -1,8 +1,9 @@
 pub mod component;
 pub mod runtime;
+pub mod world_api;
 
 use anyhow::Result;
-use apostasy_macros::start;
+use apostasy_macros::{start, update};
 
 use self::component::LuaComponentRegistry;
 use self::runtime::{LuaRuntime, discover_lua_scripts};
@@ -24,6 +25,17 @@ pub fn lua_scripting_start(world: &mut World) -> Result<()> {
         }
     }
     world.insert_resource(LuaComponentRegistry::default());
-    world.insert_resource(runtime);
+    world.insert_resource(runtime.clone());
+    runtime.run_event(world, "start");
+    Ok(())
+}
+
+#[update(mode = "all", priority = 0)]
+pub fn lua_scripting_update(world: &mut World) -> Result<()> {
+    if !world.has_resource::<LuaRuntime>() {
+        return Ok(());
+    }
+    let runtime = world.get_resource::<LuaRuntime>()?.clone();
+    runtime.run_event(world, "update");
     Ok(())
 }

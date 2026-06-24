@@ -5,10 +5,12 @@ use std::{
     time::SystemTime,
 };
 
-use anyhow::Result;
-use mlua::{Lua, Table};
+use mlua::{Function, Lua, Result, Table};
 
-use crate::ecs::resources::Resource;
+use crate::{
+    ecs::{World, resources::Resource},
+    scripting::lua::world_api::WorldHandle,
+};
 
 /// One loaded script, it has a source, it's sandbox environment, and the file time for hot-reloading.
 pub(crate) struct LoadedScript {
@@ -34,9 +36,9 @@ impl LuaRuntime {
     }
 
     fn make_env(&self) -> Result<Table> {
-        let env = self.lua.create_table().unwrap();
-        let meta = self.lua.create_table().unwrap();
-        meta.set("__index", self.lua.globals()).unwrap();
+        let env = self.lua.create_table()?;
+        let meta = self.lua.create_table()?;
+        meta.set("__index", self.lua.globals())?;
         env.set_metatable(Some(meta));
         Ok(env)
     }
@@ -49,8 +51,7 @@ impl LuaRuntime {
             .load(&source)
             .set_name(path.to_string_lossy().to_string())
             .set_environment(env.clone())
-            .exec()
-            .unwrap();
+            .exec()?;
         let last_modified = path.metadata().ok().and_then(|m| m.modified().ok());
         self.scripts.lock().unwrap().push(LoadedScript {
             path: path.to_path_buf(),
@@ -59,6 +60,29 @@ impl LuaRuntime {
         });
         tracing::info!("[lua] loaded {:?}", path);
         Ok(())
+    }
+
+    /// Calls a top-level function named `event` (e.g. "start"/"update") in every
+    /// loaded script, passing a scoped World handle. Errors are logged, not fatal.
+    pub fn run_event(&self, world: &mut World, event: &str) {
+        let world_ptr: *mut World = world;
+        let scripts = self.scripts.lock().unwrap();
+
+        let result = self.lua.scope(|scope| {
+            let world_ud = scope.create_userdata(WorldHandle { world: world_ptr })?;
+            for s in scripts.iter() {
+                if let Ok(func) = s.env.get::<Function>(event) {
+                    if let Err(e) = func.call::<()>(&world_ud) {
+                        tracing::error!("[lua] {event} error in {:?}: {e}", s.path);
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        if let Err(e) = result {
+            tracing::error!("[lua] scope failed for {event}: {e}");
+        }
     }
 }
 
@@ -90,7 +114,7 @@ pub fn discover_lua_scripts() -> Vec<PathBuf> {
         }
         let Ok(entries) = walkdir::WalkDir::new(dir)
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()
+            .collect::<std::result::Result<Vec<_>, _>>()
         else {
             continue;
         };
