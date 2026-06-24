@@ -10,7 +10,9 @@ use serde_yaml::Value;
 
 use crate::{
     ecs::{World, resources::Resource},
-    scripting::lua::{component::LuaComponentRegistry, world_api::WorldHandle},
+    scripting::lua::{
+        component::LuaComponentRegistry, resource::LuaResources, world_api::WorldHandle,
+    },
 };
 
 /// One loaded script, it has a source, it's sandbox environment, and the file time for hot-reloading.
@@ -30,6 +32,9 @@ pub struct LuaRuntime {
     /// buffered here (no `World` exists at load time) then drained into the
     /// `LuaComponentRegistry` resource via [`apply_registrations`].
     pub(crate) pending: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Global resources declared by `register_resource(...)`, drained into
+    /// the `LuaResources` resource via [`apply_registrations`].
+    pub(crate) pending_resources: Arc<Mutex<Vec<(String, Value)>>>,
 }
 
 impl LuaRuntime {
@@ -48,22 +53,50 @@ impl LuaRuntime {
         })?;
         lua.globals().set("register_component", register)?;
 
+        // Global `register_resource(name, defaults)` — seeds global script state.
+        let pending_resources: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
+        let res_buffer = pending_resources.clone();
+        let register_res =
+            lua.create_function(move |lua, (name, defaults): (String, mlua::Value)| {
+                let value: Value = lua.from_value(defaults)?;
+                res_buffer.lock().unwrap().push((name, value));
+                Ok(())
+            })?;
+        lua.globals().set("register_resource", register_res)?;
+
         Ok(Self {
             lua,
             scripts: Arc::new(Mutex::new(Vec::new())),
             pending,
+            pending_resources,
         })
     }
 
-    /// Drains buffered `register_component` declarations into the world's registry.
+    /// Drains buffered `register_component`/`register_resource` declarations into
+    /// the world's `LuaComponentRegistry` and `LuaResources`.
     pub fn apply_registrations(&self, world: &mut World) {
-        let mut pending = self.pending.lock().unwrap();
-        if pending.is_empty() {
-            return;
+        // Component schemas: always (re)register.
+        {
+            let mut pending = self.pending.lock().unwrap();
+            if !pending.is_empty()
+                && let Ok(reg) = world.get_resource_mut::<LuaComponentRegistry>()
+            {
+                for (name, value) in pending.drain(..) {
+                    reg.register(&name, value);
+                }
+            }
         }
-        if let Ok(reg) = world.get_resource_mut::<LuaComponentRegistry>() {
-            for (name, value) in pending.drain(..) {
-                reg.register(&name, value);
+        // Resources: seed only if absent, so live values survive hot-reload.
+        {
+            let mut pending = self.pending_resources.lock().unwrap();
+            if !pending.is_empty()
+                && let Ok(res) = world.get_resource_mut::<LuaResources>()
+            {
+                for (name, value) in pending.drain(..) {
+                    if !res.has(&name) {
+                        res.set(&name, value);
+                    }
+                }
             }
         }
     }

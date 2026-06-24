@@ -3,6 +3,9 @@ use serde_yaml::Value as YamlValue;
 
 use super::component::{LuaComponentRegistry, ScriptComponents};
 use super::query::LuaQuery;
+use super::resource::LuaResources;
+use crate::ecs::resources::input_manager::InputManager;
+use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
 
 /// An entity reference for lua.
@@ -152,6 +155,92 @@ impl UserData for WorldHandle {
                     .world()
                     .get_component::<ScriptComponents>(id.0)
                     .is_some_and(|sc| sc.has(&name)))
+            },
+        );
+
+        // ---- time ----
+        methods.add_method("delta", |_, this, ()| {
+            Ok(this
+                .world()
+                .get_resource::<DeltaTime>()
+                .map(|d| d.0)
+                .unwrap_or(0.0))
+        });
+        methods.add_method("time", |_, this, ()| {
+            Ok(this
+                .world()
+                .get_resource::<EngineTimer>()
+                .map(|t| t.0)
+                .unwrap_or(0.0))
+        });
+
+        // ---- global script resources ----
+        // Note: `register_resource(name, defaults)` is a top-level global (like
+        // `register_component`), not a world method — see runtime.rs.
+        methods.add_method("remove_resource", |_, this, name: String| {
+            if let Ok(r) = this.world().get_resource_mut::<LuaResources>() {
+                r.remove(&name);
+            }
+            Ok(())
+        });
+
+        methods.add_method("has_resource", |_, this, name: String| {
+            Ok(this
+                .world()
+                .get_resource::<LuaResources>()
+                .map(|r| r.has(&name))
+                .unwrap_or(false))
+        });
+
+        methods.add_method("get_resource", |lua, this, name: String| {
+            let value = this
+                .world()
+                .get_resource::<LuaResources>()
+                .ok()
+                .and_then(|r| r.get(&name).cloned());
+            match value {
+                Some(v) => lua.to_value(&v),
+                None => Ok(mlua::Value::Nil),
+            }
+        });
+        methods.add_method(
+            "set_resource",
+            |lua, this, (name, table): (String, mlua::Value)| {
+                let value: YamlValue = lua.from_value(table)?;
+                if let Ok(r) = this.world().get_resource_mut::<LuaResources>() {
+                    r.set(&name, value);
+                }
+                Ok(())
+            },
+        );
+
+        // ---- input ----
+        methods.add_method("is_keybind_active", |_, this, name: String| {
+            Ok(this
+                .world()
+                .get_resource::<InputManager>()
+                .map(|im| im.is_keybind_active(&name))
+                .unwrap_or(false))
+        });
+        methods.add_method("is_mousebind_active", |_, this, name: String| {
+            Ok(this
+                .world()
+                .get_resource::<InputManager>()
+                .map(|im| im.is_mousebind_active(&name))
+                .unwrap_or(false))
+        });
+        methods.add_method(
+            "input_vector_2d",
+            |lua, this, (left, right, up, down): (String, String, String, String)| {
+                let v = this
+                    .world()
+                    .get_resource::<InputManager>()
+                    .map(|im| im.input_vector_2d(&left, &right, &up, &down))
+                    .unwrap_or_else(|_| cgmath::Vector2::new(0.0, 0.0));
+                let t = lua.create_table()?;
+                t.set("x", v.x)?;
+                t.set("y", v.y)?;
+                Ok(t)
             },
         );
 
