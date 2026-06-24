@@ -1,5 +1,7 @@
-use mlua::{MetaMethod, UserData, UserDataMethods, UserDataRef};
+use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
+use serde_yaml::Value as YamlValue;
 
+use super::component::{LuaComponentRegistry, ScriptComponents};
 use crate::ecs::{World, cell::EntityId};
 
 /// An entity reference for lua.
@@ -37,11 +39,6 @@ impl WorldHandle {
 
 impl UserData for WorldHandle {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("log", |_, _this, msg: String| {
-            tracing::info!("[lua] {msg}");
-            Ok(())
-        });
-
         methods.add_method("spawn", |_, this, ()| {
             let id = this.world().spawn().id();
             Ok(EntityHandle(id))
@@ -76,6 +73,98 @@ impl UserData for WorldHandle {
             },
         );
 
+        methods.add_method(
+            "register_component",
+            |lua, this, (name, defaults): (String, mlua::Value)| {
+                let value: YamlValue = lua.from_value(defaults)?;
+                if let Ok(reg) = this.world().get_resource_mut::<LuaComponentRegistry>() {
+                    reg.register(&name, value);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "add_component",
+            |lua,
+             this,
+             (id, name, overrides): (UserDataRef<EntityHandle>, String, Option<mlua::Value>)| {
+                let world = this.world();
+
+                // Start from the registered defaults (if any), else an empty table.
+                let default = world
+                    .get_resource::<LuaComponentRegistry>()
+                    .ok()
+                    .and_then(|r| r.default_for(&name).cloned())
+                    .unwrap_or(YamlValue::Mapping(Default::default()));
+
+                // Overlay any fields the caller passed.
+                let value = match overrides {
+                    Some(v) => merge_yaml(&default, &lua.from_value(v)?),
+                    None => default,
+                };
+
+                if !world.has_component::<ScriptComponents>(id.0) {
+                    world.add_component(id.0, ScriptComponents::default());
+                }
+                if let Some(sc) = world.get_component_mut::<ScriptComponents>(id.0) {
+                    sc.set(&name, value);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "get_component",
+            |lua, this, (id, name): (UserDataRef<EntityHandle>, String)| {
+                let value = this
+                    .world()
+                    .get_component::<ScriptComponents>(id.0)
+                    .and_then(|sc| sc.get(&name).cloned());
+                match value {
+                    Some(v) => lua.to_value(&v),
+                    None => Ok(mlua::Value::Nil),
+                }
+            },
+        );
+
+        methods.add_method(
+            "set_component",
+            |lua,
+             this,
+             (id, name, table): (UserDataRef<EntityHandle>, String, mlua::Value)| {
+                let value: YamlValue = lua.from_value(table)?;
+                let world = this.world();
+                if !world.has_component::<ScriptComponents>(id.0) {
+                    world.add_component(id.0, ScriptComponents::default());
+                }
+                if let Some(sc) = world.get_component_mut::<ScriptComponents>(id.0) {
+                    sc.set(&name, value);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "remove_component",
+            |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
+                if let Some(sc) = this.world().get_component_mut::<ScriptComponents>(id.0) {
+                    sc.remove(&name);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "has_component",
+            |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
+                Ok(this
+                    .world()
+                    .get_component::<ScriptComponents>(id.0)
+                    .is_some_and(|sc| sc.has(&name)))
+            },
+        );
+
         methods.add_method("log_warn", |_, _this, msg: String| {
             crate::log_warn!("[lua] {msg}");
             Ok(())
@@ -88,5 +177,20 @@ impl UserData for WorldHandle {
             crate::log!("[lua] {msg}");
             Ok(())
         });
+    }
+}
+
+/// Overlays `over`'s fields onto a clone of `base` (shallow). Lets
+/// `add_component(id, "Health", { current = 50 })` keep the registered `max`.
+fn merge_yaml(base: &YamlValue, over: &YamlValue) -> YamlValue {
+    match (base, over) {
+        (YamlValue::Mapping(b), YamlValue::Mapping(o)) => {
+            let mut m = b.clone();
+            for (k, v) in o {
+                m.insert(k.clone(), v.clone());
+            }
+            YamlValue::Mapping(m)
+        }
+        _ => over.clone(),
     }
 }
