@@ -28,9 +28,6 @@ pub(crate) struct LoadedScript {
 pub struct LuaRuntime {
     pub(crate) lua: Lua,
     pub(crate) scripts: Arc<Mutex<Vec<LoadedScript>>>,
-    /// Component schemas declared by `register_component(...)` at script top-level,
-    /// buffered here (no `World` exists at load time) then drained into the
-    /// `LuaComponentRegistry` resource via [`apply_registrations`].
     pub(crate) pending: Arc<Mutex<Vec<(String, Value)>>>,
     /// Global resources declared by `register_resource(...)`, drained into
     /// the `LuaResources` resource via [`apply_registrations`].
@@ -46,11 +43,12 @@ impl LuaRuntime {
         // editor and game mode, so the editor learns component schemas without
         // executing any gameplay logic.
         let buffer = pending.clone();
-        let register = lua.create_function(move |lua, (name, defaults): (String, mlua::Value)| {
-            let value: Value = lua.from_value(defaults)?;
-            buffer.lock().unwrap().push((name, value));
-            Ok(())
-        })?;
+        let register =
+            lua.create_function(move |lua, (name, defaults): (String, mlua::Value)| {
+                let value: Value = lua.from_value(defaults)?;
+                buffer.lock().unwrap().push((name, value));
+                Ok(())
+            })?;
         lua.globals().set("register_component", register)?;
 
         // Global `register_resource(name, defaults)` — seeds global script state.
@@ -214,6 +212,10 @@ pub fn discover_lua_scripts() -> Vec<PathBuf> {
         };
         for entry in entries {
             let path = entry.path();
+            // Skip `types/` — it holds editor-only API definition stubs, not scripts.
+            if path.components().any(|c| c.as_os_str() == "types") {
+                continue;
+            }
             if path.extension().map_or(false, |e| e == "lua") {
                 paths.push(path.to_path_buf());
             }

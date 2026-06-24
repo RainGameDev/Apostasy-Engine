@@ -1,6 +1,7 @@
 register_component("Health", { current = 100, max = 100 })
 register_component("DeathTimer", { remaining = 3.0 })
 
+---@param world World
 function start(world)
 	for i = 1, 3 do
 		local e = world:spawn()
@@ -18,4 +19,5 @@ function start(world)
 	end)
 end
 
+---@param world World
 function update(world) end
