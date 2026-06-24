@@ -75,17 +75,6 @@ impl UserData for WorldHandle {
         );
 
         methods.add_method(
-            "register_component",
-            |lua, this, (name, defaults): (String, mlua::Value)| {
-                let value: YamlValue = lua.from_value(defaults)?;
-                if let Ok(reg) = this.world().get_resource_mut::<LuaComponentRegistry>() {
-                    reg.register(&name, value);
-                }
-                Ok(())
-            },
-        );
-
-        methods.add_method(
             "add_component",
             |lua,
              this,

@@ -5,11 +5,12 @@ use std::{
     time::SystemTime,
 };
 
-use mlua::{Function, Lua, Result, Table};
+use mlua::{Function, Lua, LuaSerdeExt, Result, Table};
+use serde_yaml::Value;
 
 use crate::{
     ecs::{World, resources::Resource},
-    scripting::lua::world_api::WorldHandle,
+    scripting::lua::{component::LuaComponentRegistry, world_api::WorldHandle},
 };
 
 /// One loaded script, it has a source, it's sandbox environment, and the file time for hot-reloading.
@@ -25,14 +26,46 @@ pub(crate) struct LoadedScript {
 pub struct LuaRuntime {
     pub(crate) lua: Lua,
     pub(crate) scripts: Arc<Mutex<Vec<LoadedScript>>>,
+    /// Component schemas declared by `register_component(...)` at script top-level,
+    /// buffered here (no `World` exists at load time) then drained into the
+    /// `LuaComponentRegistry` resource via [`apply_registrations`].
+    pub(crate) pending: Arc<Mutex<Vec<(String, Value)>>>,
 }
 
 impl LuaRuntime {
     pub fn new() -> Result<Self> {
+        let lua = Lua::new();
+        let pending: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
+
+        // Global `register_component(name, defaults)` — runs at script load in BOTH
+        // editor and game mode, so the editor learns component schemas without
+        // executing any gameplay logic.
+        let buffer = pending.clone();
+        let register = lua.create_function(move |lua, (name, defaults): (String, mlua::Value)| {
+            let value: Value = lua.from_value(defaults)?;
+            buffer.lock().unwrap().push((name, value));
+            Ok(())
+        })?;
+        lua.globals().set("register_component", register)?;
+
         Ok(Self {
-            lua: Lua::new(),
+            lua,
             scripts: Arc::new(Mutex::new(Vec::new())),
+            pending,
         })
+    }
+
+    /// Drains buffered `register_component` declarations into the world's registry.
+    pub fn apply_registrations(&self, world: &mut World) {
+        let mut pending = self.pending.lock().unwrap();
+        if pending.is_empty() {
+            return;
+        }
+        if let Ok(reg) = world.get_resource_mut::<LuaComponentRegistry>() {
+            for (name, value) in pending.drain(..) {
+                reg.register(&name, value);
+            }
+        }
     }
 
     fn make_env(&self) -> Result<Table> {
