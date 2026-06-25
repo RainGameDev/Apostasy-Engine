@@ -39,3 +39,6 @@ thiserror = "2.0.18"
 walkdir = "2.5.0"
 wasmtime = "27"
 mlua = {version = "0.10", features = ["lua54", "vendored", "serialize"]}
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

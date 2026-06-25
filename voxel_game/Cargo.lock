@@ -244,6 +244,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "image",
  "inventory",
+ "libc",
  "lru",
  "mlua",
  "noise",
