@@ -23,6 +23,20 @@ local World = {}
 ---@return Entity entity
 function World:spawn() end
 
+---Spawns a new entity in the cell that contains `position` (a vec3 or
+---`{x, y, z}` table). The entity itself has no Transform until you add one.
+---@param position vec3|number[]
+---@return Entity entity
+function World:spawn_at_position(position) end
+
+---Spawns a new entity in a specific 128-unit cell, addressed by integer cell
+---coordinates (the world is divided into cells on the XZ plane, infinite in Y).
+---@param cx integer
+---@param cy integer
+---@param cz integer
+---@return Entity entity
+function World:spawn_in_cell(cx, cy, cz) end
+
 ---Despawns an entity, removing it and all of its components from the world.
 ---@param entity Entity
 function World:despawn(entity) end
@@ -93,7 +107,8 @@ function World:get_parent(entity) end
 ---@return Entity[]
 function World:get_children(entity) end
 
----Returns an array of an entity's ancestors, nearest parent first.
+---Returns an array of an entity's ancestors, ordered root first down to the
+---immediate parent (the last element is the entity's direct parent).
 ---@param entity Entity
 ---@return Entity[]
 function World:get_ancestors(entity) end
@@ -183,6 +198,36 @@ function World:has_component(entity, name) end
 ---@param ... string component names to fetch (and pass to the `for_each` callback)
 ---@return Query
 function World:query(...) end
+
+-- ---------------------------------------------------------------------------
+-- Physics
+-- ---------------------------------------------------------------------------
+
+---A single ray/collider intersection. `point` and `normal` are `[x, y, z]`
+---sequences — wrap with `vec3(...)` for arithmetic.
+---@class RaycastHit
+---@field entity Entity the entity that was struck
+---@field point number[] world-space hit point `[x, y, z]`
+---@field normal number[] surface normal at the hit `[x, y, z]`
+---@field distance number distance along the ray to the hit
+---@field face integer struck face: 0=-X 1=+X 2=-Y 3=+Y 4=-Z 5=+Z (0 for spheres/meshes)
+
+---Casts a ray against every collider in the world and returns the nearest hit
+---within `max_distance`, or `nil` if nothing was struck. `origin`/`direction`
+---accept a vec3 or `{x, y, z}` table; the direction is normalized internally.
+---Pass `ignore` to skip an entity (commonly the caster itself).
+---
+---```lua
+---local t = world:get_component(self, "Transform")
+---local hit = world:raycast(t.global_position, vec3.forward, 100, self)
+---if hit then world:log("hit " .. tostring(hit.entity) .. " at " .. hit.distance) end
+---```
+---@param origin vec3|number[]
+---@param direction vec3|number[]
+---@param max_distance number
+---@param ignore? Entity
+---@return RaycastHit|nil
+function World:raycast(origin, direction, max_distance, ignore) end
 
 -- ---------------------------------------------------------------------------
 -- Time

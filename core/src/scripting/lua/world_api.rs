@@ -1,3 +1,4 @@
+use cgmath::Vector3;
 use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
 
@@ -8,6 +9,7 @@ use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
+use crate::physics::raycast::{Ray, build_collider_snapshot, raycast_colliders_raw};
 
 /// An entity reference for lua.
 #[derive(Copy, Clone)]
@@ -48,6 +50,24 @@ impl UserData for WorldHandle {
             let id = this.world().spawn().id();
             Ok(EntityHandle(id))
         });
+
+        // Spawns into the cell containing `position` (a vec3 or `{x, y, z}` table).
+        methods.add_method("spawn_at_position", |_, this, position: mlua::Table| {
+            let id = this
+                .world()
+                .spawn_at_position(table_to_vec3(&position))
+                .id();
+            Ok(EntityHandle(id))
+        });
+
+        // Spawns into a specific 128-unit cell, addressed by integer cell coords.
+        methods.add_method(
+            "spawn_in_cell",
+            |_, this, (x, y, z): (i32, i32, i32)| {
+                let id = this.world().spawn_in_cell(Vector3::new(x, y, z)).id();
+                Ok(EntityHandle(id))
+            },
+        );
 
         methods.add_method("despawn", |_, this, id: UserDataRef<EntityHandle>| {
             this.world().despawn(id.0);
@@ -272,6 +292,44 @@ impl UserData for WorldHandle {
             Ok(LuaQuery::new(this.world, names.into_iter().collect()))
         });
 
+        // Casts a ray against all colliders, returning the nearest hit within
+        // `max_distance` as `{ entity, point, normal, distance, face }`, or nil.
+        // `origin`/`direction` are vec3s (or `{x, y, z}` tables); `ignore` is an
+        // optional entity to skip (e.g. the caster itself).
+        methods.add_method(
+            "raycast",
+            |lua,
+             this,
+             (origin, direction, max_distance, ignore): (
+                mlua::Table,
+                mlua::Table,
+                f32,
+                Option<UserDataRef<EntityHandle>>,
+            )| {
+                let ray = Ray::new(table_to_vec3(&origin), table_to_vec3(&direction));
+                let world = this.world();
+                let snapshots = build_collider_snapshot(world);
+                let hit = raycast_colliders_raw(
+                    &ray,
+                    max_distance,
+                    &snapshots,
+                    ignore.map(|i| i.0),
+                );
+                match hit {
+                    Some(h) => {
+                        let t = lua.create_table()?;
+                        t.set("entity", EntityHandle(h.entity_id))?;
+                        t.set("point", vec3_to_table(lua, h.point)?)?;
+                        t.set("normal", vec3_to_table(lua, h.normal)?)?;
+                        t.set("distance", h.distance)?;
+                        t.set("face", h.face)?;
+                        Ok(mlua::Value::Table(t))
+                    }
+                    None => Ok(mlua::Value::Nil),
+                }
+            },
+        );
+
         methods.add_method(
             "has_tag",
             |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
@@ -352,6 +410,33 @@ impl UserData for WorldHandle {
             Ok(())
         });
     }
+}
+
+/// Reads a Lua value as a `Vector3<f32>`. Accepts both the `{x, y, z}` keyed
+/// form and the `[x, y, z]` sequence form (a `vec3` from the prelude satisfies
+/// both via its metatable), defaulting any missing component to 0.
+fn table_to_vec3(t: &mlua::Table) -> Vector3<f32> {
+    let component = |key: &str, idx: i64| {
+        t.get::<f32>(key)
+            .ok()
+            .or_else(|| t.get::<f32>(idx).ok())
+            .unwrap_or(0.0)
+    };
+    Vector3::new(
+        component("x", 1),
+        component("y", 2),
+        component("z", 3),
+    )
+}
+
+/// Builds a `[x, y, z]` sequence table — the same shape components use, so the
+/// result wraps cleanly with `vec3(...)` on the Lua side.
+fn vec3_to_table(lua: &mlua::Lua, v: Vector3<f32>) -> mlua::Result<mlua::Table> {
+    let t = lua.create_table()?;
+    t.set(1, v.x)?;
+    t.set(2, v.y)?;
+    t.set(3, v.z)?;
+    Ok(t)
 }
 
 /// Builds a 1-indexed Lua array of `EntityHandle`s from a list of ids.
