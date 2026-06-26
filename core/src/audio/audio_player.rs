@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_macros::Component;
-use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Panning, Tween};
+use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Panning, PlaybackRate, Tween};
 
 use crate::audio::Audio;
 use crate::audio::sound::Sound;
@@ -111,6 +111,16 @@ impl Inspect for AudioPlayer {
                             );
                             ui.add(
                                 crate::egui::Slider::new(&mut sound.volume, -60.0_f32..=6.0_f32)
+                                    .clamping(egui::SliderClamping::Always),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [LABEL_WIDTH, row_h],
+                                crate::egui::Label::new("Pitch"),
+                            );
+                            ui.add(
+                                crate::egui::Slider::new(&mut sound.pitch, 0.1_f32..=4.0_f32)
                                     .clamping(egui::SliderClamping::Always),
                             );
                         });
@@ -288,6 +298,7 @@ impl AudioPlayer {
                 let mut map = serde_yaml::Mapping::new();
                 map.insert("path".into(), s.path.clone().into());
                 map.insert("volume".into(), (s.volume as f64).into());
+                map.insert("pitch".into(), (s.pitch as f64).into());
                 map.insert("looping".into(), s.looping.into());
                 map.insert("auto_play".into(), s.auto_play.into());
                 map.insert("spatial".into(), s.spatial.into());
@@ -316,6 +327,9 @@ impl AudioPlayer {
             }
             if let Some(v) = entry.get("volume").and_then(|v| v.as_f64()) {
                 sound.volume = v as f32;
+            }
+            if let Some(v) = entry.get("pitch").and_then(|v| v.as_f64()) {
+                sound.pitch = v as f32;
             }
             if let Some(v) = entry.get("looping").and_then(|v| v.as_bool()) {
                 sound.looping = v;
@@ -353,7 +367,8 @@ impl AudioPlayer {
             .data
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Sound at index {} has no loaded data", index))?
-            .volume(kira::Decibels(sound.volume));
+            .volume(kira::Decibels(sound.volume))
+            .playback_rate(PlaybackRate(sound.pitch as f64));
         if sound.looping {
             data = data.loop_region(..);
         }
