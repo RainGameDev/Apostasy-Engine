@@ -551,6 +551,32 @@ impl World {
         self.worldspace.remove_tag_by_name(id, name);
     }
 
+    /// Returns true if the entity has the tag identified by its registered type name.
+    pub fn has_tag_by_name(&self, id: EntityId, name: &str) -> bool {
+        if let Some(reg) = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+        {
+            let type_id = (reg.type_id)();
+            if let Some(set) = self.tag_index.get(&type_id) {
+                return set.contains(&id);
+            }
+        }
+        false
+    }
+
+    /// Returns all entities carrying the tag identified by its registered type name.
+    pub fn get_entities_with_tag_by_name(&self, name: &str) -> Vec<EntityId> {
+        if let Some(reg) = inventory::iter::<TagRegistration>()
+            .find(|r| r.type_name.to_lowercase() == name.to_lowercase())
+        {
+            let type_id = (reg.type_id)();
+            if let Some(set) = self.tag_index.get(&type_id) {
+                return set.iter().copied().collect();
+            }
+        }
+        Vec::new()
+    }
+
     // ========== Queries ==========
 
     /// Build a typed query over components and tags.

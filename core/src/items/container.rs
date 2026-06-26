@@ -35,7 +35,7 @@ impl Container {
     pub fn remove_item_index(&mut self, index: usize) {
         if let Some(item) = self.items.get_mut(index) {
             item.amount -= 1;
-            if item.amount <= 0 {
+            if item.amount == 0 {
                 self.items.remove(index);
             }
         }

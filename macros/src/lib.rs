@@ -45,6 +45,27 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                         world.add_component(id, c.clone());
                     }
                 },
+                read: |world, id| {
+                    // Bring the trait into scope so the call resolves for components
+                    // without an inherent `serialize` (falling back to the default
+                    // `None`); an inherent method still takes precedence.
+                    use apostasy_core::ecs::components::Component as _;
+                    world.get_component::<#struct_name>(id).and_then(|c| c.serialize())
+                },
+                apply: |world, id, value| {
+                    if !world.has_component::<#struct_name>(id) {
+                        world.add_component(id, <#struct_name as ::core::default::Default>::default());
+                    }
+                    if let Some(c) = world.get_component_mut::<#struct_name>(id) {
+                        let _ = c.deserialize(value);
+                    }
+                },
+                remove: |world, id| {
+                    world.remove_component::<#struct_name>(id);
+                },
+                contains: |world, id| {
+                    world.has_component::<#struct_name>(id)
+                },
             }
         }
         inventory::submit! {
@@ -61,13 +82,122 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
     output.into()
 }
 
-#[proc_macro_derive(Inspect)]
+/// Per-field options parsed from `#[inspect(...)]` attributes.
+#[derive(Default)]
+struct InspectFieldOpts {
+    skip: bool,
+    color: bool,
+    label: Option<String>,
+}
+
+fn parse_inspect_opts(attrs: &[syn::Attribute]) -> InspectFieldOpts {
+    let mut opts = InspectFieldOpts::default();
+    for attr in attrs {
+        if !attr.path().is_ident("inspect") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("skip") {
+                opts.skip = true;
+            } else if meta.path.is_ident("color") {
+                opts.color = true;
+            } else if meta.path.is_ident("label") {
+                let s: LitStr = meta.value()?.parse()?;
+                opts.label = Some(s.value());
+            }
+            Ok(())
+        });
+    }
+    opts
+}
+
+/// The last path segment ident of a type, e.g. `cgmath::Vector3<f32>` -> `"Vector3"`.
+fn type_last_ident(ty: &syn::Type) -> Option<String> {
+    if let syn::Type::Path(p) = ty {
+        p.path.segments.last().map(|s| s.ident.to_string())
+    } else {
+        None
+    }
+}
+
+/// Maps a field type to the matching `inspect_values` function name, if supported.
+fn inspect_values_fn(type_ident: &str, color: bool) -> Option<&'static str> {
+    if color {
+        return match type_ident {
+            "Vector3" => Some("color_rgb"),
+            "Vector4" => Some("color_rgba"),
+            "Color32" => Some("color32"),
+            _ => None,
+        };
+    }
+    match type_ident {
+        "f32" => Some("f32"),
+        "f64" => Some("f64"),
+        "i8" => Some("i8"),
+        "i16" => Some("i16"),
+        "i32" => Some("i32"),
+        "i64" => Some("i64"),
+        "isize" => Some("isize"),
+        "u8" => Some("u8"),
+        "u16" => Some("u16"),
+        "u32" => Some("u32"),
+        "u64" => Some("u64"),
+        "usize" => Some("usize"),
+        "bool" => Some("boolean"),
+        "String" => Some("text"),
+        "Vector2" => Some("vec2"),
+        "Vector3" => Some("vec3"),
+        "Vector4" => Some("vec4"),
+        "Quaternion" => Some("quat"),
+        _ => None,
+    }
+}
+
+/// Derives an `Inspect` impl that auto-renders each field with `inspect_values`.
+///
+/// Fields whose type isn't a supported scalar/vector are skipped. Per-field
+/// attributes: `#[inspect(skip)]`, `#[inspect(color)]` (for `Vector3`/`Vector4`),
+/// and `#[inspect(label = "...")]`.
+#[proc_macro_derive(Inspect, attributes(inspect))]
 pub fn inspect_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let struct_name = &ast.ident;
     let (impl_generics, type_generics, where_clause) = ast.generics.split_for_impl();
+
+    let mut calls: Vec<TokenStream2> = Vec::new();
+    if let syn::Data::Struct(data) = &ast.data
+        && let syn::Fields::Named(fields) = &data.fields
+    {
+        for field in &fields.named {
+            let Some(ident) = field.ident.as_ref() else {
+                continue;
+            };
+            let opts = parse_inspect_opts(&field.attrs);
+            if opts.skip {
+                continue;
+            }
+            let Some(type_ident) = type_last_ident(&field.ty) else {
+                continue;
+            };
+            let Some(func) = inspect_values_fn(&type_ident, opts.color) else {
+                continue;
+            };
+            let func_ident = quote::format_ident!("{}", func);
+            let label = opts.label.unwrap_or_else(|| ident.to_string());
+            calls.push(quote! {
+                apostasy_core::ecs::components::inspect_values::#func_ident(
+                    ui, #label, &mut self.#ident,
+                );
+            });
+        }
+    }
+
     let output = quote! {
-        impl #impl_generics apostasy_core::ecs::components::Inspect for #struct_name #type_generics #where_clause {}
+        impl #impl_generics apostasy_core::ecs::components::Inspect for #struct_name #type_generics #where_clause {
+            fn inspect(&mut self, ui: &mut apostasy_core::egui::Ui) {
+                #(#calls)*
+            }
+        }
     };
     output.into()
 }

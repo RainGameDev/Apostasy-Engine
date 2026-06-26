@@ -1,5 +1,6 @@
 pub mod component;
 pub mod host;
+pub mod lua;
 pub mod runtime;
 
 use anyhow::Result;

@@ -134,6 +134,19 @@ impl Velocity {
             angular_damping: 1.0,
         }
     }
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "Velocity".into());
+        map.insert("mass".into(), (self.mass as f64).into());
+        map.insert("process".into(), self.process.into());
+        map.insert("mu_static".into(), (self.mu_static as f64).into());
+        map.insert("mu_kinetic".into(), (self.mu_kinetic as f64).into());
+        map.insert("restitution".into(), (self.restitution as f64).into());
+        map.insert("linear_damping".into(), (self.linear_damping as f64).into());
+        map.insert("angular_damping".into(), (self.angular_damping as f64).into());
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         if let Some(v) = value.get("mass").and_then(|v| v.as_f64()) {
             self.mass = v as f32;

@@ -1,5 +1,6 @@
 **/target/
 
-# Per-user editor settings and local save files
 **/res/.editor/
 profile.json.gz
+
+**/res/.console_history

@@ -49,8 +49,8 @@ use crate::rendering::lighting::gpu_light::{
 };
 use crate::rendering::shared::UpdateRenderer;
 use crate::rendering::shared::anti_alisaing::AntiAliasing;
-use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::frustrum::EntitiesDrawing;
+use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
 use crate::rendering::shared::push_constants::{
@@ -81,8 +81,8 @@ use crate::{
 use winit::application::ApplicationHandler;
 
 pub mod assets;
-pub mod items;
 pub mod ecs;
+pub mod items;
 pub mod packages;
 pub mod physics;
 pub mod rendering;
@@ -250,9 +250,6 @@ impl Core {
                         return;
                     };
 
-                    // If an EditorCamera exists, only render from an entity that has
-                    // both ActiveCamera + EditorCamera. If no EditorCamera is in the
-                    // world (game / standalone mode), fall back to any ActiveCamera.
                     let has_editor_cam = !world.get_entities_with_tag::<EditorCamera>().is_empty();
                     let active_ids = world.get_entities_with_tag::<ActiveCamera>();
                     let camera_id = if has_editor_cam {
@@ -264,8 +261,6 @@ impl Core {
                         active_ids.first().copied()
                     };
                     let Some(camera_id) = camera_id else {
-                        // No camera yet. Still run a minimal frame so the window is presented
-                        // (required on Wayland — a window that never calls present stays invisible).
                         world.prerender();
                         if renderer.begin_frame().is_ok() {
                             renderer.begin_ui();
@@ -277,10 +272,13 @@ impl Core {
                         }
                         return;
                     };
-                    let Some(camera_transform) = world.get_component::<Transform>(camera_id).cloned() else {
+                    let Some(camera_transform) =
+                        world.get_component::<Transform>(camera_id).cloned()
+                    else {
                         return;
                     };
-                    let Some(camera_comp) = world.get_component::<Camera>(camera_id).cloned() else {
+                    let Some(camera_comp) = world.get_component::<Camera>(camera_id).cloned()
+                    else {
                         return;
                     };
                     let camera_pos = camera_transform.global_position;
@@ -299,10 +297,7 @@ impl Core {
 
                     push_constants.set_camera_constants(&camera_transform, &camera_comp, aspect);
 
-                    if !world
-                        .get_entities_with_tag::<NeedsRemeshing>()
-                        .is_empty()
-                    {
+                    if !world.get_entities_with_tag::<NeedsRemeshing>().is_empty() {
                         dispatch_remesh_jobs(&mut world).expect("Failed to dispatch remesh jobs");
 
                         if let Ok(command_pool) = renderer.get_command_pool() {
@@ -466,7 +461,6 @@ impl Core {
                         },
                     });
 
-
                     // Find first point light for omnidirectional shadow casting.
                     let point_shadow_data: Option<PointShadowData> = emitting_lights
                         .iter()
@@ -514,7 +508,8 @@ impl Core {
                         [camera_pos.x, camera_pos.y, camera_pos.z],
                         [camera_forward.x, camera_forward.y, camera_forward.z],
                     );
-                    render_other_timings.push(("set_lights", render_step.elapsed().as_nanos() as u64));
+                    render_other_timings
+                        .push(("set_lights", render_step.elapsed().as_nanos() as u64));
 
                     let shadow_start = std::time::Instant::now();
                     // Shadow pre-pass - one pass per cascade (csm_cascade_count for directional, 1 for spot).
@@ -551,10 +546,17 @@ impl Core {
 
                         // Shadow models
                         for &id in &shadow_model_ids {
-                            let Some(model_renderer) = world.get_component::<ModelRenderer>(id) else { continue };
-                            let Some(model) = model_renderer.model.as_ref() else { continue };
+                            let Some(model_renderer) = world.get_component::<ModelRenderer>(id)
+                            else {
+                                continue;
+                            };
+                            let Some(model) = model_renderer.model.as_ref() else {
+                                continue;
+                            };
                             let model = model.clone();
-                            let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                            let Some(transform) = world.get_component::<Transform>(id) else {
+                                continue;
+                            };
                             let pc = ShadowModelPushConstants::new(
                                 cascade_matrix,
                                 transform.global_position.into(),
@@ -567,8 +569,8 @@ impl Core {
                                 ],
                             );
                             for mesh in &model.meshes {
-                                if let Err(e) = renderer
-                                    .shadow_model_render(Box::new(mesh.clone()), &pc)
+                                if let Err(e) =
+                                    renderer.shadow_model_render(Box::new(mesh.clone()), &pc)
                                 {
                                     log_error!("Failed shadow model render: {}", e);
                                 }
@@ -579,7 +581,10 @@ impl Core {
                         if self.packages.contains(&Packages::Terrain) {
                             let terrain_ids = world.get_entities_with_component::<TerrainMesh>();
                             for id in terrain_ids {
-                                let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id) else { continue };
+                                let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id)
+                                else {
+                                    continue;
+                                };
                                 if terrain_mesh.index_count == 0 {
                                     continue;
                                 }
@@ -590,8 +595,8 @@ impl Core {
                                     [1.0, 1.0, 1.0],
                                     [0.0, 0.0, 0.0, 1.0],
                                 );
-                                if let Err(e) = renderer
-                                    .shadow_model_render(Box::new(terrain_mesh), &pc)
+                                if let Err(e) =
+                                    renderer.shadow_model_render(Box::new(terrain_mesh), &pc)
                                 {
                                     log_error!("Failed shadow terrain render: {}", e);
                                 }
@@ -602,8 +607,14 @@ impl Core {
                         if self.packages.contains(&Packages::Voxel) {
                             let voxel_ids = world.get_entities_with_component::<VoxelChunkMesh>();
                             for id in voxel_ids {
-                                let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
-                                let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
+                                let Some(transform) = world.get_component::<VoxelTransform>(id)
+                                else {
+                                    continue;
+                                };
+                                let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id)
+                                else {
+                                    continue;
+                                };
                                 let pc = ShadowVoxelPushConstants::new(
                                     cascade_matrix,
                                     [
@@ -644,10 +655,17 @@ impl Core {
                             }
 
                             for &id in &point_model_ids {
-                                let Some(model_renderer) = world.get_component::<ModelRenderer>(id) else { continue };
-                                let Some(model) = model_renderer.model.as_ref() else { continue };
+                                let Some(model_renderer) = world.get_component::<ModelRenderer>(id)
+                                else {
+                                    continue;
+                                };
+                                let Some(model) = model_renderer.model.as_ref() else {
+                                    continue;
+                                };
                                 let model = model.clone();
-                                let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                                let Some(transform) = world.get_component::<Transform>(id) else {
+                                    continue;
+                                };
                                 let pc = ShadowPointModelPushConstants::new(
                                     [
                                         gpu_lights[ps.light_index as usize].position[0],
@@ -666,23 +684,27 @@ impl Core {
                                     ],
                                 );
                                 for mesh in &model.meshes {
-                                    if let Err(e) = renderer.shadow_point_model_render(
-                                        Box::new(mesh.clone()),
-                                        &pc,
-                                    ) {
-                                        log_error!(
-                                            "Failed point shadow model render: {}",
-                                            e
-                                        );
+                                    if let Err(e) = renderer
+                                        .shadow_point_model_render(Box::new(mesh.clone()), &pc)
+                                    {
+                                        log_error!("Failed point shadow model render: {}", e);
                                     }
                                 }
                             }
 
                             if self.packages.contains(&Packages::Voxel) {
-                                let voxel_ids = world.get_entities_with_component::<VoxelChunkMesh>();
+                                let voxel_ids =
+                                    world.get_entities_with_component::<VoxelChunkMesh>();
                                 for id in voxel_ids {
-                                    let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
-                                    let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
+                                    let Some(transform) = world.get_component::<VoxelTransform>(id)
+                                    else {
+                                        continue;
+                                    };
+                                    let Some(voxel_mesh) =
+                                        world.get_component::<VoxelChunkMesh>(id)
+                                    else {
+                                        continue;
+                                    };
                                     let pc = ShadowPointVoxelPushConstants::new(
                                         [
                                             gpu_lights[ps.light_index as usize].position[0],
@@ -698,10 +720,9 @@ impl Core {
                                         ],
                                     );
                                     let voxel_mesh = voxel_mesh.clone();
-                                    if let Err(e) = renderer.shadow_point_voxel_render(
-                                        Box::new(voxel_mesh),
-                                        &pc,
-                                    ) {
+                                    if let Err(e) = renderer
+                                        .shadow_point_voxel_render(Box::new(voxel_mesh), &pc)
+                                    {
                                         log_error!("Failed point shadow voxel render: {}", e);
                                     }
                                 }
@@ -727,7 +748,8 @@ impl Core {
                         ));
                     }
                     renderer.begin_ui();
-                    render_other_timings.push(("begin_ui", render_step.elapsed().as_nanos() as u64));
+                    render_other_timings
+                        .push(("begin_ui", render_step.elapsed().as_nanos() as u64));
 
                     let world_update_start = std::time::Instant::now();
                     let update_timings = world.update();
@@ -782,11 +804,31 @@ impl Core {
                         })
                         .unwrap_or_default();
 
+                    // YAML materials aren't uploaded as GpuMaterials (no texture), but
+                    // their flat `color` still applies as a color modifier when named by
+                    // a ModelRenderer's material_override.
+                    let yaml_color_by_name: std::collections::HashMap<String, [f32; 4]> = world
+                        .get_resource::<AssetManager>()
+                        .ok()
+                        .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
+                        .map(|loader| {
+                            loader.registry.read().unwrap()
+                                .materials
+                                .iter()
+                                .map(|(k, mat)| (k.clone(), mat.color))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     let entity_ids = world.get_entities_with_component::<ModelRenderer>();
 
                     for id in entity_ids {
                         // Lazily load model if needed
-                        if world.get_component::<ModelRenderer>(id).map(|mr| mr.model.is_none()).unwrap_or(false) {
+                        if world
+                            .get_component::<ModelRenderer>(id)
+                            .map(|mr| mr.model.is_none())
+                            .unwrap_or(false)
+                        {
                             let model_path = match world.get_component::<ModelRenderer>(id) {
                                 Some(mr) => mr.model_path.clone(),
                                 None => continue,
@@ -808,7 +850,9 @@ impl Core {
                             continue;
                         };
 
-                        let Some(transform) = world.get_component::<Transform>(id) else { continue };
+                        let Some(transform) = world.get_component::<Transform>(id) else {
+                            continue;
+                        };
                         let transform = transform.clone();
 
                         let mut model_push = model_push_constants.clone();
@@ -838,6 +882,15 @@ impl Core {
                             let mut mesh_push = model_push.clone();
                             if let Some(mat) = effective_mat {
                                 mesh_push.color_modifier = mat.color;
+                            }
+
+                            if override_gpu_mat.is_none()
+                                && let Some(color) = model_renderer
+                                    .material_override
+                                    .as_deref()
+                                    .and_then(|name| yaml_color_by_name.get(name))
+                            {
+                                mesh_push.color_modifier = *color;
                             }
                             if model_renderer.is_wireframe {
                                 if let Err(e) = renderer.wireframe_render(
@@ -903,7 +956,9 @@ impl Core {
 
                         let terrain_ids = world.get_entities_with_component::<TerrainMesh>();
                         for id in terrain_ids {
-                            let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id) else { continue };
+                            let Some(terrain_mesh) = world.get_component::<TerrainMesh>(id) else {
+                                continue;
+                            };
                             if terrain_mesh.index_count == 0 {
                                 continue;
                             }
@@ -915,10 +970,11 @@ impl Core {
                                 cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
                             // Fill in per-chunk active layer IDs for the splatting shader.
                             if let Some(chunk) = world.get_component::<TerrainChunk>(id) {
-                                terrain_push.active_layer_ids_packed = ModelPushConstants::pack_layer_ids(
-                                    &chunk.active_layer_ids,
-                                    chunk.active_layer_count,
-                                );
+                                terrain_push.active_layer_ids_packed =
+                                    ModelPushConstants::pack_layer_ids(
+                                        &chunk.active_layer_ids,
+                                        chunk.active_layer_count,
+                                    );
                                 terrain_push.layer_count = chunk.active_layer_count as u32;
                             }
                             if let Err(e) = renderer.render(
@@ -947,7 +1003,9 @@ impl Core {
                         )> = Vec::new();
                         let voxel_chunk_ids = world.get_entities_with_component::<VoxelChunkMesh>();
                         for id in voxel_chunk_ids {
-                            let Some(transform) = world.get_component::<VoxelTransform>(id) else { continue };
+                            let Some(transform) = world.get_component::<VoxelTransform>(id) else {
+                                continue;
+                            };
                             let world_pos = Vector3::new(
                                 transform.position.x as f32 * 32.0,
                                 transform.position.y as f32 * 32.0,
@@ -962,7 +1020,9 @@ impl Core {
                                 continue;
                             }
                             entities_dawn += 1;
-                            let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else { continue };
+                            let Some(voxel_mesh) = world.get_component::<VoxelChunkMesh>(id) else {
+                                continue;
+                            };
                             let voxel_mesh = voxel_mesh.clone();
                             let water_mesh = world.get_component::<WaterMesh>(id).cloned();
 
@@ -1024,7 +1084,8 @@ impl Core {
                     if let Err(e) = renderer.begin_swapchain_render() {
                         log_error!("Failed to begin swapchain render: {}", e);
                     }
-                    render_other_timings.push(("begin_swapchain", render_step.elapsed().as_nanos() as u64));
+                    render_other_timings
+                        .push(("begin_swapchain", render_step.elapsed().as_nanos() as u64));
 
                     let render_step = std::time::Instant::now();
                     if let Err(e) = renderer.end_ui() {
@@ -1036,7 +1097,8 @@ impl Core {
                     if let Err(e) = renderer.end_frame() {
                         log_error!("Failed to end frame: {}", e);
                     }
-                    render_other_timings.push(("end_frame", render_step.elapsed().as_nanos() as u64));
+                    render_other_timings
+                        .push(("end_frame", render_step.elapsed().as_nanos() as u64));
                     let render_total_ns = render_start.elapsed().as_nanos() as u64;
 
                     let world_late_update_start = std::time::Instant::now();
@@ -1049,19 +1111,39 @@ impl Core {
                         let system_timings = {
                             let mut v = Vec::new();
                             for (name, ns) in prerender_timings {
-                                v.push(SystemTiming { phase: "PreRender", name, elapsed_ns: ns });
+                                v.push(SystemTiming {
+                                    phase: "PreRender",
+                                    name,
+                                    elapsed_ns: ns,
+                                });
                             }
                             for (name, ns) in update_timings {
-                                v.push(SystemTiming { phase: "Update", name, elapsed_ns: ns });
+                                v.push(SystemTiming {
+                                    phase: "Update",
+                                    name,
+                                    elapsed_ns: ns,
+                                });
                             }
                             for (name, ns) in fixed_timings {
-                                v.push(SystemTiming { phase: "FixedUpdate", name, elapsed_ns: ns });
+                                v.push(SystemTiming {
+                                    phase: "FixedUpdate",
+                                    name,
+                                    elapsed_ns: ns,
+                                });
                             }
                             for (name, ns) in late_timings {
-                                v.push(SystemTiming { phase: "LateUpdate", name, elapsed_ns: ns });
+                                v.push(SystemTiming {
+                                    phase: "LateUpdate",
+                                    name,
+                                    elapsed_ns: ns,
+                                });
                             }
                             for (name, ns) in render_other_timings {
-                                v.push(SystemTiming { phase: "RenderOther", name, elapsed_ns: ns });
+                                v.push(SystemTiming {
+                                    phase: "RenderOther",
+                                    name,
+                                    elapsed_ns: ns,
+                                });
                             }
                             v
                         };
@@ -1170,6 +1252,23 @@ impl ApplicationHandler for Core {
             }
             let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
             asset_manager.model_loader = model_loader;
+
+            if asset_manager
+                .get_loader::<crate::assets::loaders::material_loader::MaterialLoader>()
+                .is_none()
+            {
+                asset_manager.register_loader(
+                    crate::assets::loaders::material_loader::MaterialLoader::new(),
+                );
+                let _ = asset_manager.load_directory(Path::new(&format!(
+                    "{}/{}",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "res/"
+                )));
+                if Path::new("res/").is_dir() {
+                    let _ = asset_manager.load_directory(Path::new("res/"));
+                }
+            }
 
             asset_manager
                 .load_models(

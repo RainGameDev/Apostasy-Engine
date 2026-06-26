@@ -1,3 +1,4 @@
+pub mod inspect_values;
 pub mod transform;
 
 use std::any::{Any, TypeId};
@@ -17,6 +18,26 @@ pub trait Component: Send + Sync + 'static + ComponentContainer + std::fmt::Debu
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn type_name(&self) -> &'static str;
+
+    /// Serializes this component to a yaml value, for scene persistence and Lua
+    /// scripting. The default `None` means "not serializable"; a component opts
+    /// in by defining an **inherent** `serialize(&self) -> Option<Value>` method,
+    /// which takes precedence over this trait default when called on the concrete
+    /// type (no specialization required). The shape should mirror what the
+    /// component's `deserialize` accepts, so values round-trip.
+    fn serialize(&self) -> Option<serde_yaml::Value> {
+        None
+    }
+}
+
+/// Encodes a vector as a `[x, y, z]` yaml sequence — the shared representation
+/// used by component `serialize`/`deserialize` and the worldspace serializer.
+pub fn vec3_to_yaml(v: cgmath::Vector3<f32>) -> serde_yaml::Value {
+    serde_yaml::Value::Sequence(vec![
+        serde_yaml::Value::from(v.x as f64),
+        serde_yaml::Value::from(v.y as f64),
+        serde_yaml::Value::from(v.z as f64),
+    ])
 }
 
 /// Workaround for object safety — allows cloning a boxed component.
@@ -44,6 +65,17 @@ pub struct ComponentRegistration {
     pub deserialize: fn(&mut BoxedComponent, &serde_yaml::Value) -> anyhow::Result<()>,
     /// Downcast the boxed component and insert it into the world at the given entity.
     pub add_to_world: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::EntityId, BoxedComponent),
+    /// Reads the component off an entity as a yaml value, or `None` if the entity
+    /// lacks it (or the component isn't serializable). Powers generic reads.
+    pub read: fn(&crate::ecs::world::World, crate::worldspaces::cell::EntityId) -> Option<serde_yaml::Value>,
+    /// Applies a yaml value onto the entity's component in place, inserting a
+    /// default component first if absent. Fields not present in the value keep
+    /// their current values (a partial update, not a replace).
+    pub apply: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::EntityId, &serde_yaml::Value),
+    /// Removes the component from the entity.
+    pub remove: fn(&mut crate::ecs::world::World, crate::worldspaces::cell::EntityId),
+    /// Returns whether the entity currently has this component.
+    pub contains: fn(&crate::ecs::world::World, crate::worldspaces::cell::EntityId) -> bool,
 }
 
 inventory::collect!(ComponentRegistration);

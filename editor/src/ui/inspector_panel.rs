@@ -9,6 +9,7 @@ use apostasy_core::{
         tag::TagRegistration,
         world::World,
     },
+    scripting::lua::component::{LuaComponentRegistry, ScriptComponents},
     ui::{DRAG_SIZE, ui_context::EguiContext},
     update,
 };
@@ -105,6 +106,18 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .map(|full_name| full_name.split("::").last().unwrap_or(full_name))
         .collect();
 
+    // Lua-defined component schemas (sorted), and which are already on this entity.
+    let mut lua_component_names: Vec<String> = world
+        .get_resource::<LuaComponentRegistry>()
+        .map(|r| r.defaults.keys().cloned().collect())
+        .unwrap_or_default();
+    lua_component_names.sort();
+
+    let existing_lua_components: Vec<String> = selected_id
+        .and_then(|id| world.get_component::<ScriptComponents>(id))
+        .map(|sc| sc.map.keys().cloned().collect())
+        .unwrap_or_default();
+
     // Tag info
     let tag_type_ids: Vec<TypeId> = selected_id
         .map(|id| world.get_entity_tag_type_ids(id))
@@ -142,6 +155,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let mut new_search = picker_state.search.clone();
     let copied_component = picker_state.copied_component.clone();
     let mut component_to_add: Option<String> = None;
+    let mut lua_component_to_add: Option<String> = None;
     let mut component_to_remove: Option<TypeId> = None;
     let component_to_copy: Option<BoxedComponent> = None;
     let to_paste_component = false;
@@ -395,6 +409,42 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                             any_shown = true;
                                         }
 
+                                        // Lua-defined components (from register_component).
+                                        let matching_lua: Vec<&String> = lua_component_names
+                                            .iter()
+                                            .filter(|n| {
+                                                query.is_empty()
+                                                    || n.to_lowercase().contains(&query)
+                                            })
+                                            .collect();
+
+                                        if !matching_lua.is_empty() {
+                                            ui.separator();
+                                            ui.label(
+                                                egui::RichText::new("Lua Components")
+                                                    .italics()
+                                                    .weak(),
+                                            );
+                                            for name in matching_lua {
+                                                let already_present =
+                                                    existing_lua_components.contains(name);
+                                                ui.add_enabled_ui(!already_present, |ui| {
+                                                    let resp =
+                                                        ui.selectable_label(false, name.as_str());
+                                                    if resp.clicked() && !already_present {
+                                                        lua_component_to_add = Some(name.clone());
+                                                        new_picker_open = false;
+                                                    }
+                                                    if already_present {
+                                                        resp.on_disabled_hover_text(
+                                                            "Already on this entity",
+                                                        );
+                                                    }
+                                                });
+                                                any_shown = true;
+                                            }
+                                        }
+
                                         if !any_shown {
                                             ui.label(
                                                 egui::RichText::new("No components found")
@@ -458,6 +508,23 @@ pub fn inspector(world: &mut World) -> Result<()> {
     {
         if let Err(e) = world.add_component_by_name(id, &name) {
             log_warn!("Failed to add component '{}': {}", name, e);
+        }
+    }
+
+    // Add a Lua component: seed it with the registered defaults into ScriptComponents.
+    if let Some(name) = lua_component_to_add
+        && let Some(id) = selected_id
+    {
+        let default = world
+            .get_resource::<LuaComponentRegistry>()
+            .ok()
+            .and_then(|r| r.default_for(&name).cloned())
+            .unwrap_or(serde_yaml::Value::Mapping(Default::default()));
+        if !world.has_component::<ScriptComponents>(id) {
+            world.add_component(id, ScriptComponents::default());
+        }
+        if let Some(sc) = world.get_component_mut::<ScriptComponents>(id) {
+            sc.set(&name, default);
         }
     }
 

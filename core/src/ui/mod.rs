@@ -9,6 +9,8 @@ use crate::rendering::vulkan::{
     rendering_context::VulkanRenderingContext, swapchain::VulkanSwapchain,
 };
 
+pub mod console;
+pub use console::{Command, CommandBuilder, CommandOutcome, Console, install_log_capture};
 pub mod fonts;
 pub use fonts::FontRegistry;
 pub mod profiler_panel;

@@ -137,6 +137,10 @@ pub struct VulkanRenderer {
 
     pub aa_amount: AntiAliasingAmount,
     pub ui_cached_primitives: Vec<ClippedPrimitive>,
+    /// egui textures whose `free` was reported last frame. Freed at the start of the
+    /// next `end_ui`, after `begin_frame` has waited on the previous frame's fence, so
+    /// we never destroy a descriptor set/image still referenced by in-flight GPU work.
+    pub ui_pending_texture_frees: Vec<TextureId>,
 }
 
 impl VulkanRenderer {
@@ -738,13 +742,13 @@ impl RenderingAPI for VulkanRenderer {
 
             let pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default()
-        .push_constant_ranges(&[vk::PushConstantRange::default()
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .offset(0)
-            .size(228)])
-        .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
-    None,
-)?;
+                    .push_constant_ranges(&[vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .offset(0)
+                        .size(228)])
+                    .set_layouts(&[light_descriptor_set_layout, descriptor_set_layout]),
+                None,
+            )?;
 
             let pipeline_options = PipelineOptions {
                 image_format: Some(swapchain.format),
@@ -1115,8 +1119,10 @@ impl RenderingAPI for VulkanRenderer {
                 &rendering_info.context.clone().into(),
                 "sdr_default_shadow_voxel.vert",
             )?;
-            let shadow_frag_module = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "sdr_default_shadow.frag")?;
+            let shadow_frag_module = pipeline_manager.create_shader_module(
+                &rendering_info.context.clone().into(),
+                "sdr_default_shadow.frag",
+            )?;
 
             let shadow_model_pipeline_layout = context.device.create_pipeline_layout(
                 &PipelineLayoutCreateInfo::default().push_constant_ranges(&[
@@ -1671,6 +1677,7 @@ impl RenderingAPI for VulkanRenderer {
 
                 aa_amount,
                 ui_cached_primitives: Vec::new(),
+                ui_pending_texture_frees: Vec::new(),
             };
 
             rendering_info.renderer = Some(Box::new(renderer));
@@ -2294,20 +2301,20 @@ impl RenderingAPI for VulkanRenderer {
 
         state.handle_platform_output(&self.ui_renderer.window, full_output.platform_output);
 
+        // Free textures egui retired last frame. `begin_frame` already waited on the
+        // previous frame's fence, so the GPU is done with them. Deferring one frame
+        // avoids destroying a texture still referenced by an in-flight command buffer.
+        if !self.ui_pending_texture_frees.is_empty() {
+            let to_free = std::mem::take(&mut self.ui_pending_texture_frees);
+            renderer.free_textures(&to_free)?;
+        }
+
         let pixels_per_point = full_output.pixels_per_point;
 
-        let needs_retessellate = full_output
-            .viewport_output
-            .get(&egui::ViewportId::ROOT)
-            .map(|vo| vo.repaint_delay.is_zero())
-            .unwrap_or(true);
-
-        if needs_retessellate {
-            self.ui_cached_primitives = self
-                .ui_renderer
-                .context
-                .tessellate(full_output.shapes, pixels_per_point);
-        }
+        self.ui_cached_primitives = self
+            .ui_renderer
+            .context
+            .tessellate(full_output.shapes, pixels_per_point);
 
         if !full_output.textures_delta.set.is_empty() {
             let texture_updates: Vec<(TextureId, ImageDelta)> = full_output
@@ -2329,6 +2336,9 @@ impl RenderingAPI for VulkanRenderer {
             pixels_per_point,
             &self.ui_cached_primitives,
         )?;
+
+        // Defer these frees until next frame (see `ui_pending_texture_frees`).
+        self.ui_pending_texture_frees = full_output.textures_delta.free;
 
         Ok(())
     }
