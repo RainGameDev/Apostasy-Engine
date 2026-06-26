@@ -49,6 +49,36 @@ cells:
         - 1.0
       tags: []
       children: []
+    - name: Sun
+      components:
+      - type: Light
+        light_type: Directional
+        color:
+          r: 1.0
+          g: 1.0
+          b: 1.0
+        intensity: 1.0
+        is_emitting: true
+        is_flickering: false
+        intensity_min: 1.0
+        intensity_max: 2.0
+        radius_min: 1.0
+        radius_max: 21.0
+      - type: Transform
+        local_position:
+        - -17.517473220825195
+        - 26.093917846679688
+        - 31.172624588012695
+        local_euler_angles:
+        - -21.5
+        - -4.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      tags: []
+      children: []
   0,0,0:
     name: ''
     entities:
@@ -134,6 +164,47 @@ cells:
       tags:
       - Player
       children: []
+    - name: Sphere
+      components:
+      - type: Gravity
+        strength: 9.8100004196167
+      - type: ModelRenderer
+        model_path: sphere
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 1.0
+        process: true
+        mu_static: 1.0
+        mu_kinetic: 1.0
+        restitution: 0.0
+        linear_damping: 1.0
+        angular_damping: 1.0
+      - type: Collider
+        shape: Sphere
+        radius: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: false
+        is_area: false
+      - type: Transform
+        local_position:
+        - 0.0
+        - 8.0
+        - 0.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      tags:
+      - Player
+      children: []
     - name: Cube
       components:
       - type: Gravity
@@ -176,45 +247,4 @@ cells:
         - 1.0
         - 1.0
       tags: []
-      children: []
-    - name: Sphere
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
-      - type: Collider
-        shape: Sphere
-        radius: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - 0.0
-        - 8.0
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags:
-      - Player
       children: []

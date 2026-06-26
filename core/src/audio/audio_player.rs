@@ -1,12 +1,13 @@
 use anyhow::Result;
 use apostasy_macros::Component;
-use kira::{AudioManager, AudioManagerSettings, DefaultBackend, Tween};
+use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Panning, Tween};
 
 use crate::audio::Audio;
 use crate::audio::sound::Sound;
 use crate::ecs::components::Inspect;
 use crate::ecs::world::World;
 use crate::egui::{DragAndDrop, StrokeKind};
+use crate::rendering::components::camera::{ActiveCamera, EditorCamera};
 use crate::ui::{DRAG_SIZE, LABEL_WIDTH};
 use apostasy_macros::update;
 
@@ -97,7 +98,7 @@ impl Inspect for AudioPlayer {
                             }
 
                             if ui
-                                .add_sized([24.0, row_h], crate::egui::Button::new("✕"))
+                                .add_sized([24.0, row_h], crate::egui::Button::new("-"))
                                 .clicked()
                             {
                                 to_remove = Some(i);
@@ -113,6 +114,29 @@ impl Inspect for AudioPlayer {
                                     .clamping(egui::SliderClamping::Always),
                             );
                         });
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, row_h], crate::egui::Label::new("Loop"));
+                            ui.checkbox(&mut sound.looping, "");
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, row_h], crate::egui::Label::new("Spatial"));
+                            ui.checkbox(&mut sound.spatial, "");
+                        });
+                        if sound.spatial {
+                            ui.horizontal(|ui| {
+                                ui.add_sized(
+                                    [LABEL_WIDTH, row_h],
+                                    crate::egui::Label::new("Max Distance"),
+                                );
+                                ui.add(
+                                    crate::egui::Slider::new(
+                                        &mut sound.max_distance,
+                                        0.1_f32..=500.0_f32,
+                                    )
+                                    .clamping(egui::SliderClamping::Always),
+                                );
+                            });
+                        }
                     });
                     ui.separator();
                 });
@@ -260,11 +284,97 @@ impl AudioPlayer {
         manager: &mut AudioManager,
     ) -> Result<kira::sound::static_sound::StaticSoundHandle> {
         let sound = &self.audio[index];
-        let data = sound
+        let mut data = sound
             .data
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Sound at index {} has no loaded data", index))?
             .volume(kira::Decibels(sound.volume));
+        if sound.looping {
+            data = data.loop_region(..);
+        }
         Ok(manager.play(data)?)
     }
+}
+
+#[update(mode = "all")]
+pub fn update_spatial_audio(world: &mut World) -> Result<()> {
+    use crate::ecs::components::transform::Transform;
+    use cgmath::InnerSpace;
+
+    // Find listener position and right vector from the active camera.
+    let listener = world
+        .get_entity_with_tag::<EditorCamera>()
+        .or_else(|_| world.get_entity_with_tag::<ActiveCamera>())
+        .ok()
+        .and_then(|cam_id| world.get_component::<Transform>(cam_id))
+        .map(|t| (t.global_position, t.calculate_global_right()));
+
+    let (listener_pos, listener_right) = match listener {
+        Some(l) => l,
+        None => return Ok(()),
+    };
+
+    let ids: Vec<_> = world.get_entities_with_component::<AudioPlayer>();
+
+    for id in ids {
+        let source_pos = world
+            .get_component::<Transform>(id)
+            .map(|t| t.global_position);
+
+        let Some(source_pos) = source_pos else {
+            continue;
+        };
+
+        let player = match world.get_component::<AudioPlayer>(id) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Collect what we need without holding a borrow.
+        let spatial_sounds: Vec<(
+            usize,
+            f32,
+            f32,
+            std::sync::Arc<std::sync::Mutex<Option<kira::sound::static_sound::StaticSoundHandle>>>,
+        )> = player
+            .audio
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.spatial && s.is_playing())
+            .map(|(i, s)| (i, s.volume, s.max_distance, s.handle.clone()))
+            .collect();
+
+        for (_, base_volume_db, max_distance, handle_arc) in spatial_sounds {
+            let delta = source_pos - listener_pos;
+            let dist = delta.magnitude();
+
+            // Linear falloff: 0.0 at max_distance, 1.0 at distance 0.
+            let t = (1.0_f32 - (dist / max_distance).min(1.0)).max(0.0);
+
+            let volume_db = if t <= 0.0 {
+                Decibels::SILENCE
+            } else {
+                // Convert linear gain to dB offset then add base volume.
+                let attenuation_db = 20.0 * t.log10();
+                Decibels(base_volume_db + attenuation_db)
+            };
+
+            // Pan based on dot product of direction-to-source with listener right.
+            let pan = if dist > 0.001 {
+                let dir = delta / dist;
+                dir.dot(listener_right).clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+
+            if let Ok(mut guard) = handle_arc.lock()
+                && let Some(h) = guard.as_mut()
+            {
+                h.set_volume(volume_db, Tween::default());
+                h.set_panning(Panning(pan), Tween::default());
+            }
+        }
+    }
+
+    Ok(())
 }
