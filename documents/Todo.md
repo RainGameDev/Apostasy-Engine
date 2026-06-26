@@ -105,22 +105,40 @@
 
 # Lua Scripting
 
-- [ ] Add mlua as a dependency to core
-- [ ] LuaRuntime resource — holds the Lua state, loads and caches script files
-- [ ] Expose World to Lua as a userdata type
-  - [ ] world:get_resource(name)
-  - [ ] world:get_entity_with_tag(name)
-  - [ ] world:get_entities_with_tag(name)
-  - [ ] world:get_component(id, name) — returns a Lua table copy
-  - [ ] world:set_component(id, name, table) — writes table back to component
-  - [ ] world:add_tag(id, name)
-  - [ ] world:remove_tag(id, name)
-  - [ ] world:spawn() — returns an EntityId
-  - [ ] world:despawn(id)
-- [ ] Query builder from Lua
-  - [ ] world:query(...component names) — returns a QueryBuilder userdata
-  - [ ] :with_tag(name), :without_tag(name), :with(name), :without(name) filters
-  - [ ] :for_each(function(id, ...components)) — iterates results
-- [ ] Script component — attach a script path to an entity, auto-calls start/update/fixed_update
-- [ ] LuaScript system — runs update() on all loaded scripts each frame
-- [ ] Script hot-reload — watch script files for changes and reload without restart
+Implemented as global lifecycle scripts: every `.lua` under `res/scripts/` runs
+in its own sandbox and may define `start`/`prerender`/`update`/`fixed_update`/
+`late_update`. Lua-defined components are declared with `register_component` and
+stored on entities as `ScriptComponents` (editable in the editor inspector and
+persisted by the worldspace serializer). Global state uses `register_resource`.
+
+- [x] Add mlua as a dependency to core
+- [x] LuaRuntime resource — holds the Lua state, loads and caches script files
+- [x] Lifecycle systems — start / prerender / update / fixed_update / late_update (game mode)
+  - [x] Registration runs in all modes so the editor learns component/resource schemas
+- [x] Expose World to Lua as a userdata type
+  - [x] world:get_resource(name) / set_resource(name, table)
+  - [x] world:get_entity_with_tag / get_entities_with_tag / get_all_entities
+  - [x] world:get_component(id, name) — returns a Lua table copy
+  - [x] world:set_component(id, name, table) / add_component / remove_component
+  - [x] world:add_tag(id, name) / remove_tag(id, name)
+  - [x] world:spawn() / spawn_at_position(pos) — returns an EntityId
+  - [x] world:despawn(id)
+  - [x] world:set_name / get_name
+  - [x] Hierarchy — set_parent / get_children / get_ancestors
+  - [x] world:raycast(origin, dir, max, ignore)
+  - [x] world:set_material_color(name, color)
+  - [x] world:delta() / world:time() / world:log(...)
+- [x] Query builder from Lua
+  - [x] world:query(...component names) — returns a QueryBuilder userdata
+  - [x] :for_each(function(id, ...components)) — iterates results
+- [x] Lua-defined components — register_component(name, defaults), stored as ScriptComponents
+  - [x] Editor inspector add/edit/remove for Lua components
+  - [x] Serialization round-trips through the worldspace serializer
+- [x] Global resources — register_resource(name, defaults)
+- [x] Script hot-reload — re-execs changed script files without restart
+- [x] Math prelude — vec2 / vec3 / vec4 / quat helpers
+- [x] In-engine console
+- [x] LSP type stubs (res/scripts/types/*.lua + .luarc.json)
+- [ ] Hot-reload: pick up newly added / deleted script files at runtime
+- [ ] Per-entity script logic — run a script's update only for entities that hold it
+- [ ] :with_tag / :without_tag / :with / :without query filters
