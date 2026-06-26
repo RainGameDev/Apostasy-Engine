@@ -3,31 +3,28 @@ namespace: game
 class: worldspace
 is_interior: false
 cells:
-  -1,0,0:
+  0,0,0:
     name: ''
     entities:
-    - name: Cube
+    - name: Sphere
       components:
       - type: Gravity
         strength: 9.8100004196167
       - type: ModelRenderer
-        model_path: cube
+        model_path: sphere
         material_override: ''
         is_wireframe: false
       - type: Velocity
         mass: 1.0
         process: true
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.10000000149011612
-        linear_damping: 0.9990000128746033
-        angular_damping: 0.9980000257492065
+        mu_static: 1.0
+        mu_kinetic: 1.0
+        restitution: 0.0
+        linear_damping: 1.0
+        angular_damping: 1.0
       - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
+        shape: Sphere
+        radius: 1.0
         offset:
         - 0.0
         - 0.0
@@ -36,8 +33,8 @@ cells:
         is_area: false
       - type: Transform
         local_position:
-        - -4.0
-        - 15.0
+        - 0.0
+        - 8.0
         - 0.0
         local_euler_angles:
         - 0.0
@@ -47,43 +44,18 @@ cells:
         - 1.0
         - 1.0
         - 1.0
-      tags: []
+      tags:
+      - Player
       children: []
-    - name: Sun
-      components:
-      - type: Light
-        light_type: Directional
-        color:
-          r: 1.0
-          g: 1.0
-          b: 1.0
-        intensity: 1.0
-        is_emitting: true
-        is_flickering: false
-        intensity_min: 1.0
-        intensity_max: 2.0
-        radius_min: 1.0
-        radius_max: 21.0
-      - type: Transform
-        local_position:
-        - -17.517473220825195
-        - 26.093917846679688
-        - 31.172624588012695
-        local_euler_angles:
-        - -21.5
-        - -4.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags: []
-      children: []
-  0,0,0:
-    name: ''
-    entities:
     - name: Floor
       components:
+      - type: AudioPlayer
+        sounds:
+        - path: audio/crickets.mp3
+          volume: -35.0
+          looping: true
+          spatial: true
+          max_distance: 340.0
       - type: ModelRenderer
         model_path: cube
         material_override: ''
@@ -164,47 +136,6 @@ cells:
       tags:
       - Player
       children: []
-    - name: Sphere
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
-      - type: Collider
-        shape: Sphere
-        radius: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - 0.0
-        - 8.0
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags:
-      - Player
-      children: []
     - name: Cube
       components:
       - type: Gravity
@@ -237,6 +168,82 @@ cells:
         local_position:
         - 4.0
         - 10.0
+        - 0.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      tags: []
+      children: []
+  -1,0,0:
+    name: ''
+    entities:
+    - name: Sun
+      components:
+      - type: Light
+        light_type: Directional
+        color:
+          r: 1.0
+          g: 1.0
+          b: 1.0
+        intensity: 1.0
+        is_emitting: true
+        is_flickering: false
+        intensity_min: 1.0
+        intensity_max: 2.0
+        radius_min: 1.0
+        radius_max: 21.0
+      - type: Transform
+        local_position:
+        - -17.517473220825195
+        - 26.093917846679688
+        - 31.172624588012695
+        local_euler_angles:
+        - -21.5
+        - -4.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+      tags: []
+      children: []
+    - name: Cube
+      components:
+      - type: Gravity
+        strength: 9.8100004196167
+      - type: ModelRenderer
+        model_path: cube
+        material_override: ''
+        is_wireframe: false
+      - type: Velocity
+        mass: 1.0
+        process: true
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.10000000149011612
+        linear_damping: 0.9990000128746033
+        angular_damping: 0.9980000257492065
+      - type: Collider
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: false
+        is_area: false
+      - type: Transform
+        local_position:
+        - -4.0
+        - 15.0
         - 0.0
         local_euler_angles:
         - 0.0

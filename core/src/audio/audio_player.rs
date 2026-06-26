@@ -273,7 +273,60 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
 }
 
 impl AudioPlayer {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> Result<()> {
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        let sounds: Vec<serde_yaml::Value> = self
+            .audio
+            .iter()
+            .map(|s| {
+                let mut map = serde_yaml::Mapping::new();
+                map.insert("path".into(), s.path.clone().into());
+                map.insert("volume".into(), (s.volume as f64).into());
+                map.insert("looping".into(), s.looping.into());
+                map.insert("spatial".into(), s.spatial.into());
+                map.insert("max_distance".into(), (s.max_distance as f64).into());
+                serde_yaml::Value::Mapping(map)
+            })
+            .collect();
+
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "AudioPlayer".into());
+        map.insert("sounds".into(), serde_yaml::Value::Sequence(sounds));
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> Result<()> {
+        let Some(seq) = value.get("sounds").and_then(|v| v.as_sequence()) else {
+            return Ok(());
+        };
+
+        self.audio.clear();
+        for entry in seq {
+            let mut sound = crate::audio::sound::Sound::default();
+
+            if let Some(p) = entry.get("path").and_then(|v| v.as_str()) {
+                sound.path = p.to_string();
+            }
+            if let Some(v) = entry.get("volume").and_then(|v| v.as_f64()) {
+                sound.volume = v as f32;
+            }
+            if let Some(v) = entry.get("looping").and_then(|v| v.as_bool()) {
+                sound.looping = v;
+            }
+            if let Some(v) = entry.get("spatial").and_then(|v| v.as_bool()) {
+                sound.spatial = v;
+            }
+            if let Some(v) = entry.get("max_distance").and_then(|v| v.as_f64()) {
+                sound.max_distance = v as f32;
+            }
+
+            if !sound.path.is_empty() {
+                if let Err(e) = sound.reload() {
+                    crate::log_warn!("AudioPlayer: failed to load '{}': {}", sound.path, e);
+                }
+            }
+
+            self.audio.push(sound);
+        }
         Ok(())
     }
 
