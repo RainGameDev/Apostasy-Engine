@@ -119,6 +119,13 @@ impl Inspect for AudioPlayer {
                             ui.checkbox(&mut sound.looping, "");
                         });
                         ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [LABEL_WIDTH, row_h],
+                                crate::egui::Label::new("Auto Play"),
+                            );
+                            ui.checkbox(&mut sound.auto_play, "");
+                        });
+                        ui.horizontal(|ui| {
                             ui.add_sized([LABEL_WIDTH, row_h], crate::egui::Label::new("Spatial"));
                             ui.checkbox(&mut sound.spatial, "");
                         });
@@ -282,6 +289,7 @@ impl AudioPlayer {
                 map.insert("path".into(), s.path.clone().into());
                 map.insert("volume".into(), (s.volume as f64).into());
                 map.insert("looping".into(), s.looping.into());
+                map.insert("auto_play".into(), s.auto_play.into());
                 map.insert("spatial".into(), s.spatial.into());
                 map.insert("max_distance".into(), (s.max_distance as f64).into());
                 serde_yaml::Value::Mapping(map)
@@ -312,6 +320,10 @@ impl AudioPlayer {
             if let Some(v) = entry.get("looping").and_then(|v| v.as_bool()) {
                 sound.looping = v;
             }
+            if let Some(v) = entry.get("auto_play").and_then(|v| v.as_bool()) {
+                sound.auto_play = v;
+            }
+
             if let Some(v) = entry.get("spatial").and_then(|v| v.as_bool()) {
                 sound.spatial = v;
             }
@@ -347,6 +359,84 @@ impl AudioPlayer {
         }
         Ok(manager.play(data)?)
     }
+}
+
+#[update(mode = "game")]
+pub fn auto_play_audio(world: &mut World) -> Result<()> {
+    // Collect sounds that have auto_play set but haven't been triggered yet.
+    let mut to_play: Vec<(crate::worldspaces::cell::EntityId, Vec<usize>)> = Vec::new();
+    world.query::<&AudioPlayer>().for_each(|id, player| {
+        let indices: Vec<usize> = player
+            .audio
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                if s.auto_play && !s.auto_played && s.data.is_some() {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !indices.is_empty() {
+            to_play.push((id, indices));
+        }
+    });
+
+    if to_play.is_empty() {
+        return Ok(());
+    }
+
+    if !world.has_resource::<Audio>() {
+        match AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()) {
+            Ok(mgr) => {
+                world.insert_resource(Audio {
+                    manager: std::sync::Arc::new(std::sync::Mutex::new(mgr)),
+                });
+            }
+            Err(e) => {
+                crate::log_warn!("auto_play_audio: failed to create AudioManager: {}", e);
+                return Ok(());
+            }
+        }
+    }
+
+    let manager_arc = world.get_resource::<Audio>()?.manager.clone();
+
+    for (id, indices) in to_play {
+        for idx in indices {
+            let handle_arc = world
+                .get_component::<AudioPlayer>(id)
+                .and_then(|p| p.audio.get(idx))
+                .map(|s| s.handle.clone());
+
+            if let Ok(mut mgr) = manager_arc.lock()
+                && let Some(player) = world.get_component::<AudioPlayer>(id)
+            {
+                match player.play(idx, &mut mgr) {
+                    Ok(handle) => {
+                        if let Some(arc) = handle_arc
+                            && let Ok(mut g) = arc.lock()
+                        {
+                            *g = Some(handle);
+                        }
+                    }
+                    Err(e) => {
+                        crate::log_warn!("auto_play_audio: play failed: {}", e);
+                    }
+                }
+            }
+
+            // Mark as triggered so it doesn't fire again until the scene reloads.
+            if let Some(player) = world.get_component_mut::<AudioPlayer>(id) {
+                if let Some(s) = player.audio.get_mut(idx) {
+                    s.auto_played = true;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[update(mode = "all")]

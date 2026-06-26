@@ -1,8 +1,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::sound::PlaybackState;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 
 use crate::assets::audio::resolve_audio_path;
 
@@ -12,6 +12,8 @@ pub struct Sound {
     pub path: String,
     pub volume: f32,
     pub looping: bool,
+    pub auto_play: bool,
+    pub auto_played: bool,
     pub spatial: bool,
     pub max_distance: f32,
     /// Handle to the currently playing instance, if any.
@@ -25,6 +27,8 @@ impl Default for Sound {
             path: String::new(),
             volume: 0.0,
             looping: false,
+            auto_play: false,
+            auto_played: false,
             spatial: false,
             max_distance: 20.0,
             handle: Arc::new(Mutex::new(None)),
@@ -67,6 +71,7 @@ impl fmt::Debug for Sound {
         f.debug_struct("Sound")
             .field("path", &self.path)
             .field("volume", &self.volume)
+            .field("auto_play", &self.auto_play)
             .field("loaded", &self.data.is_some())
             .field("playing", &self.is_playing())
             .finish()
