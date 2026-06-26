@@ -1,8 +1,10 @@
 use anyhow::Result;
 use apostasy_macros::Component;
-use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Panning, PlaybackRate, Tween};
+use kira::sound::static_sound::StaticSoundHandle;
+use kira::{Decibels, Panning, PlaybackRate, Tween};
 
 use crate::audio::Audio;
+use crate::audio::layers::AudioLayer;
 use crate::audio::sound::Sound;
 use crate::ecs::components::Inspect;
 use crate::ecs::world::World;
@@ -105,6 +107,20 @@ impl Inspect for AudioPlayer {
                             }
                         });
                         ui.horizontal(|ui| {
+                            ui.add_sized([LABEL_WIDTH, row_h], crate::egui::Label::new("Layer"));
+                            crate::egui::ComboBox::from_id_salt(format!("audio_layer_{}_{}", i, i))
+                                .selected_text(sound.layer.as_str())
+                                .show_ui(ui, |ui| {
+                                    for &layer in AudioLayer::ALL {
+                                        ui.selectable_value(
+                                            &mut sound.layer,
+                                            layer,
+                                            layer.as_str(),
+                                        );
+                                    }
+                                });
+                        });
+                        ui.horizontal(|ui| {
                             ui.add_sized(
                                 [LABEL_WIDTH, row_h],
                                 crate::egui::Label::new("Volume (dB)"),
@@ -115,12 +131,29 @@ impl Inspect for AudioPlayer {
                             );
                         });
                         ui.horizontal(|ui| {
-                            ui.add_sized(
-                                [LABEL_WIDTH, row_h],
-                                crate::egui::Label::new("Pitch"),
-                            );
+                            ui.add_sized([LABEL_WIDTH, row_h], crate::egui::Label::new("Pitch"));
                             ui.add(
                                 crate::egui::Slider::new(&mut sound.pitch, 0.1_f32..=4.0_f32)
+                                    .clamping(egui::SliderClamping::Always),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [LABEL_WIDTH, row_h],
+                                crate::egui::Label::new("Fade In (s)"),
+                            );
+                            ui.add(
+                                crate::egui::Slider::new(&mut sound.fade_in, 0.0_f32..=10.0_f32)
+                                    .clamping(egui::SliderClamping::Always),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [LABEL_WIDTH, row_h],
+                                crate::egui::Label::new("Fade Out (s)"),
+                            );
+                            ui.add(
+                                crate::egui::Slider::new(&mut sound.fade_out, 0.0_f32..=10.0_f32)
                                     .clamping(egui::SliderClamping::Always),
                             );
                         });
@@ -224,7 +257,15 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             && let Ok(mut guard) = sound.handle.lock()
         {
             if let Some(h) = guard.as_mut() {
-                h.stop(Tween::default());
+                let tween = if sound.fade_out > 0.0 {
+                    Tween {
+                        duration: std::time::Duration::from_secs_f32(sound.fade_out),
+                        ..Default::default()
+                    }
+                } else {
+                    Tween::default()
+                };
+                h.stop(tween);
             }
             *guard = None;
         }
@@ -239,11 +280,9 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
 
     // Ensure Audio resource exists.
     if !world.has_resource::<Audio>() {
-        match AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()) {
-            Ok(mgr) => {
-                world.insert_resource(Audio {
-                    manager: std::sync::Arc::new(std::sync::Mutex::new(mgr)),
-                });
+        match Audio::new() {
+            Ok(audio) => {
+                world.insert_resource(audio);
             }
             Err(e) => {
                 crate::log_warn!("AudioPlayer: failed to create AudioManager: {}", e);
@@ -257,7 +296,7 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
         }
     }
 
-    let manager_arc = world.get_resource::<Audio>()?.manager.clone();
+    let audio = world.get_resource::<Audio>()?.clone();
 
     for (id, idx) in play_requests {
         let handle_arc = world
@@ -265,10 +304,8 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             .and_then(|p| p.audio.get(idx))
             .map(|s| s.handle.clone());
 
-        if let Ok(mut mgr) = manager_arc.lock()
-            && let Some(player) = world.get_component::<AudioPlayer>(id)
-        {
-            match player.play(idx, &mut mgr) {
+        if let Some(player) = world.get_component::<AudioPlayer>(id) {
+            match player.play(idx, &audio) {
                 Ok(handle) => {
                     if let Some(arc) = handle_arc
                         && let Ok(mut g) = arc.lock()
@@ -297,8 +334,11 @@ impl AudioPlayer {
             .map(|s| {
                 let mut map = serde_yaml::Mapping::new();
                 map.insert("path".into(), s.path.clone().into());
+                map.insert("layer".into(), s.layer.as_str().into());
                 map.insert("volume".into(), (s.volume as f64).into());
                 map.insert("pitch".into(), (s.pitch as f64).into());
+                map.insert("fade_in".into(), (s.fade_in as f64).into());
+                map.insert("fade_out".into(), (s.fade_out as f64).into());
                 map.insert("looping".into(), s.looping.into());
                 map.insert("auto_play".into(), s.auto_play.into());
                 map.insert("spatial".into(), s.spatial.into());
@@ -325,11 +365,22 @@ impl AudioPlayer {
             if let Some(p) = entry.get("path").and_then(|v| v.as_str()) {
                 sound.path = p.to_string();
             }
+            if let Some(l) = entry.get("layer").and_then(|v| v.as_str())
+                && let Some(layer) = AudioLayer::from_str(l)
+            {
+                sound.layer = layer;
+            }
             if let Some(v) = entry.get("volume").and_then(|v| v.as_f64()) {
                 sound.volume = v as f32;
             }
             if let Some(v) = entry.get("pitch").and_then(|v| v.as_f64()) {
                 sound.pitch = v as f32;
+            }
+            if let Some(v) = entry.get("fade_in").and_then(|v| v.as_f64()) {
+                sound.fade_in = v as f32;
+            }
+            if let Some(v) = entry.get("fade_out").and_then(|v| v.as_f64()) {
+                sound.fade_out = v as f32;
             }
             if let Some(v) = entry.get("looping").and_then(|v| v.as_bool()) {
                 sound.looping = v;
@@ -345,10 +396,10 @@ impl AudioPlayer {
                 sound.max_distance = v as f32;
             }
 
-            if !sound.path.is_empty() {
-                if let Err(e) = sound.reload() {
-                    crate::log_warn!("AudioPlayer: failed to load '{}': {}", sound.path, e);
-                }
+            if !sound.path.is_empty()
+                && let Err(e) = sound.reload()
+            {
+                crate::log_warn!("AudioPlayer: failed to load '{}': {}", sound.path, e);
             }
 
             self.audio.push(sound);
@@ -356,12 +407,9 @@ impl AudioPlayer {
         Ok(())
     }
 
-    /// Plays a sound by index, returning the handle. Returns an error if no data is loaded.
-    pub fn play(
-        &self,
-        index: usize,
-        manager: &mut AudioManager,
-    ) -> Result<kira::sound::static_sound::StaticSoundHandle> {
+    /// Plays a sound by index, returning the handle.
+    /// Returns an error if no data is loaded.
+    pub fn play(&self, index: usize, audio: &Audio) -> Result<StaticSoundHandle> {
         let sound = &self.audio[index];
         let mut data = sound
             .data
@@ -372,7 +420,13 @@ impl AudioPlayer {
         if sound.looping {
             data = data.loop_region(..);
         }
-        Ok(manager.play(data)?)
+        if sound.fade_in > 0.0 {
+            data = data.fade_in_tween(Tween {
+                duration: std::time::Duration::from_secs_f32(sound.fade_in),
+                ..Default::default()
+            });
+        }
+        audio.play_sound(sound.layer, data)
     }
 }
 
@@ -403,11 +457,9 @@ pub fn auto_play_audio(world: &mut World) -> Result<()> {
     }
 
     if !world.has_resource::<Audio>() {
-        match AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()) {
-            Ok(mgr) => {
-                world.insert_resource(Audio {
-                    manager: std::sync::Arc::new(std::sync::Mutex::new(mgr)),
-                });
+        match Audio::new() {
+            Ok(audio) => {
+                world.insert_resource(audio);
             }
             Err(e) => {
                 crate::log_warn!("auto_play_audio: failed to create AudioManager: {}", e);
@@ -416,7 +468,7 @@ pub fn auto_play_audio(world: &mut World) -> Result<()> {
         }
     }
 
-    let manager_arc = world.get_resource::<Audio>()?.manager.clone();
+    let audio = world.get_resource::<Audio>()?.clone();
 
     for (id, indices) in to_play {
         for idx in indices {
@@ -425,10 +477,8 @@ pub fn auto_play_audio(world: &mut World) -> Result<()> {
                 .and_then(|p| p.audio.get(idx))
                 .map(|s| s.handle.clone());
 
-            if let Ok(mut mgr) = manager_arc.lock()
-                && let Some(player) = world.get_component::<AudioPlayer>(id)
-            {
-                match player.play(idx, &mut mgr) {
+            if let Some(player) = world.get_component::<AudioPlayer>(id) {
+                match player.play(idx, &audio) {
                     Ok(handle) => {
                         if let Some(arc) = handle_arc
                             && let Ok(mut g) = arc.lock()
@@ -443,10 +493,10 @@ pub fn auto_play_audio(world: &mut World) -> Result<()> {
             }
 
             // Mark as triggered so it doesn't fire again until the scene reloads.
-            if let Some(player) = world.get_component_mut::<AudioPlayer>(id) {
-                if let Some(s) = player.audio.get_mut(idx) {
-                    s.auto_played = true;
-                }
+            if let Some(player) = world.get_component_mut::<AudioPlayer>(id)
+                && let Some(s) = player.audio.get_mut(idx)
+            {
+                s.auto_played = true;
             }
         }
     }

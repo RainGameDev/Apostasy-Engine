@@ -1,5 +1,4 @@
 use cgmath::Vector3;
-use kira::{AudioManager, AudioManagerSettings, DefaultBackend};
 use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
 
@@ -476,11 +475,9 @@ impl UserData for WorldHandle {
             |_, this, (path, volume_db): (String, Option<f32>)| {
                 let world = this.world();
                 if !world.has_resource::<Audio>() {
-                    match AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()) {
-                        Ok(mgr) => {
-                            world.insert_resource(Audio {
-                                manager: std::sync::Arc::new(std::sync::Mutex::new(mgr)),
-                            });
+                    match Audio::new() {
+                        Ok(audio) => {
+                            world.insert_resource(audio);
                         }
                         Err(e) => {
                             crate::log_warn!("[lua] audio_play_oneshot: failed to create AudioManager: {e}");
@@ -499,10 +496,8 @@ impl UserData for WorldHandle {
                     Some(d) => d.volume(kira::Decibels(volume_db.unwrap_or(0.0))),
                     None => return Ok(()),
                 };
-                if let Ok(audio) = world.get_resource::<Audio>()
-                    && let Ok(mut mgr) = audio.manager.lock()
-                {
-                    if let Err(e) = mgr.play(data) {
+                if let Ok(audio) = world.get_resource::<Audio>() {
+                    if let Err(e) = audio.play_sound(crate::audio::layers::AudioLayer::default(), data) {
                         crate::log_warn!("[lua] audio_play_oneshot: play failed: {e}");
                     }
                 }

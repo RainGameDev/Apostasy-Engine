@@ -5,13 +5,17 @@ use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 
 use crate::assets::audio::resolve_audio_path;
+use crate::audio::layers::AudioLayer;
 
 #[derive(Clone)]
 pub struct Sound {
     pub data: Option<StaticSoundData>,
     pub path: String,
+    pub layer: AudioLayer,
     pub volume: f32,
     pub pitch: f32,
+    pub fade_in: f32,
+    pub fade_out: f32,
     pub looping: bool,
     pub auto_play: bool,
     pub auto_played: bool,
@@ -26,8 +30,11 @@ impl Default for Sound {
         Self {
             data: None,
             path: String::new(),
+            layer: AudioLayer::default(),
             volume: 0.0,
             pitch: 1.0,
+            fade_in: 0.0,
+            fade_out: 0.0,
             looping: false,
             auto_play: false,
             auto_played: false,

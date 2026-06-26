@@ -1,11 +1,12 @@
 use anyhow::Result;
 use apostasy_core::{
-    egui,
+    audio::Audio,
     ecs::{
         resources::input_manager::{InputManager, KeyBind, ModifierKeys},
         world::World,
         worldspace_streaming::{MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, WorldspaceStreaming},
     },
+    egui,
     rendering::shared::{
         UpdateRenderer,
         anti_alisaing::{AntiAliasing, AntiAliasingAmount},
@@ -48,6 +49,22 @@ pub struct EditorPreferences {
     pub shadow_map_size: u32,
     #[serde(default)]
     pub last_scene: String,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub master_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub music_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub sound_effects_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub footstep_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub ambience_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub voices_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub ui_volume: u32,
+    #[serde(default = "EditorPreferences::default_volume")]
+    pub weather_volume: u32,
 }
 
 impl Default for EditorPreferences {
@@ -64,6 +81,14 @@ impl Default for EditorPreferences {
             bias_slope: Self::default_bias_slope(),
             shadow_map_size: Self::default_shadow_map_size(),
             last_scene: String::new(),
+            master_volume: Self::default_volume(),
+            music_volume: Self::default_volume(),
+            sound_effects_volume: Self::default_volume(),
+            footstep_volume: Self::default_volume(),
+            ambience_volume: Self::default_volume(),
+            voices_volume: Self::default_volume(),
+            ui_volume: Self::default_volume(),
+            weather_volume: Self::default_volume(),
         }
     }
 }
@@ -128,6 +153,10 @@ impl EditorPreferences {
         2048
     }
 
+    fn default_volume() -> u32 {
+        50
+    }
+
     pub fn save_render_distance(distance: i32) {
         let mut prefs = Self::load();
         prefs.render_distance = distance;
@@ -186,6 +215,19 @@ const PAGES: &[PageMeta] = &[
             "Resolution",
             "Rendering",
             "Anti-Aliasing",
+        ],
+    },
+    PageMeta {
+        label: "Audio",
+        terms: &[
+            "Master",
+            "Music",
+            "Sound Effects",
+            "Footsteps",
+            "Ambience",
+            "Voices",
+            "UI",
+            "Weather",
         ],
     },
     PageMeta {
@@ -427,6 +469,103 @@ impl ViewportPage {
             }
             EditorPreferences::save_camera_speed(self.camera_speed);
         }
+        Ok(())
+    }
+}
+
+// Audio tab
+
+struct AudioPage {
+    master_volume: u32,
+    music_volume: u32,
+    sound_effects_volume: u32,
+    footstep_volume: u32,
+    ambience_volume: u32,
+    voices_volume: u32,
+    ui_volume: u32,
+    weather_volume: u32,
+}
+
+impl AudioPage {
+    fn from_world(world: &World) -> Self {
+        let prefs = EditorPreferences::load();
+        let audio = world.get_resource::<Audio>().ok().cloned();
+        Self {
+            master_volume: audio.as_ref().map(|a| a.master_volume).unwrap_or(prefs.master_volume),
+            music_volume: audio.as_ref().map(|a| a.music_volume).unwrap_or(prefs.music_volume),
+            sound_effects_volume: audio.as_ref().map(|a| a.sound_effects_volume).unwrap_or(prefs.sound_effects_volume),
+            footstep_volume: audio.as_ref().map(|a| a.footstep_volume).unwrap_or(prefs.footstep_volume),
+            ambience_volume: audio.as_ref().map(|a| a.ambience_volume).unwrap_or(prefs.ambience_volume),
+            voices_volume: audio.as_ref().map(|a| a.voices_volume).unwrap_or(prefs.voices_volume),
+            ui_volume: audio.as_ref().map(|a| a.ui_volume).unwrap_or(prefs.ui_volume),
+            weather_volume: audio.as_ref().map(|a| a.weather_volume).unwrap_or(prefs.weather_volume),
+        }
+    }
+
+    fn draw(&mut self, ui: &mut egui::Ui, style: &EditorStyle, query: &str) {
+        let dim_col = style.dim_col;
+
+        draw_section_header(ui, dim_col, style.div_col, "Master", query);
+        draw_setting(ui, dim_col, "Master Volume", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.master_volume, 0u32..=100).suffix("%"));
+        });
+
+        draw_section_header(ui, dim_col, style.div_col, "Channels", query);
+        draw_setting(ui, dim_col, "Music", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.music_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "Sound Effects", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.sound_effects_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "Footsteps", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.footstep_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "Ambience", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.ambience_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "Voices", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.voices_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "UI", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.ui_volume, 0u32..=100).suffix("%"));
+        });
+        draw_setting(ui, dim_col, "Weather", query, |ui| {
+            ui.add(egui::Slider::new(&mut self.weather_volume, 0u32..=100).suffix("%"));
+        });
+    }
+
+    fn apply(&self, world: &mut World) -> Result<()> {
+        let audio = world.get_resource::<Audio>().ok().cloned();
+
+        // Update the Audio resource fields so future reads see the latest values.
+        if let Ok(a) = world.get_resource_mut::<Audio>() {
+            a.master_volume = self.master_volume;
+            a.music_volume = self.music_volume;
+            a.sound_effects_volume = self.sound_effects_volume;
+            a.footstep_volume = self.footstep_volume;
+            a.ambience_volume = self.ambience_volume;
+            a.voices_volume = self.voices_volume;
+            a.ui_volume = self.ui_volume;
+            a.weather_volume = self.weather_volume;
+        }
+
+        // Push volumes to kira if the audio system is running.
+        if let Some(audio) = audio {
+            audio.apply_volumes();
+        }
+
+        // Persist to preferences.
+        let mut prefs = EditorPreferences::load();
+        prefs.master_volume = self.master_volume;
+        prefs.music_volume = self.music_volume;
+        prefs.sound_effects_volume = self.sound_effects_volume;
+        prefs.footstep_volume = self.footstep_volume;
+        prefs.ambience_volume = self.ambience_volume;
+        prefs.voices_volume = self.voices_volume;
+        prefs.ui_volume = self.ui_volume;
+        prefs.weather_volume = self.weather_volume;
+        prefs.save();
+
         Ok(())
     }
 }
@@ -828,6 +967,7 @@ pub fn preferences(world: &mut World) -> Result<()> {
     let mut editor = EditorPage::from_world(world);
     let mut viewport = ViewportPage::from_world(world);
     let mut graphics = GraphicsPage::from_world(world);
+    let mut audio = AudioPage::from_world(world);
     let keybinds = KeybindsPage::from_world(world);
 
     let capture = world
@@ -965,7 +1105,8 @@ pub fn preferences(world: &mut World) -> Result<()> {
                                 0 => editor.draw(ui, &style, effective_query),
                                 1 => viewport.draw(ui, &style, effective_query),
                                 2 => graphics.draw(ui, &style, effective_query),
-                                3 => keybinds.draw(
+                                3 => audio.draw(ui, &style, effective_query),
+                                4 => keybinds.draw(
                                     ui,
                                     &style,
                                     effective_query,
@@ -998,6 +1139,7 @@ pub fn preferences(world: &mut World) -> Result<()> {
     editor.apply(world)?;
     viewport.apply(world)?;
     graphics.apply(world)?;
+    audio.apply(world)?;
 
     Ok(())
 }
