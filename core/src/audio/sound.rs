@@ -55,6 +55,15 @@ impl Sound {
             .unwrap_or(false)
     }
 
+    pub fn is_paused(&self) -> bool {
+        self.handle
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|h| h.state()))
+            .map(|s| s == PlaybackState::Paused)
+            .unwrap_or(false)
+    }
+
     pub fn from_path(path: &str) -> anyhow::Result<Self> {
         let resolved = resolve_audio_path(path)
             .ok_or_else(|| anyhow::anyhow!("Audio file not found: {}", path))?;

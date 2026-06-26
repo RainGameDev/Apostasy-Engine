@@ -467,6 +467,26 @@ impl UserData for WorldHandle {
             },
         );
 
+        methods.add_method(
+            "audio_pause",
+            |_, this, (id, index): (UserDataRef<EntityHandle>, usize)| {
+                if let Some(player) = this.world().get_component_mut::<AudioPlayer>(id.0) {
+                    player.pending_pause = Some(index);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "audio_resume",
+            |_, this, (id, index): (UserDataRef<EntityHandle>, usize)| {
+                if let Some(player) = this.world().get_component_mut::<AudioPlayer>(id.0) {
+                    player.pending_resume = Some(index);
+                }
+                Ok(())
+            },
+        );
+
         // Plays a sound file directly without requiring an entity.
         // `path` is resolved the same way as Sound::from_path.
         // `volume_db` is optional (defaults to 0.0).

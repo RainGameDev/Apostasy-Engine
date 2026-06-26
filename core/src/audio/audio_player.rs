@@ -20,6 +20,10 @@ pub struct AudioPlayer {
     pub pending_play: Option<usize>,
     #[doc(hidden)]
     pub pending_stop: Option<usize>,
+    #[doc(hidden)]
+    pub pending_pause: Option<usize>,
+    #[doc(hidden)]
+    pub pending_resume: Option<usize>,
 }
 
 impl Inspect for AudioPlayer {
@@ -41,8 +45,8 @@ impl Inspect for AudioPlayer {
                                 crate::egui::Label::new(format!("Sound {}", i)),
                             );
                             let path_w = ui.available_width()
-                                - 24.0 * 2.0
-                                - ui.spacing().item_spacing.x * 2.0;
+                                - 24.0 * 3.0
+                                - ui.spacing().item_spacing.x * 3.0;
                             let resp = ui.add_sized(
                                 [path_w, row_h],
                                 crate::egui::TextEdit::singleline(&mut sound.path)
@@ -70,9 +74,14 @@ impl Inspect for AudioPlayer {
                             }
 
                             let is_playing = sound.is_playing();
+                            let is_paused = sound.is_paused();
                             let has_data = sound.data.is_some();
-                            let (btn_label, btn_hover, clickable) = if is_playing {
-                                ("⏹", "Stop", true)
+
+                            // Play / pause / resume button
+                            let (play_label, play_hover, play_clickable) = if is_playing {
+                                ("⏸", "Pause", true)
+                            } else if is_paused {
+                                ("▶", "Resume", true)
                             } else if has_data {
                                 ("▶", "Play sound", true)
                             } else {
@@ -82,21 +91,41 @@ impl Inspect for AudioPlayer {
                             if ui
                                 .add_sized(
                                     [24.0, row_h],
-                                    crate::egui::Button::new(btn_label).sense(if clickable {
+                                    crate::egui::Button::new(play_label).sense(if play_clickable {
                                         crate::egui::Sense::click()
                                     } else {
                                         crate::egui::Sense::hover()
                                     }),
                                 )
-                                .on_hover_text(btn_hover)
+                                .on_hover_text(play_hover)
                                 .clicked()
-                                && clickable
+                                && play_clickable
                             {
                                 if is_playing {
-                                    self.pending_stop = Some(i);
+                                    self.pending_pause = Some(i);
+                                } else if is_paused {
+                                    self.pending_resume = Some(i);
                                 } else {
                                     self.pending_play = Some(i);
                                 }
+                            }
+
+                            // Stop button (only when active)
+                            let stop_clickable = is_playing || is_paused;
+                            if ui
+                                .add_sized(
+                                    [24.0, row_h],
+                                    crate::egui::Button::new("⏹").sense(if stop_clickable {
+                                        crate::egui::Sense::click()
+                                    } else {
+                                        crate::egui::Sense::hover()
+                                    }),
+                                )
+                                .on_hover_text(if stop_clickable { "Stop" } else { "Not playing" })
+                                .clicked()
+                                && stop_clickable
+                            {
+                                self.pending_stop = Some(i);
                             }
 
                             if ui
@@ -246,11 +275,35 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
         })
         .collect();
 
-    if play_requests.is_empty() && stop_requests.is_empty() {
+    let pause_requests: Vec<(crate::worldspaces::cell::EntityId, usize)> = world
+        .get_entities_with_component::<AudioPlayer>()
+        .into_iter()
+        .filter_map(|id| {
+            world
+                .get_component::<AudioPlayer>(id)
+                .and_then(|p| p.pending_pause.map(|idx| (id, idx)))
+        })
+        .collect();
+
+    let resume_requests: Vec<(crate::worldspaces::cell::EntityId, usize)> = world
+        .get_entities_with_component::<AudioPlayer>()
+        .into_iter()
+        .filter_map(|id| {
+            world
+                .get_component::<AudioPlayer>(id)
+                .and_then(|p| p.pending_resume.map(|idx| (id, idx)))
+        })
+        .collect();
+
+    if play_requests.is_empty()
+        && stop_requests.is_empty()
+        && pause_requests.is_empty()
+        && resume_requests.is_empty()
+    {
         return Ok(());
     }
 
-    // Handle stops, no AudioManager needed.
+    // Handle stops — no AudioManager needed.
     for (id, idx) in &stop_requests {
         if let Some(player) = world.get_component::<AudioPlayer>(*id)
             && let Some(sound) = player.audio.get(*idx)
@@ -271,6 +324,50 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
         }
         if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
             player.pending_stop = None;
+        }
+    }
+
+    // Handle pauses — no AudioManager needed.
+    for (id, idx) in &pause_requests {
+        if let Some(player) = world.get_component::<AudioPlayer>(*id)
+            && let Some(sound) = player.audio.get(*idx)
+            && let Ok(mut guard) = sound.handle.lock()
+            && let Some(h) = guard.as_mut()
+        {
+            let tween = if sound.fade_out > 0.0 {
+                Tween {
+                    duration: std::time::Duration::from_secs_f32(sound.fade_out),
+                    ..Default::default()
+                }
+            } else {
+                Tween::default()
+            };
+            h.pause(tween);
+        }
+        if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
+            player.pending_pause = None;
+        }
+    }
+
+    // Handle resumes — no AudioManager needed.
+    for (id, idx) in &resume_requests {
+        if let Some(player) = world.get_component::<AudioPlayer>(*id)
+            && let Some(sound) = player.audio.get(*idx)
+            && let Ok(mut guard) = sound.handle.lock()
+            && let Some(h) = guard.as_mut()
+        {
+            let tween = if sound.fade_in > 0.0 {
+                Tween {
+                    duration: std::time::Duration::from_secs_f32(sound.fade_in),
+                    ..Default::default()
+                }
+            } else {
+                Tween::default()
+            };
+            h.resume(tween);
+        }
+        if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
+            player.pending_resume = None;
         }
     }
 

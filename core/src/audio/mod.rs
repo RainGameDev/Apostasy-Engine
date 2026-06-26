@@ -78,10 +78,10 @@ impl Audio {
             (AudioLayer::Weather, self.weather_volume),
         ];
         for (layer, vol) in layer_vols {
-            if let Some(track) = self.tracks.get(&layer) &&
-                let Ok(mut handle) = track.lock() {
-                    handle.set_volume(pct_to_db(vol), kira::Tween::default());
-                }
+            if let Some(track) = self.tracks.get(&layer)
+                && let Ok(mut handle) = track.lock()
+            {
+                handle.set_volume(pct_to_db(vol), kira::Tween::default());
             }
         }
     }
