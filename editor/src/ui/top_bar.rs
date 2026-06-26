@@ -17,7 +17,7 @@ use apostasy_macros::Resource;
 
 use crate::ui::EditorStyle;
 use crate::ui::asset_editor::AssetEditorState;
-use crate::ui::assets_panel::EntityWindowState;
+use crate::ui::assets_panel::DataWindowState;
 use crate::ui::cell_panel::CellSearchState;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::{EditorPreferences, PreferencesState};
@@ -108,8 +108,8 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         .get_resource::<ViewportInfo>()
         .map(|s| s.open)
         .unwrap_or(true);
-    let entity_window_open = world
-        .get_resource::<EntityWindowState>()
+    let data_window_open = world
+        .get_resource::<DataWindowState>()
         .map(|s| s.open)
         .unwrap_or(true);
     let cell_open = world
@@ -132,7 +132,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
     let current_scene = EditorPreferences::load().last_scene;
 
     let mut toggle_viewport = false;
-    let mut toggle_entity_window = false;
+    let mut toggle_data_window = false;
     let mut toggle_cell = false;
     let mut toggle_inspector = false;
     let mut toggle_asset_editor = false;
@@ -247,10 +247,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
                                         ui.close();
                                     }
                                     if ui
-                                        .selectable_label(entity_window_open, "Entity Window")
+                                        .selectable_label(data_window_open, "Data Window")
                                         .clicked()
                                     {
-                                        toggle_entity_window = true;
+                                        toggle_data_window = true;
                                         ui.close();
                                     }
                                     if ui.selectable_label(cell_open, "Cell View").clicked() {
@@ -460,8 +460,8 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             s.open = !s.open;
         }
     }
-    if toggle_entity_window {
-        if let Ok(s) = world.get_resource_mut::<EntityWindowState>() {
+    if toggle_data_window {
+        if let Ok(s) = world.get_resource_mut::<DataWindowState>() {
             s.open = !s.open;
         }
     }
@@ -481,7 +481,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         }
     }
     if toggle_viewport
-        || toggle_entity_window
+        || toggle_data_window
         || toggle_cell
         || toggle_inspector
         || toggle_asset_editor
@@ -490,8 +490,8 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             .get_resource::<ViewportInfo>()
             .map(|s| s.open)
             .unwrap_or(true);
-        let entity_window_open = world
-            .get_resource::<EntityWindowState>()
+        let data_window_open = world
+            .get_resource::<DataWindowState>()
             .map(|s| s.open)
             .unwrap_or(true);
         let cell_open = world
@@ -508,7 +508,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             .unwrap_or(false);
         if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
             layout.viewport_open = viewport_open;
-            layout.entity_window_open = entity_window_open;
+            layout.data_window_open = data_window_open;
             layout.cell_open = cell_open;
             layout.inspector_visible = inspector_visible;
             layout.asset_editor_open = asset_editor_open;
@@ -656,8 +656,8 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             if let Ok(viewport) = world.get_resource_mut::<ViewportInfo>() {
                 viewport.open = layout.viewport_open;
             }
-            if let Ok(state) = world.get_resource_mut::<EntityWindowState>() {
-                state.open = layout.entity_window_open;
+            if let Ok(state) = world.get_resource_mut::<DataWindowState>() {
+                state.open = layout.data_window_open;
             }
             if let Ok(cell) = world.get_resource_mut::<CellSearchState>() {
                 cell.open = layout.cell_open;

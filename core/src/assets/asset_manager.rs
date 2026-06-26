@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::assets::gltf::{ModelLoader, ModelRegistry};
 use crate::assets::loader::YamlAssetLoader;
 use crate::assets::loaders::material_loader::MaterialLoader;
+use crate::assets::audio::list_available_audio;
 use crate::assets::shader::list_available_shaders;
 use crate::assets::texture::list_available_textures;
 use crate::assets::shader_registry::ShaderRegistry;
@@ -130,6 +131,10 @@ impl AssetManager {
 
     pub fn texture_names(&self) -> Vec<String> {
         list_available_textures()
+    }
+
+    pub fn audio_names(&self) -> Vec<String> {
+        list_available_audio()
     }
 
     /// Returns (class_name, [(namespace, name)]) for all registered loaders.

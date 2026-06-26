@@ -24,7 +24,7 @@ pub mod ui_manager;
 pub mod viewport_panel;
 
 use asset_editor::AssetEditorState;
-use assets_panel::EntityWindowState;
+use assets_panel::DataWindowState;
 use cell_panel::CellSearchState;
 use inspector_panel::InspectorPanelState;
 use preferences_panel::EditorPreferences;
@@ -44,8 +44,8 @@ pub fn init(world: &mut World) -> Result<()> {
         open: layout.viewport_open,
         ..Default::default()
     });
-    world.insert_resource(EntityWindowState {
-        open: layout.entity_window_open,
+    world.insert_resource(DataWindowState {
+        open: layout.data_window_open,
         ..Default::default()
     });
     world.insert_resource(CellSearchState {
