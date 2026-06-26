@@ -3,6 +3,11 @@ register_component("DeathTimer", { remaining = 3.0 })
 
 ---@param world World
 function start(world)
+	-- A parent entity the enemies hang off of.
+	local squad = world:spawn()
+	world:set_name(squad, "Squad")
+	world:add_component(squad, "Transform", { local_position = { 0, 0, 0 } })
+
 	for i = 1, 3 do
 		local e = world:spawn()
 		world:set_name(e, "Enemy" .. i)
@@ -12,6 +17,13 @@ function start(world)
 		-- Native components: position each enemy in a row and give it velocity.
 		world:add_component(e, "Transform", { local_position = { i * 2, 0, 0 } })
 		world:add_component(e, "Velocity", { linear_velocity = { 0, 0, -1 } })
+
+		world:set_parent(e, squad)
+	end
+
+	world:log("--- Squad children ---")
+	for _, child in ipairs(world:get_children(squad)) do
+		world:log(world:get_name(child) or tostring(child))
 	end
 
 	world:log("--- query: Health + Player tag ---")

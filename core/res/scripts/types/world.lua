@@ -32,6 +32,11 @@ function World:despawn(entity) end
 ---@param name string
 function World:set_name(entity, name) end
 
+---Returns an entity's display name, or `nil` if it has none.
+---@param entity Entity
+---@return string|nil
+function World:get_name(entity) end
+
 -- ---------------------------------------------------------------------------
 -- Tags (zero-size markers, referenced by name)
 -- ---------------------------------------------------------------------------
@@ -62,6 +67,49 @@ function World:get_entity_with_tag(name) end
 ---@param name string
 ---@return Entity[]
 function World:get_entities_with_tag(name) end
+
+-- ---------------------------------------------------------------------------
+-- Hierarchy (parent/child relationships)
+-- ---------------------------------------------------------------------------
+
+---Parents `child` under `parent`. Re-parenting moves the child if it already
+---had a parent. Use `detach` to clear a parent. Moving across a cell boundary
+---may change the child's id.
+---@param child Entity
+---@param parent Entity
+function World:set_parent(child, parent) end
+
+---Removes an entity's parent, making it a root entity. No-op if already a root.
+---@param entity Entity
+function World:detach(entity) end
+
+---Returns an entity's parent, or `nil` if it is a root entity.
+---@param entity Entity
+---@return Entity|nil
+function World:get_parent(entity) end
+
+---Returns an array of an entity's direct children (not recursive).
+---@param entity Entity
+---@return Entity[]
+function World:get_children(entity) end
+
+---Returns an array of an entity's ancestors, nearest parent first.
+---@param entity Entity
+---@return Entity[]
+function World:get_ancestors(entity) end
+
+---Returns an array of all of an entity's descendants (recursive).
+---@param entity Entity
+---@return Entity[]
+function World:get_descendants(entity) end
+
+---Returns an array of every entity that has no parent.
+---@return Entity[]
+function World:get_root_entities() end
+
+---Returns an array of every entity in the world.
+---@return Entity[]
+function World:get_all_entities() end
 
 -- ---------------------------------------------------------------------------
 -- Components (per-entity data, referenced by name)

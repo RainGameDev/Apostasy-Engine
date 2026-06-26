@@ -62,6 +62,10 @@ impl UserData for WorldHandle {
             },
         );
 
+        methods.add_method("get_name", |_, this, id: UserDataRef<EntityHandle>| {
+            Ok(this.world().get_name(id.0).map(str::to_string))
+        });
+
         methods.add_method(
             "add_tag",
             |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
@@ -293,12 +297,50 @@ impl UserData for WorldHandle {
         });
 
         methods.add_method("get_entities_with_tag", |lua, this, name: String| {
-            let ids = this.world().get_entities_with_tag_by_name(&name);
-            let t = lua.create_table()?;
-            for (i, id) in ids.into_iter().enumerate() {
-                t.set(i + 1, EntityHandle(id))?;
-            }
-            Ok(t)
+            ids_to_table(lua, this.world().get_entities_with_tag_by_name(&name))
+        });
+
+        // ---- hierarchy ----
+        methods.add_method(
+            "set_parent",
+            |_,
+             this,
+             (child, parent): (UserDataRef<EntityHandle>, UserDataRef<EntityHandle>)| {
+                let _ = this.world().set_parent(child.0, Some(parent.0));
+                Ok(())
+            },
+        );
+
+        methods.add_method("detach", |_, this, id: UserDataRef<EntityHandle>| {
+            let _ = this.world().detach(id.0);
+            Ok(())
+        });
+
+        methods.add_method("get_parent", |_, this, id: UserDataRef<EntityHandle>| {
+            Ok(this.world().get_parent_id(id.0).map(EntityHandle))
+        });
+
+        methods.add_method("get_children", |lua, this, id: UserDataRef<EntityHandle>| {
+            ids_to_table(lua, this.world().get_children_ids(id.0))
+        });
+
+        methods.add_method("get_ancestors", |lua, this, id: UserDataRef<EntityHandle>| {
+            ids_to_table(lua, this.world().get_ancestors(id.0))
+        });
+
+        methods.add_method(
+            "get_descendants",
+            |lua, this, id: UserDataRef<EntityHandle>| {
+                ids_to_table(lua, this.world().get_descendants(id.0))
+            },
+        );
+
+        methods.add_method("get_root_entities", |lua, this, ()| {
+            ids_to_table(lua, this.world().get_root_ids())
+        });
+
+        methods.add_method("get_all_entities", |lua, this, ()| {
+            ids_to_table(lua, this.world().get_all_ids())
         });
 
         methods.add_method("log_warn", |_, _this, msg: String| {
@@ -314,6 +356,15 @@ impl UserData for WorldHandle {
             Ok(())
         });
     }
+}
+
+/// Builds a 1-indexed Lua array of `EntityHandle`s from a list of ids.
+fn ids_to_table(lua: &mlua::Lua, ids: Vec<EntityId>) -> mlua::Result<mlua::Table> {
+    let t = lua.create_table()?;
+    for (i, id) in ids.into_iter().enumerate() {
+        t.set(i + 1, EntityHandle(id))?;
+    }
+    Ok(t)
 }
 
 /// Overlays `over`'s fields onto a clone of `base` (shallow). Lets
