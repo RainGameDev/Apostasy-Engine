@@ -37,6 +37,13 @@ pub struct LuaRuntime {
 impl LuaRuntime {
     pub fn new() -> Result<Self> {
         let lua = Lua::new();
+
+        // Math ergonomics (vec2/vec3/vec4/quat, math helpers) into globals, so
+        // every sandboxed script env inherits them through its `__index`.
+        lua.load(include_str!("prelude.lua"))
+            .set_name("prelude")
+            .exec()?;
+
         let pending: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
 
         let buffer = pending.clone();

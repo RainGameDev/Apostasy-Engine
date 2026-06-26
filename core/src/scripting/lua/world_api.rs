@@ -83,10 +83,6 @@ impl UserData for WorldHandle {
         );
 
         // ---- components ----
-        // A `name` is resolved against the native component registry first (any
-        // `#[derive(Component)]` type, e.g. "Transform", "Velocity", "Light"),
-        // and falls back to Lua script components declared with
-        // `register_component`. The same five methods cover both kinds.
         methods.add_method(
             "add_component",
             |lua,
@@ -143,9 +139,7 @@ impl UserData for WorldHandle {
 
         methods.add_method(
             "set_component",
-            |lua,
-             this,
-             (id, name, table): (UserDataRef<EntityHandle>, String, mlua::Value)| {
+            |lua, this, (id, name, table): (UserDataRef<EntityHandle>, String, mlua::Value)| {
                 let value: YamlValue = lua.from_value(table)?;
                 let world = this.world();
                 if let Some(reg) = get_component_registration(&name) {
@@ -207,8 +201,6 @@ impl UserData for WorldHandle {
         });
 
         // ---- global script resources ----
-        // Note: `register_resource(name, defaults)` is a top-level global (like
-        // `register_component`), not a world method — see runtime.rs.
         methods.add_method("remove_resource", |_, this, name: String| {
             if let Ok(r) = this.world().get_resource_mut::<LuaResources>() {
                 r.remove(&name);
@@ -303,9 +295,7 @@ impl UserData for WorldHandle {
         // ---- hierarchy ----
         methods.add_method(
             "set_parent",
-            |_,
-             this,
-             (child, parent): (UserDataRef<EntityHandle>, UserDataRef<EntityHandle>)| {
+            |_, this, (child, parent): (UserDataRef<EntityHandle>, UserDataRef<EntityHandle>)| {
                 let _ = this.world().set_parent(child.0, Some(parent.0));
                 Ok(())
             },
@@ -320,13 +310,19 @@ impl UserData for WorldHandle {
             Ok(this.world().get_parent_id(id.0).map(EntityHandle))
         });
 
-        methods.add_method("get_children", |lua, this, id: UserDataRef<EntityHandle>| {
-            ids_to_table(lua, this.world().get_children_ids(id.0))
-        });
+        methods.add_method(
+            "get_children",
+            |lua, this, id: UserDataRef<EntityHandle>| {
+                ids_to_table(lua, this.world().get_children_ids(id.0))
+            },
+        );
 
-        methods.add_method("get_ancestors", |lua, this, id: UserDataRef<EntityHandle>| {
-            ids_to_table(lua, this.world().get_ancestors(id.0))
-        });
+        methods.add_method(
+            "get_ancestors",
+            |lua, this, id: UserDataRef<EntityHandle>| {
+                ids_to_table(lua, this.world().get_ancestors(id.0))
+            },
+        );
 
         methods.add_method(
             "get_descendants",

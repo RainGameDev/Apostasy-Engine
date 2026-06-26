@@ -1,63 +1,77 @@
-register_component("Health", { current = 100, max = 100 })
-register_component("DeathTimer", { remaining = 3.0 })
+register_component("Orbit", { radius = 5.0, speed = 30.0, angle = 0.0, axis = { 0, 1, 0 } })
+register_resource("SimConfig", { paused = false, time_scale = 1.0 })
+---@param world World
+---@param parent Entity
+---@param name string
+---@param radius number
+---@param speed number
+local function spawn_body(world, parent, name, radius, speed)
+	local e = world:spawn()
+	world:set_name(e, name)
+	world:add_component(e, "Transform", { local_position = { radius, 0, 0 } })
+	world:add_component(e, "Orbit", { radius = radius, speed = speed, axis = { 0, 1, 0 } })
+	world:set_parent(e, parent)
+	return e
+end
 
 ---@param world World
 function start(world)
-	-- A parent entity the enemies hang off of.
-	local squad = world:spawn()
-	world:set_name(squad, "Squad")
-	world:add_component(squad, "Transform", { local_position = { 0, 0, 0 } })
+	-- The star sits at the origin and emits light.
+	local star = world:spawn()
+	world:set_name(star, "Star")
+	world:add_component(star, "Transform", { local_position = { 0, 0, 0 } })
+	world:add_component(star, "Light", {
+		light_type = "Point",
+		radius = 50.0,
+		color = { r = 1.0, g = 0.9, b = 0.6 },
+		intensity = 5.0,
+		is_emitting = true,
+	})
+	world:add_tag(star, "Star")
 
-	for i = 1, 3 do
-		local e = world:spawn()
-		world:set_name(e, "Enemy" .. i)
-		world:add_tag(e, "Player")
-		world:add_component(e, "Health", { current = i * 10, max = 100 })
+	-- Three planets orbiting the star, plus a moon orbiting the middle planet.
+	spawn_body(world, star, "Planet-A", 6.0, 40.0)
+	local planet_b = spawn_body(world, star, "Planet-B", 10.0, 25.0)
+	spawn_body(world, star, "Planet-C", 14.0, 15.0)
+	local moon = spawn_body(world, planet_b, "Moon", 2.5, 120.0)
 
-		-- Native components: position each enemy in a row and give it velocity.
-		world:add_component(e, "Transform", { local_position = { i * 2, 0, 0 } })
-		world:add_component(e, "Velocity", { linear_velocity = { 0, 0, -1 } })
-
-		world:set_parent(e, squad)
+	-- Hierarchy readout: the star's direct children, then the moon's ancestry.
+	world:log("--- Star system ---")
+	for _, child in ipairs(world:get_children(star)) do
+		world:log("orbiting star: " .. (world:get_name(child) or tostring(child)))
+	end
+	for _, ancestor in ipairs(world:get_ancestors(moon)) do
+		world:log("moon ancestor: " .. (world:get_name(ancestor) or tostring(ancestor)))
 	end
 
-	world:log("--- Squad children ---")
-	for _, child in ipairs(world:get_children(squad)) do
-		world:log(world:get_name(child) or tostring(child))
-	end
-
-	world:log("--- query: Health + Player tag ---")
-	world:query("Health"):with_tag("Player"):for_each(function(id, health)
-		world:log(tostring(id) .. " has " .. health.current .. " hp")
-		if health.current < 20 then
-			world:add_component(id, "DeathTimer", { remaining = 3.0 })
-		end
+	-- Native-component query: count the lights in the scene.
+	local lights = 0
+	world:query("Light"):for_each(function()
+		lights = lights + 1
 	end)
+	world:log("light count: " .. lights)
 end
 
 ---@param world World
 function update(world)
-	-- Native components can be queried directly now, same as script components.
-	-- Nudge every Player's Transform upward over time.
-	local dt = world:delta()
-	world:query("Transform"):with_tag("Player"):for_each(function(id, t)
-		t.local_position[2] = t.local_position[2] + dt
-		world:set_component(id, "Transform", { local_position = t.local_position })
+	local cfg = world:get_resource("SimConfig")
+	if cfg and cfg.paused then
+		return
+	end
+	local dt = world:delta() * (cfg and cfg.time_scale or 1.0)
+
+	world:query("Orbit"):for_each(function(id, orbit)
+		orbit.angle = (orbit.angle + orbit.speed * dt) % 360.0
+		local rotation = quat.from_axis_angle(orbit.axis, orbit.angle)
+		local position = rotation:rotate(vec3(orbit.radius, 0, 0))
+		world:set_component(id, "Transform", { local_position = position })
+		world:set_component(id, "Orbit", orbit) -- persist the advanced angle
 	end)
 end
 
 ---@param world World
 ---@param delta number
-function fixed_update(world, delta)
-	world:query("DeathTimer"):for_each(function(id, timer)
-		timer.remaining = timer.remaining - delta
-		if timer.remaining <= 0 then
-			world:despawn(id)
-		else
-			world:set_component(id, "DeathTimer", timer)
-		end
-	end)
-end
+function fixed_update(world, delta) end
 
 ---@param world World
 function late_update(world) end
