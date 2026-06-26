@@ -5,6 +5,8 @@ use serde_yaml::Value as YamlValue;
 use super::component::{LuaComponentRegistry, ScriptComponents};
 use super::query::LuaQuery;
 use super::resource::LuaResources;
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::loaders::material_loader::MaterialLoader;
 use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
@@ -61,13 +63,10 @@ impl UserData for WorldHandle {
         });
 
         // Spawns into a specific 128-unit cell, addressed by integer cell coords.
-        methods.add_method(
-            "spawn_in_cell",
-            |_, this, (x, y, z): (i32, i32, i32)| {
-                let id = this.world().spawn_in_cell(Vector3::new(x, y, z)).id();
-                Ok(EntityHandle(id))
-            },
-        );
+        methods.add_method("spawn_in_cell", |_, this, (x, y, z): (i32, i32, i32)| {
+            let id = this.world().spawn_in_cell(Vector3::new(x, y, z)).id();
+            Ok(EntityHandle(id))
+        });
 
         methods.add_method("despawn", |_, this, id: UserDataRef<EntityHandle>| {
             this.world().despawn(id.0);
@@ -309,12 +308,8 @@ impl UserData for WorldHandle {
                 let ray = Ray::new(table_to_vec3(&origin), table_to_vec3(&direction));
                 let world = this.world();
                 let snapshots = build_collider_snapshot(world);
-                let hit = raycast_colliders_raw(
-                    &ray,
-                    max_distance,
-                    &snapshots,
-                    ignore.map(|i| i.0),
-                );
+                let hit =
+                    raycast_colliders_raw(&ray, max_distance, &snapshots, ignore.map(|i| i.0));
                 match hit {
                     Some(h) => {
                         let t = lua.create_table()?;
@@ -329,6 +324,53 @@ impl UserData for WorldHandle {
                 }
             },
         );
+
+        // ---- materials ----
+        // Sets a loaded material's RGBA color (`{r, g, b, a}` map or `[r, g, b, a]`
+        // sequence). The render loop reads material colors every frame, so this
+        // re-tints every entity using the material immediately.
+        methods.add_method(
+            "set_material_color",
+            |_, this, (name, color): (String, mlua::Table)| {
+                let rgba = table_to_rgba(&color);
+                if let Ok(am) = this.world().get_resource::<AssetManager>()
+                    && let Some(loader) = am.get_loader::<MaterialLoader>()
+                    && let Some(mat) = loader.registry.write().unwrap().materials.get_mut(&name)
+                {
+                    mat.color = rgba;
+                }
+                Ok(())
+            },
+        );
+
+        // Returns a material's current color as an `[r, g, b, a]` sequence, or nil
+        // if no material with that name is loaded.
+        methods.add_method("get_material_color", |lua, this, name: String| {
+            let color = this
+                .world()
+                .get_resource::<AssetManager>()
+                .ok()
+                .and_then(|am| am.get_loader::<MaterialLoader>())
+                .and_then(|loader| {
+                    loader
+                        .registry
+                        .read()
+                        .unwrap()
+                        .materials
+                        .get(&name)
+                        .map(|m| m.color)
+                });
+            match color {
+                Some(c) => {
+                    let t = lua.create_table()?;
+                    for (i, v) in c.iter().enumerate() {
+                        t.set(i + 1, *v)?;
+                    }
+                    Ok(mlua::Value::Table(t))
+                }
+                None => Ok(mlua::Value::Nil),
+            }
+        });
 
         methods.add_method(
             "has_tag",
@@ -422,15 +464,26 @@ fn table_to_vec3(t: &mlua::Table) -> Vector3<f32> {
             .or_else(|| t.get::<f32>(idx).ok())
             .unwrap_or(0.0)
     };
-    Vector3::new(
-        component("x", 1),
-        component("y", 2),
-        component("z", 3),
-    )
+    Vector3::new(component("x", 1), component("y", 2), component("z", 3))
 }
 
-/// Builds a `[x, y, z]` sequence table — the same shape components use, so the
-/// result wraps cleanly with `vec3(...)` on the Lua side.
+/// converts a table to rgba values.
+fn table_to_rgba(t: &mlua::Table) -> [f32; 4] {
+    let channel = |key: &str, idx: i64| {
+        t.get::<f32>(key)
+            .ok()
+            .or_else(|| t.get::<f32>(idx).ok())
+            .unwrap_or(1.0)
+    };
+    [
+        channel("r", 1),
+        channel("g", 2),
+        channel("b", 3),
+        channel("a", 4),
+    ]
+}
+
+/// Converts a vec3 to a lua table.
 fn vec3_to_table(lua: &mlua::Lua, v: Vector3<f32>) -> mlua::Result<mlua::Table> {
     let t = lua.create_table()?;
     t.set(1, v.x)?;

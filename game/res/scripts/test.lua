@@ -7,15 +7,16 @@ register_resource("SimConfig", { paused = false, time_scale = 1.0, probed = fals
 ---@param name string
 ---@param radius number
 ---@param speed number
-local function spawn_body(world, parent, name, radius, speed)
+---@param material string  name of a `class: Material` YAML (res/material/*.yaml)
+local function spawn_body(world, parent, name, radius, speed, material)
 	local e = world:spawn()
 	world:set_name(e, name)
 	world:add_component(e, "Transform", { local_position = { radius, 0, 0 } })
 	world:add_component(e, "Orbit", { radius = radius, speed = speed, axis = { 0, 1, 0 } })
 	-- A sphere collider so the body can be hit by raycasts.
 	world:add_component(e, "Collider", { shape = "Sphere", radius = 1.0 })
-	-- A visible mesh (one of the engine's built-in default models).
-	world:add_component(e, "ModelRenderer", { model_path = "m_default_sphere" })
+	-- A visible mesh tinted by the named material's color.
+	world:add_component(e, "ModelRenderer", { model_path = "m_default_sphere", material_override = material })
 	world:set_parent(e, parent)
 	return e
 end
@@ -58,20 +59,21 @@ function start(world)
 	local star = world:spawn()
 	world:set_name(star, "Star")
 	world:add_component(star, "Transform", { local_position = { 0, 0, 0 }, local_scale = { 2, 2, 2 } })
-	world:add_component(star, "ModelRenderer", { model_path = "m_default_sphere" })
+	world:add_component(star, "ModelRenderer", { model_path = "m_default_sphere", material_override = "StarMat" })
 	world:add_component(star, "Light", {
 		light_type = "Point",
 		radius = 50.0,
 		color = { r = 1.0, g = 0.9, b = 0.6 },
-		intensity = 5.0,
+		intensity = 1.0,
 		is_emitting = true,
 	})
 
 	-- Three planets orbiting the star, plus a moon orbiting the middle planet.
-	spawn_body(world, star, "Planet-A", 6.0, 40.0)
-	local planet_b = spawn_body(world, star, "Planet-B", 10.0, 25.0)
-	spawn_body(world, star, "Planet-C", 14.0, 15.0)
-	local moon = spawn_body(world, planet_b, "Moon", 2.5, 120.0)
+	-- Each body is tinted by a different material.
+	spawn_body(world, star, "Planet-A", 6.0, 40.0, "PlanetAMat")
+	local planet_b = spawn_body(world, star, "Planet-B", 10.0, 25.0, "PlanetBMat")
+	spawn_body(world, star, "Planet-C", 14.0, 15.0, "PlanetCMat")
+	local moon = spawn_body(world, planet_b, "Moon", 2.5, 120.0, "MoonMat")
 
 	-- A free-floating beacon, spawned directly at a world position rather than
 	-- being parented and offset.
@@ -111,9 +113,16 @@ function update(world)
 		world:set_component(id, "Orbit", orbit) -- persist the advanced angle
 	end)
 
-	-- Raycast demo: once the bodies have moved (after the first frame, so global
-	-- transforms are settled), cast a ray from the star toward Planet-A and
-	-- report what the ray strikes. Latched so it only fires once.
+	local t = world:time()
+	local pulse = 0.2 + 0.5 * math.sin(t * 2.0)
+	world:set_material_color("StarMat", { r = 1.0, g = 0.6 + 0.3 * pulse, b = 0.15 * pulse })
+	-- Cycle Planet-A through a rainbow (phase-shifted RGB sines).
+	world:set_material_color("PlanetAMat", {
+		0.1 + 0.5 * math.sin(t),
+		0.5 + 0.1 * math.sin(t + 2.094),
+		0.5 + 0.1 * math.sin(t + 4.188),
+	})
+
 	if cfg and not cfg.probed then
 		local star = find_by_name(world, "Star")
 		local target = find_by_name(world, "Planet-A")
@@ -123,12 +132,14 @@ function update(world)
 			local dir = vec3(world:get_component(target, "Transform").local_position)
 			local hit = world:raycast(vec3.zero, dir, 100.0, star)
 			if hit then
-				world:log(string.format(
-					"raycast hit '%s' at distance %.2f, normal %s",
-					world:get_name(hit.entity) or tostring(hit.entity),
-					hit.distance,
-					tostring(vec3(hit.normal))
-				))
+				world:log(
+					string.format(
+						"raycast hit '%s' at distance %.2f, normal %s",
+						world:get_name(hit.entity) or tostring(hit.entity),
+						hit.distance,
+						tostring(vec3(hit.normal))
+					)
+				)
 			else
 				world:log("raycast hit nothing")
 			end

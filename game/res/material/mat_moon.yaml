@@ -1,0 +1,8 @@
+name: MoonMat
+namespace: game
+class: Material
+color:
+- 0.70
+- 0.70
+- 0.75
+- 1.0

@@ -1,0 +1,8 @@
+name: PlanetBMat
+namespace: game
+class: Material
+color:
+- 0.30
+- 0.55
+- 0.85
+- 1.0

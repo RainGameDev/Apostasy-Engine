@@ -230,6 +230,25 @@ function World:query(...) end
 function World:raycast(origin, direction, max_distance, ignore) end
 
 -- ---------------------------------------------------------------------------
+-- Materials
+-- ---------------------------------------------------------------------------
+
+---Sets a loaded material's RGBA color. `color` is an `{r, g, b, a}` table or an
+---`[r, g, b, a]` sequence (missing alpha defaults to 1.0). The render loop reads
+---material colors each frame, so this re-tints every entity whose
+---`ModelRenderer.material_override` names this material — immediately. No-op if
+---no material with that name is loaded.
+---@param name string
+---@param color number[]|{r:number, g:number, b:number, a:number}
+function World:set_material_color(name, color) end
+
+---Returns a material's current color as an `[r, g, b, a]` sequence, or nil if no
+---material with that name is loaded.
+---@param name string
+---@return number[]|nil
+function World:get_material_color(name) end
+
+-- ---------------------------------------------------------------------------
 -- Time
 -- ---------------------------------------------------------------------------
 
