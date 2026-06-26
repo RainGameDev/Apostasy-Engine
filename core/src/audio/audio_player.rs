@@ -178,15 +178,14 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
 
     // Handle stops, no AudioManager needed.
     for (id, idx) in &stop_requests {
-        if let Some(player) = world.get_component::<AudioPlayer>(*id) {
-            if let Some(sound) = player.audio.get(*idx) {
-                if let Ok(mut guard) = sound.handle.lock() {
-                    if let Some(h) = guard.as_mut() {
-                        h.stop(Tween::default());
-                    }
-                    *guard = None;
-                }
+        if let Some(player) = world.get_component::<AudioPlayer>(*id)
+            && let Some(sound) = player.audio.get(*idx)
+            && let Ok(mut guard) = sound.handle.lock()
+        {
+            if let Some(h) = guard.as_mut() {
+                h.stop(Tween::default());
             }
+            *guard = None;
         }
         if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
             player.pending_stop = None;

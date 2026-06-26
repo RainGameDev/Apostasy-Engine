@@ -215,7 +215,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
                             ui.horizontal(|ui| {
                                 ui.label("Name");
 
-                                let btn_w = 72.0;
+                                let btn_w = 90.0;
                                 let text_w =
                                     (ui.available_width() - btn_w - ui.spacing().item_spacing.x)
                                         .max(0.0);

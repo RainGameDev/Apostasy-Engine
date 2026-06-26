@@ -1,4 +1,5 @@
 use cgmath::Vector3;
+use kira::{AudioManager, AudioManagerSettings, DefaultBackend};
 use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
 
@@ -7,6 +8,9 @@ use super::query::LuaQuery;
 use super::resource::LuaResources;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::material_loader::MaterialLoader;
+use crate::audio::Audio;
+use crate::audio::audio_player::AudioPlayer;
+use crate::audio::sound::Sound;
 use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
@@ -438,6 +442,73 @@ impl UserData for WorldHandle {
         methods.add_method("get_all_entities", |lua, this, ()| {
             ids_to_table(lua, this.world().get_all_ids())
         });
+
+        // ---- audio ----
+        // Sets pending_play on an entity's AudioPlayer component.
+        // `index` is 0-based. The existing audio_player_pending system processes
+        // it next frame.
+        methods.add_method(
+            "audio_play",
+            |_, this, (id, index): (UserDataRef<EntityHandle>, usize)| {
+                if let Some(player) = this.world().get_component_mut::<AudioPlayer>(id.0) {
+                    player.pending_play = Some(index);
+                }
+                Ok(())
+            },
+        );
+
+        // Sets pending_stop on an entity's AudioPlayer component.
+        methods.add_method(
+            "audio_stop",
+            |_, this, (id, index): (UserDataRef<EntityHandle>, usize)| {
+                if let Some(player) = this.world().get_component_mut::<AudioPlayer>(id.0) {
+                    player.pending_stop = Some(index);
+                }
+                Ok(())
+            },
+        );
+
+        // Plays a sound file directly without requiring an entity.
+        // `path` is resolved the same way as Sound::from_path.
+        // `volume_db` is optional (defaults to 0.0).
+        methods.add_method(
+            "audio_play_oneshot",
+            |_, this, (path, volume_db): (String, Option<f32>)| {
+                let world = this.world();
+                if !world.has_resource::<Audio>() {
+                    match AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()) {
+                        Ok(mgr) => {
+                            world.insert_resource(Audio {
+                                manager: std::sync::Arc::new(std::sync::Mutex::new(mgr)),
+                            });
+                        }
+                        Err(e) => {
+                            crate::log_warn!("[lua] audio_play_oneshot: failed to create AudioManager: {e}");
+                            return Ok(());
+                        }
+                    }
+                }
+                let sound = match Sound::from_path(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        crate::log_warn!("[lua] audio_play_oneshot: {e}");
+                        return Ok(());
+                    }
+                };
+                let data = match sound.data {
+                    Some(d) => d.volume(kira::Decibels(volume_db.unwrap_or(0.0))),
+                    None => return Ok(()),
+                };
+                if let Ok(audio) = world.get_resource::<Audio>()
+                    && let Ok(mut mgr) = audio.manager.lock()
+                {
+                    if let Err(e) = mgr.play(data) {
+                        crate::log_warn!("[lua] audio_play_oneshot: play failed: {e}");
+                    }
+                }
+                Ok(())
+            },
+        );
 
         methods.add_method("log_warn", |_, _this, msg: String| {
             crate::log_warn!("[lua] {msg}");
