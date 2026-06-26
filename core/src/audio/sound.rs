@@ -1,6 +1,8 @@
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
-use kira::sound::static_sound::StaticSoundData;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
+use kira::sound::PlaybackState;
 
 use crate::assets::audio::resolve_audio_path;
 
@@ -9,9 +11,20 @@ pub struct Sound {
     pub data: Option<StaticSoundData>,
     pub path: String,
     pub volume: f32,
+    /// Handle to the currently playing instance, if any.
+    pub handle: Arc<Mutex<Option<StaticSoundHandle>>>,
 }
 
 impl Sound {
+    pub fn is_playing(&self) -> bool {
+        self.handle
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|h| h.state()))
+            .map(|s| s == PlaybackState::Playing || s == PlaybackState::Pausing)
+            .unwrap_or(false)
+    }
+
     pub fn from_path(path: &str) -> anyhow::Result<Self> {
         let resolved = resolve_audio_path(path)
             .ok_or_else(|| anyhow::anyhow!("Audio file not found: {}", path))?;
@@ -20,6 +33,7 @@ impl Sound {
             data: Some(data),
             path: path.to_string(),
             volume: 0.0,
+            handle: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -38,6 +52,7 @@ impl fmt::Debug for Sound {
             .field("path", &self.path)
             .field("volume", &self.volume)
             .field("loaded", &self.data.is_some())
+            .field("playing", &self.is_playing())
             .finish()
     }
 }

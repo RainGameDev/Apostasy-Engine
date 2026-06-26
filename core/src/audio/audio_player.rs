@@ -1,6 +1,6 @@
 use anyhow::Result;
 use apostasy_macros::Component;
-use kira::{AudioManager, AudioManagerSettings, DefaultBackend};
+use kira::{AudioManager, AudioManagerSettings, DefaultBackend, Tween};
 
 use crate::audio::Audio;
 use crate::audio::sound::Sound;
@@ -15,6 +15,8 @@ pub struct AudioPlayer {
     pub audio: Vec<Sound>,
     #[doc(hidden)]
     pub pending_play: Option<usize>,
+    #[doc(hidden)]
+    pub pending_stop: Option<usize>,
 }
 
 impl Inspect for AudioPlayer {
@@ -46,7 +48,6 @@ impl Inspect for AudioPlayer {
                             if resp.lost_focus() && resp.changed() {
                                 to_reload = Some(i);
                             }
-                            // Drag and drop highlight
                             if has_audio_drag && ui.rect_contains_pointer(resp.rect) {
                                 ui.painter().rect_stroke(
                                     resp.rect.expand(2.0),
@@ -65,25 +66,36 @@ impl Inspect for AudioPlayer {
                                 to_reload = Some(i);
                             }
 
+                            let is_playing = sound.is_playing();
+                            let has_data = sound.data.is_some();
+                            let (btn_label, btn_hover, clickable) = if is_playing {
+                                ("⏹", "Stop", true)
+                            } else if has_data {
+                                ("▶", "Play sound", true)
+                            } else {
+                                ("▶", "Load a file first", false)
+                            };
+
                             if ui
                                 .add_sized(
                                     [24.0, row_h],
-                                    crate::egui::Button::new("▶").sense(if sound.data.is_some() {
+                                    crate::egui::Button::new(btn_label).sense(if clickable {
                                         crate::egui::Sense::click()
                                     } else {
                                         crate::egui::Sense::hover()
                                     }),
                                 )
-                                .on_hover_text(if sound.data.is_some() {
-                                    "Play sound"
-                                } else {
-                                    "Load a file first"
-                                })
+                                .on_hover_text(btn_hover)
                                 .clicked()
-                                && sound.data.is_some()
+                                && clickable
                             {
-                                self.pending_play = Some(i);
+                                if is_playing {
+                                    self.pending_stop = Some(i);
+                                } else {
+                                    self.pending_play = Some(i);
+                                }
                             }
+
                             if ui
                                 .add_sized([24.0, row_h], crate::egui::Button::new("✕"))
                                 .clicked()
@@ -106,10 +118,9 @@ impl Inspect for AudioPlayer {
                 });
 
                 let loaded = sound.data.is_some();
-
                 if !loaded && !sound.path.is_empty() {
                     ui.label(
-                        crate::egui::RichText::new("⚠ Not loaded - press Enter or unfocus path")
+                        crate::egui::RichText::new("⚠ Not loaded — press Enter or unfocus path")
                             .small()
                             .color(crate::egui::Color32::YELLOW),
                     );
@@ -141,8 +152,7 @@ impl Inspect for AudioPlayer {
 
 #[update(mode = "all")]
 pub fn audio_player_pending(world: &mut World) -> Result<()> {
-    // Collect pending play requests first to avoid borrow conflicts.
-    let requests: Vec<(crate::worldspaces::cell::EntityId, usize)> = world
+    let play_requests: Vec<(crate::worldspaces::cell::EntityId, usize)> = world
         .get_entities_with_component::<AudioPlayer>()
         .into_iter()
         .filter_map(|id| {
@@ -152,7 +162,38 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
         })
         .collect();
 
-    if requests.is_empty() {
+    let stop_requests: Vec<(crate::worldspaces::cell::EntityId, usize)> = world
+        .get_entities_with_component::<AudioPlayer>()
+        .into_iter()
+        .filter_map(|id| {
+            world
+                .get_component::<AudioPlayer>(id)
+                .and_then(|p| p.pending_stop.map(|idx| (id, idx)))
+        })
+        .collect();
+
+    if play_requests.is_empty() && stop_requests.is_empty() {
+        return Ok(());
+    }
+
+    // Handle stops, no AudioManager needed.
+    for (id, idx) in &stop_requests {
+        if let Some(player) = world.get_component::<AudioPlayer>(*id) {
+            if let Some(sound) = player.audio.get(*idx) {
+                if let Ok(mut guard) = sound.handle.lock() {
+                    if let Some(h) = guard.as_mut() {
+                        h.stop(Tween::default());
+                    }
+                    *guard = None;
+                }
+            }
+        }
+        if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
+            player.pending_stop = None;
+        }
+    }
+
+    if play_requests.is_empty() {
         return Ok(());
     }
 
@@ -166,8 +207,7 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             }
             Err(e) => {
                 crate::log_warn!("AudioPlayer: failed to create AudioManager: {}", e);
-                // Clear all pending_play so we don't retry every frame.
-                for (id, _) in &requests {
+                for (id, _) in &play_requests {
                     if let Some(p) = world.get_component_mut::<AudioPlayer>(*id) {
                         p.pending_play = None;
                     }
@@ -179,12 +219,27 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
 
     let manager_arc = world.get_resource::<Audio>()?.manager.clone();
 
-    for (id, idx) in requests {
+    for (id, idx) in play_requests {
+        let handle_arc = world
+            .get_component::<AudioPlayer>(id)
+            .and_then(|p| p.audio.get(idx))
+            .map(|s| s.handle.clone());
+
         if let Ok(mut mgr) = manager_arc.lock()
             && let Some(player) = world.get_component::<AudioPlayer>(id)
-            && let Err(e) = player.play(idx, &mut mgr)
         {
-            crate::log_warn!("AudioPlayer: play failed: {}", e);
+            match player.play(idx, &mut mgr) {
+                Ok(handle) => {
+                    if let Some(arc) = handle_arc
+                        && let Ok(mut g) = arc.lock()
+                    {
+                        *g = Some(handle);
+                    }
+                }
+                Err(e) => {
+                    crate::log_warn!("AudioPlayer: play failed: {}", e);
+                }
+            }
         }
         if let Some(player) = world.get_component_mut::<AudioPlayer>(id) {
             player.pending_play = None;
@@ -199,15 +254,18 @@ impl AudioPlayer {
         Ok(())
     }
 
-    /// Plays a sound from the AudioPlayer by index. Returns an error if the sound has no loaded data.
-    pub fn play(&self, index: usize, manager: &mut AudioManager) -> Result<()> {
+    /// Plays a sound by index, returning the handle. Returns an error if no data is loaded.
+    pub fn play(
+        &self,
+        index: usize,
+        manager: &mut AudioManager,
+    ) -> Result<kira::sound::static_sound::StaticSoundHandle> {
         let sound = &self.audio[index];
         let data = sound
             .data
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Sound at index {} has no loaded data", index))?
             .volume(kira::Decibels(sound.volume));
-        manager.play(data)?;
-        Ok(())
+        Ok(manager.play(data)?)
     }
 }
