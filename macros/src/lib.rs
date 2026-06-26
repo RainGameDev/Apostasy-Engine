@@ -45,6 +45,27 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                         world.add_component(id, c.clone());
                     }
                 },
+                read: |world, id| {
+                    // Bring the trait into scope so the call resolves for components
+                    // without an inherent `serialize` (falling back to the default
+                    // `None`); an inherent method still takes precedence.
+                    use apostasy_core::ecs::components::Component as _;
+                    world.get_component::<#struct_name>(id).and_then(|c| c.serialize())
+                },
+                apply: |world, id, value| {
+                    if !world.has_component::<#struct_name>(id) {
+                        world.add_component(id, <#struct_name as ::core::default::Default>::default());
+                    }
+                    if let Some(c) = world.get_component_mut::<#struct_name>(id) {
+                        let _ = c.deserialize(value);
+                    }
+                },
+                remove: |world, id| {
+                    world.remove_component::<#struct_name>(id);
+                },
+                contains: |world, id| {
+                    world.has_component::<#struct_name>(id)
+                },
             }
         }
         inventory::submit! {

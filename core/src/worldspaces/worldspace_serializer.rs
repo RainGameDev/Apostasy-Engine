@@ -7,144 +7,13 @@ use hashbrown::HashMap;
 use crate::{
     ecs::{
         cell::{CellCoord, EntityId},
-        components::{
-            get_component_registration,
-            transform::Transform,
-        },
+        components::get_component_registration,
         tag::get_tag_registration,
         world::World,
         worldspace_streaming::WorldspaceStreaming,
     },
-    physics::{
-        collider::{Collider, ColliderShape},
-    },
-    rendering::components::{
-        camera::Camera,
-        lighting::{Light, LightType},
-        model_renderer::ModelRenderer,
-    },
 };
 
-fn vec3_to_yaml(v: Vector3<f32>) -> serde_yaml::Value {
-    serde_yaml::Value::Sequence(vec![
-        serde_yaml::Value::Number(serde_yaml::Number::from(v.x as f64)),
-        serde_yaml::Value::Number(serde_yaml::Number::from(v.y as f64)),
-        serde_yaml::Value::Number(serde_yaml::Number::from(v.z as f64)),
-    ])
-}
-
-fn serialize_component_transform(t: &Transform) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Transform".into());
-    map.insert("local_position".into(), vec3_to_yaml(t.local_position));
-    map.insert("local_euler_angles".into(), vec3_to_yaml(t.local_euler_angles));
-    map.insert("local_scale".into(), vec3_to_yaml(t.local_scale));
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_model_renderer(mr: &ModelRenderer) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "ModelRenderer".into());
-    map.insert("model_path".into(), mr.model_path.clone().into());
-    map.insert("material_override".into(), mr.material_override.clone().unwrap_or_default().into());
-    map.insert("is_wireframe".into(), mr.is_wireframe.into());
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_camera(c: &Camera) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Camera".into());
-    map.insert("fov_y".into(), (c.fov_y as f64).into());
-    map.insert("near".into(), (c.near as f64).into());
-    map.insert("far".into(), (c.far as f64).into());
-    map.insert("is_main".into(), c.is_main.into());
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_collider(col: &Collider) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Collider".into());
-    match &col.shape {
-        ColliderShape::Cuboid { size } => {
-            map.insert("shape".into(), "Cuboid".into());
-            map.insert("size".into(), vec3_to_yaml(*size));
-        }
-        ColliderShape::Sphere { radius } => {
-            map.insert("shape".into(), "Sphere".into());
-            map.insert("radius".into(), (*radius as f64).into());
-        }
-        ColliderShape::Capsule { radius, height } => {
-            map.insert("shape".into(), "Capsule".into());
-            map.insert("radius".into(), (*radius as f64).into());
-            map.insert("height".into(), (*height as f64).into());
-        }
-        ColliderShape::Cylinder { radius, height } => {
-            map.insert("shape".into(), "Cylinder".into());
-            map.insert("radius".into(), (*radius as f64).into());
-            map.insert("height".into(), (*height as f64).into());
-        }
-        ColliderShape::Mesh { model_path, .. } => {
-            map.insert("shape".into(), "Mesh".into());
-            map.insert("model_path".into(), model_path.clone().into());
-        }
-    }
-    map.insert("offset".into(), vec3_to_yaml(col.offset));
-    map.insert("is_static".into(), col.is_static.into());
-    map.insert("is_area".into(), col.is_area.into());
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_velocity(v: &crate::physics::velocity::Velocity) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Velocity".into());
-    map.insert("mass".into(), (v.mass as f64).into());
-    map.insert("process".into(), v.process.into());
-    map.insert("mu_static".into(), (v.mu_static as f64).into());
-    map.insert("mu_kinetic".into(), (v.mu_kinetic as f64).into());
-    map.insert("restitution".into(), (v.restitution as f64).into());
-    map.insert("linear_damping".into(), (v.linear_damping as f64).into());
-    map.insert("angular_damping".into(), (v.angular_damping as f64).into());
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_gravity(g: &crate::physics::Gravity) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Gravity".into());
-    map.insert("strength".into(), (g.strength as f64).into());
-    Some(serde_yaml::Value::Mapping(map))
-}
-
-fn serialize_component_light(l: &Light) -> Option<serde_yaml::Value> {
-    let mut map = serde_yaml::Mapping::new();
-    map.insert("type".into(), "Light".into());
-    match l.light_type {
-        LightType::Point { radius } => {
-            map.insert("light_type".into(), "Point".into());
-            map.insert("radius".into(), (radius as f64).into());
-        }
-        LightType::Directional => {
-            map.insert("light_type".into(), "Directional".into());
-        }
-        LightType::Spot { length, angle } => {
-            map.insert("light_type".into(), "Spot".into());
-            map.insert("length".into(), (length as f64).into());
-            map.insert("angle".into(), (angle as f64).into());
-        }
-    }
-    let mut color = serde_yaml::Mapping::new();
-    color.insert("r".into(), (l.color.x as f64).into());
-    color.insert("g".into(), (l.color.y as f64).into());
-    color.insert("b".into(), (l.color.z as f64).into());
-    map.insert("color".into(), serde_yaml::Value::Mapping(color));
-    map.insert("intensity".into(), (l.intensity as f64).into());
-    map.insert("is_emitting".into(), l.is_emitting.into());
-    map.insert("is_flickering".into(), l.is_flickering.into());
-    map.insert("intensity_min".into(), (l.intensity_min as f64).into());
-    map.insert("intensity_max".into(), (l.intensity_max as f64).into());
-    map.insert("radius_min".into(), (l.radius_min as f64).into());
-    map.insert("radius_max".into(), (l.radius_max as f64).into());
-    Some(serde_yaml::Value::Mapping(map))
-}
 
 fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
     // Skip editor/internal entities
@@ -157,28 +26,14 @@ fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
     let name = world.get_name(id).unwrap_or("Entity").to_string();
     let children_ids = world.get_children_ids(id);
 
-    // Serialize known component types
+    // Serialize every registered component that the entity has and that opts in
+    // to serialization (its `read` returns `Some`). New serializable components
+    // are persisted automatically — no per-type wiring here.
     let mut components_data: serde_yaml::Sequence = Vec::new();
-    if let Some(c) = world.get_component::<Transform>(id) {
-        if let Some(v) = serialize_component_transform(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<ModelRenderer>(id) {
-        if let Some(v) = serialize_component_model_renderer(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<Camera>(id) {
-        if let Some(v) = serialize_component_camera(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<Collider>(id) {
-        if let Some(v) = serialize_component_collider(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<crate::physics::velocity::Velocity>(id) {
-        if let Some(v) = serialize_component_velocity(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<crate::physics::Gravity>(id) {
-        if let Some(v) = serialize_component_gravity(c) { components_data.push(v); }
-    }
-    if let Some(c) = world.get_component::<Light>(id) {
-        if let Some(v) = serialize_component_light(c) { components_data.push(v); }
+    for reg in inventory::iter::<crate::ecs::components::ComponentRegistration>() {
+        if let Some(v) = (reg.read)(world, id) {
+            components_data.push(v);
+        }
     }
 
     // Serialize known persistent tag types (excluding editor/transient tags)

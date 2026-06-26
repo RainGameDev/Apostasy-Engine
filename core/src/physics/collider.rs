@@ -255,6 +255,40 @@ impl Default for Collider {
 }
 
 impl Collider {
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        use crate::ecs::components::vec3_to_yaml;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "Collider".into());
+        match &self.shape {
+            ColliderShape::Cuboid { size } => {
+                map.insert("shape".into(), "Cuboid".into());
+                map.insert("size".into(), vec3_to_yaml(*size));
+            }
+            ColliderShape::Sphere { radius } => {
+                map.insert("shape".into(), "Sphere".into());
+                map.insert("radius".into(), (*radius as f64).into());
+            }
+            ColliderShape::Capsule { radius, height } => {
+                map.insert("shape".into(), "Capsule".into());
+                map.insert("radius".into(), (*radius as f64).into());
+                map.insert("height".into(), (*height as f64).into());
+            }
+            ColliderShape::Cylinder { radius, height } => {
+                map.insert("shape".into(), "Cylinder".into());
+                map.insert("radius".into(), (*radius as f64).into());
+                map.insert("height".into(), (*height as f64).into());
+            }
+            ColliderShape::Mesh { model_path, .. } => {
+                map.insert("shape".into(), "Mesh".into());
+                map.insert("model_path".into(), model_path.clone().into());
+            }
+        }
+        map.insert("offset".into(), vec3_to_yaml(self.offset));
+        map.insert("is_static".into(), self.is_static.into());
+        map.insert("is_area".into(), self.is_area.into());
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         let shape_str = value
             .get("shape")

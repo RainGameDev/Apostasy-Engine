@@ -32,6 +32,10 @@ pub struct ViewportInfo {
     pub is_hovered: bool,
     pub needs_layout_restore: bool,
     pub open: bool,
+    /// Last requested offscreen target size (pixels), used to debounce resizes.
+    pub pending_pixel: [f32; 2],
+    /// Number of consecutive frames `pending_pixel` has stayed constant.
+    pub pending_stable: u32,
 }
 
 impl Default for ViewportInfo {
@@ -40,9 +44,16 @@ impl Default for ViewportInfo {
             is_hovered: false,
             needs_layout_restore: false,
             open: true,
+            pending_pixel: [0.0, 0.0],
+            pending_stable: 0,
         }
     }
 }
+
+/// Number of frames a new viewport size must hold steady before the offscreen
+/// render target is actually rebuilt. Keeps dragging a resize edge from tearing
+/// down and recreating the GPU target (with a full `device_wait_idle`) every frame.
+const VIEWPORT_RESIZE_DEBOUNCE: u32 = 4;
 
 use super::EditorStyle;
 use crate::{
@@ -546,23 +557,53 @@ pub fn viewport(world: &mut World) -> Result<()> {
         pixel_w = pixel_w.clamp(1.0, MAX_DIM);
         pixel_h = pixel_h.clamp(1.0, MAX_DIM);
 
+        // Debounce state carried on ViewportInfo (separate resource, read up-front).
+        let (mut pending_pixel, mut pending_stable) = world
+            .get_resource::<ViewportInfo>()
+            .map(|v| (v.pending_pixel, v.pending_stable))
+            .unwrap_or(([0.0, 0.0], 0));
+
         {
             let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
+            // Logical fields track the window every frame so the displayed rect,
+            // aspect ratio and gizmo projection stay aligned with the egui panel.
             viewport_size.logical_width = current_size.x;
             viewport_size.logical_height = current_size.y;
-            viewport_size.pixel_width = pixel_w;
-            viewport_size.pixel_height = pixel_h;
             if let Some(frame_rect) = frame_rect_out {
                 viewport_size.logical_x = frame_rect.min.x;
                 viewport_size.logical_y = frame_rect.min.y;
                 viewport_size.logical_width = frame_rect.width();
                 viewport_size.logical_height = frame_rect.height();
             }
+
+            // The pixel size drives recreation of the offscreen render target, so
+            // only commit it once it has held steady for a few frames. During an
+            // active resize drag the old target keeps being rendered and egui just
+            // stretches it, avoiding a per-frame GPU stall + reallocation.
+            let committed = [viewport_size.pixel_width, viewport_size.pixel_height];
+            let requested = [pixel_w, pixel_h];
+            if requested != committed {
+                if requested == pending_pixel {
+                    pending_stable += 1;
+                } else {
+                    pending_pixel = requested;
+                    pending_stable = 0;
+                }
+                if pending_stable >= VIEWPORT_RESIZE_DEBOUNCE {
+                    viewport_size.pixel_width = pixel_w;
+                    viewport_size.pixel_height = pixel_h;
+                }
+            } else {
+                pending_pixel = requested;
+                pending_stable = VIEWPORT_RESIZE_DEBOUNCE;
+            }
         }
 
         let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
         viewport_info.is_hovered = response.response.hovered();
         viewport_info.open = is_open;
+        viewport_info.pending_pixel = pending_pixel;
+        viewport_info.pending_stable = pending_stable;
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
         layout.viewport.update_from_rect(rect);

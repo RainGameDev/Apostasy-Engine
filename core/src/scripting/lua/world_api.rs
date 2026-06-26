@@ -4,6 +4,7 @@ use serde_yaml::Value as YamlValue;
 use super::component::{LuaComponentRegistry, ScriptComponents};
 use super::query::LuaQuery;
 use super::resource::LuaResources;
+use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
@@ -77,6 +78,11 @@ impl UserData for WorldHandle {
             },
         );
 
+        // ---- components ----
+        // A `name` is resolved against the native component registry first (any
+        // `#[derive(Component)]` type, e.g. "Transform", "Velocity", "Light"),
+        // and falls back to Lua script components declared with
+        // `register_component`. The same five methods cover both kinds.
         methods.add_method(
             "add_component",
             |lua,
@@ -84,19 +90,26 @@ impl UserData for WorldHandle {
              (id, name, overrides): (UserDataRef<EntityHandle>, String, Option<mlua::Value>)| {
                 let world = this.world();
 
-                // Start from the registered defaults (if any), else an empty table.
+                // Native component: insert a default, then overlay any passed fields.
+                if let Some(reg) = get_component_registration(&name) {
+                    let value: YamlValue = match overrides {
+                        Some(v) => lua.from_value(v)?,
+                        None => YamlValue::Mapping(Default::default()),
+                    };
+                    (reg.apply)(world, id.0, &value);
+                    return Ok(());
+                }
+
+                // Script component: start from registered defaults, overlay fields.
                 let default = world
                     .get_resource::<LuaComponentRegistry>()
                     .ok()
                     .and_then(|r| r.default_for(&name).cloned())
                     .unwrap_or(YamlValue::Mapping(Default::default()));
-
-                // Overlay any fields the caller passed.
                 let value = match overrides {
                     Some(v) => merge_yaml(&default, &lua.from_value(v)?),
                     None => default,
                 };
-
                 if !world.has_component::<ScriptComponents>(id.0) {
                     world.add_component(id.0, ScriptComponents::default());
                 }
@@ -110,10 +123,13 @@ impl UserData for WorldHandle {
         methods.add_method(
             "get_component",
             |lua, this, (id, name): (UserDataRef<EntityHandle>, String)| {
-                let value = this
-                    .world()
-                    .get_component::<ScriptComponents>(id.0)
-                    .and_then(|sc| sc.get(&name).cloned());
+                let world = this.world();
+                let value = match get_component_registration(&name) {
+                    Some(reg) => (reg.read)(world, id.0),
+                    None => world
+                        .get_component::<ScriptComponents>(id.0)
+                        .and_then(|sc| sc.get(&name).cloned()),
+                };
                 match value {
                     Some(v) => lua.to_value(&v),
                     None => Ok(mlua::Value::Nil),
@@ -128,6 +144,10 @@ impl UserData for WorldHandle {
              (id, name, table): (UserDataRef<EntityHandle>, String, mlua::Value)| {
                 let value: YamlValue = lua.from_value(table)?;
                 let world = this.world();
+                if let Some(reg) = get_component_registration(&name) {
+                    (reg.apply)(world, id.0, &value);
+                    return Ok(());
+                }
                 if !world.has_component::<ScriptComponents>(id.0) {
                     world.add_component(id.0, ScriptComponents::default());
                 }
@@ -141,7 +161,12 @@ impl UserData for WorldHandle {
         methods.add_method(
             "remove_component",
             |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
-                if let Some(sc) = this.world().get_component_mut::<ScriptComponents>(id.0) {
+                let world = this.world();
+                if let Some(reg) = get_component_registration(&name) {
+                    (reg.remove)(world, id.0);
+                    return Ok(());
+                }
+                if let Some(sc) = world.get_component_mut::<ScriptComponents>(id.0) {
                     sc.remove(&name);
                 }
                 Ok(())
@@ -151,8 +176,11 @@ impl UserData for WorldHandle {
         methods.add_method(
             "has_component",
             |_, this, (id, name): (UserDataRef<EntityHandle>, String)| {
-                Ok(this
-                    .world()
+                let world = this.world();
+                if let Some(reg) = get_component_registration(&name) {
+                    return Ok((reg.contains)(world, id.0));
+                }
+                Ok(world
                     .get_component::<ScriptComponents>(id.0)
                     .is_some_and(|sc| sc.has(&name)))
             },

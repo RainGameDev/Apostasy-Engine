@@ -39,9 +39,6 @@ impl LuaRuntime {
         let lua = Lua::new();
         let pending: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
 
-        // Global `register_component(name, defaults)` — runs at script load in BOTH
-        // editor and game mode, so the editor learns component schemas without
-        // executing any gameplay logic.
         let buffer = pending.clone();
         let register =
             lua.create_function(move |lua, (name, defaults): (String, mlua::Value)| {
@@ -84,7 +81,6 @@ impl LuaRuntime {
                 }
             }
         }
-        // Resources: seed only if absent, so live values survive hot-reload.
         {
             let mut pending = self.pending_resources.lock().unwrap();
             if !pending.is_empty()
@@ -165,6 +161,29 @@ impl LuaRuntime {
             for s in scripts.iter() {
                 if let Ok(func) = s.env.get::<Function>(event) {
                     if let Err(e) = func.call::<()>(&world_ud) {
+                        crate::log_error!("[lua] {event} error in {:?}: {e}", s.path);
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        if let Err(e) = result {
+            crate::log_error!("[lua] scope failed for {event}: {e}");
+        }
+    }
+
+    /// Like [`run_event`], but also passes the fixed timestep as a second argument,
+    /// for `fixed_update(world, delta)`.
+    pub fn run_fixed_event(&self, world: &mut World, event: &str, delta: f32) {
+        let world_ptr: *mut World = world;
+        let scripts = self.scripts.lock().unwrap();
+
+        let result = self.lua.scope(|scope| {
+            let world_ud = scope.create_userdata(WorldHandle { world: world_ptr })?;
+            for s in scripts.iter() {
+                if let Ok(func) = s.env.get::<Function>(event) {
+                    if let Err(e) = func.call::<()>((&world_ud, delta)) {
                         crate::log_error!("[lua] {event} error in {:?}: {e}", s.path);
                     }
                 }

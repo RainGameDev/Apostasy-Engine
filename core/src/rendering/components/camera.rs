@@ -57,6 +57,16 @@ impl Inspect for Camera {
 }
 
 impl Camera {
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "Camera".into());
+        map.insert("fov_y".into(), (self.fov_y as f64).into());
+        map.insert("near".into(), (self.near as f64).into());
+        map.insert("far".into(), (self.far as f64).into());
+        map.insert("is_main".into(), self.is_main.into());
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         if let Some(v) = value.get("fov_y").and_then(|v| v.as_f64()) {
             self.fov_y = v as f32;

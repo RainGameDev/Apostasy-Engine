@@ -5,7 +5,7 @@ pub mod runtime;
 pub mod world_api;
 
 use anyhow::Result;
-use apostasy_macros::{start, update};
+use apostasy_macros::{fixed_update, late_update, prerender, start, update};
 
 use self::component::LuaComponentRegistry;
 use self::resource::LuaResources;
@@ -47,6 +47,17 @@ pub fn lua_scripting_start(world: &mut World) -> Result<()> {
     Ok(())
 }
 
+/// Fires each script's `prerender(world)`, before the frame is drawn. Game mode only.
+#[prerender(mode = "game", priority = 0)]
+pub fn lua_scripting_prerender(world: &mut World) -> Result<()> {
+    if !world.has_resource::<LuaRuntime>() {
+        return Ok(());
+    }
+    let runtime = world.get_resource::<LuaRuntime>()?.clone();
+    runtime.run_event(world, "prerender");
+    Ok(())
+}
+
 /// Hot-reloads changed scripts and fires `update(world)`. Game mode only.
 #[update(mode = "game", priority = 0)]
 pub fn lua_scripting_update(world: &mut World) -> Result<()> {
@@ -57,5 +68,28 @@ pub fn lua_scripting_update(world: &mut World) -> Result<()> {
     runtime.hot_reload();
     runtime.apply_registrations(world); // pick up any newly-declared components
     runtime.run_event(world, "update");
+    Ok(())
+}
+
+/// Fires each script's `fixed_update(world, delta)` at the fixed timestep (20 Hz).
+/// Game mode only.
+#[fixed_update(mode = "game", priority = 0)]
+pub fn lua_scripting_fixed_update(world: &mut World, delta: f32) -> Result<()> {
+    if !world.has_resource::<LuaRuntime>() {
+        return Ok(());
+    }
+    let runtime = world.get_resource::<LuaRuntime>()?.clone();
+    runtime.run_fixed_event(world, "fixed_update", delta);
+    Ok(())
+}
+
+/// Fires each script's `late_update(world)` at the end of the frame. Game mode only.
+#[late_update(mode = "game", priority = 0)]
+pub fn lua_scripting_late_update(world: &mut World) -> Result<()> {
+    if !world.has_resource::<LuaRuntime>() {
+        return Ok(());
+    }
+    let runtime = world.get_resource::<LuaRuntime>()?.clone();
+    runtime.run_event(world, "late_update");
     Ok(())
 }

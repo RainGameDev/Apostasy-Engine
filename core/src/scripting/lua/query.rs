@@ -5,6 +5,28 @@ use super::component::ScriptComponents;
 use super::world_api::EntityHandle;
 use crate::ecs::World;
 use crate::ecs::cell::EntityId;
+use crate::ecs::components::get_component_registration;
+
+/// Resolves a component name against the native registry (rust components), then falls back to Lua script components.
+fn has_component_by_name(world: &World, id: EntityId, name: &str) -> bool {
+    if let Some(reg) = get_component_registration(name) {
+        return (reg.contains)(world, id);
+    }
+    world
+        .get_component::<ScriptComponents>(id)
+        .is_some_and(|sc| sc.has(name))
+}
+
+/// Reads a component as a yaml value, native or script. `Null` if absent.
+fn read_component_by_name(world: &World, id: EntityId, name: &str) -> YamlValue {
+    if let Some(reg) = get_component_registration(name) {
+        return (reg.read)(world, id).unwrap_or(YamlValue::Null);
+    }
+    world
+        .get_component::<ScriptComponents>(id)
+        .and_then(|sc| sc.get(name).cloned())
+        .unwrap_or(YamlValue::Null)
+}
 
 /// A runtime filter applied on top of the fetched component set.
 enum Filter {
@@ -16,22 +38,17 @@ enum Filter {
 
 impl Filter {
     fn matches(&self, world: &World, id: EntityId) -> bool {
-        let has_comp = |n: &str| {
-            world
-                .get_component::<ScriptComponents>(id)
-                .is_some_and(|sc| sc.has(n))
-        };
         match self {
             Filter::WithTag(n) => world.has_tag_by_name(id, n),
             Filter::WithoutTag(n) => !world.has_tag_by_name(id, n),
-            Filter::WithComponent(n) => has_comp(n),
-            Filter::WithoutComponent(n) => !has_comp(n),
+            Filter::WithComponent(n) => has_component_by_name(world, id, n),
+            Filter::WithoutComponent(n) => !has_component_by_name(world, id, n),
         }
     }
 }
 
-/// Lua-facing query builder. Holds a raw World pointer valid for the duration of
-/// the originating script call. Chained filters mutate it; `for_each` runs it.
+/// Lua facing query builder.
+/// Holds a raw World pointer valid for the duration of the originating script call. Chained filters mutate it; `for_each` runs it.
 pub struct LuaQuery {
     world: *mut World,
     fetch: Vec<String>,
@@ -50,10 +67,10 @@ impl LuaQuery {
 
 impl UserData for LuaQuery {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        // Filters use `add_function` (not `add_method`) so we receive the userdata
-        // itself and can return it for `:with_tag(...):without(...)` chaining.
         methods.add_function("with_tag", |_, (ud, name): (AnyUserData, String)| {
-            ud.borrow_mut::<LuaQuery>()?.filters.push(Filter::WithTag(name));
+            ud.borrow_mut::<LuaQuery>()?
+                .filters
+                .push(Filter::WithTag(name));
             Ok(ud)
         });
         methods.add_function("without_tag", |_, (ud, name): (AnyUserData, String)| {
@@ -83,11 +100,10 @@ impl UserData for LuaQuery {
                     .get_all_ids()
                     .into_iter()
                     .filter(|&id| {
-                        this.fetch.iter().all(|n| {
-                            world
-                                .get_component::<ScriptComponents>(id)
-                                .is_some_and(|sc| sc.has(n))
-                        }) && this.filters.iter().all(|f| f.matches(world, id))
+                        this.fetch
+                            .iter()
+                            .all(|n| has_component_by_name(world, id, n))
+                            && this.filters.iter().all(|f| f.matches(world, id))
                     })
                     .collect()
             };
@@ -98,12 +114,7 @@ impl UserData for LuaQuery {
                     let world = unsafe { &*this.world };
                     this.fetch
                         .iter()
-                        .map(|n| {
-                            world
-                                .get_component::<ScriptComponents>(id)
-                                .and_then(|sc| sc.get(n).cloned())
-                                .unwrap_or(YamlValue::Null)
-                        })
+                        .map(|n| read_component_by_name(world, id, n))
                         .collect()
                 };
 

@@ -108,7 +108,33 @@ impl ScriptComponents {
         self.map.contains_key(name)
     }
 
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+    /// Serializes all script components nested under a single `ScriptComponents`
+    /// scene entry: `{ type: "ScriptComponents", components: { name: value, .. } }`.
+    /// Keys are sorted so saved scenes diff cleanly (HashMap order isn't stable).
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        if self.map.is_empty() {
+            return None;
+        }
+        let mut names: Vec<&String> = self.map.keys().collect();
+        names.sort();
+        let mut components = serde_yaml::Mapping::new();
+        for name in names {
+            components.insert(name.clone().into(), self.map[name].clone());
+        }
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "ScriptComponents".into());
+        map.insert("components".into(), Value::Mapping(components));
+        Some(Value::Mapping(map))
+    }
+
+    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
+        if let Some(components) = value.get("components").and_then(|v| v.as_mapping()) {
+            for (k, v) in components {
+                if let Some(name) = k.as_str() {
+                    self.map.insert(name.to_string(), v.clone());
+                }
+            }
+        }
         Ok(())
     }
 }

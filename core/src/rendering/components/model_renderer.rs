@@ -101,6 +101,18 @@ impl Inspect for ModelRenderer {
 }
 
 impl ModelRenderer {
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "ModelRenderer".into());
+        map.insert("model_path".into(), self.model_path.clone().into());
+        map.insert(
+            "material_override".into(),
+            self.material_override.clone().unwrap_or_default().into(),
+        );
+        map.insert("is_wireframe".into(), self.is_wireframe.into());
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         if let Some(v) = value.get("model_path").and_then(|v| v.as_str()) {
             self.model_path = v.to_string();

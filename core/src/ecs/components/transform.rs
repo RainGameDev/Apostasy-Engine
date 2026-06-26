@@ -44,6 +44,21 @@ impl Default for Transform {
 }
 
 impl Transform {
+    /// Serializes the local transform fields. Global fields are derived each
+    /// frame, so they're omitted (and recomputed on `deserialize`).
+    pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        use crate::ecs::components::vec3_to_yaml;
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "Transform".into());
+        map.insert("local_position".into(), vec3_to_yaml(self.local_position));
+        map.insert(
+            "local_euler_angles".into(),
+            vec3_to_yaml(self.local_euler_angles),
+        );
+        map.insert("local_scale".into(), vec3_to_yaml(self.local_scale));
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
         if let Some(seq) = value.get("local_position").and_then(|v| v.as_sequence())
             && seq.len() >= 3

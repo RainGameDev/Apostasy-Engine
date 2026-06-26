@@ -64,37 +64,53 @@ function World:get_entity_with_tag(name) end
 function World:get_entities_with_tag(name) end
 
 -- ---------------------------------------------------------------------------
--- Script components (per-entity data, referenced by name)
+-- Components (per-entity data, referenced by name)
 -- ---------------------------------------------------------------------------
+--
+-- `name` resolves against the engine's native components first (any
+-- `#[derive(Component)]` type, e.g. `"Transform"`, `"Velocity"`, `"Light"`,
+-- `"Camera"`, `"Collider"`, `"ModelRenderer"`), then falls back to script
+-- components declared with `register_component`. Native component tables use the
+-- same field layout as the scene format — vectors are `[x, y, z]` arrays:
+--
+-- ```lua
+-- world:add_component(e, "Transform", { local_position = { 0, 5, 0 } })
+-- local t = world:get_component(e, "Transform")
+-- t.local_position[2] = t.local_position[2] + world:delta()   -- read-only copy
+-- world:set_component(e, "Transform", { local_position = t.local_position })
+-- world:add_component(e, "Velocity", { linear_velocity = { 0, 0, -3 } })
+-- ```
 
----Adds a script component to an entity. The component must have been declared
----at script top-level with `register_component`. Any fields in `overrides` are
----overlaid onto the registered defaults; omit it to use the defaults as-is.
+---Adds a component to an entity. For native components, fields in `overrides`
+---are applied onto a default instance; for script components (declared with
+---`register_component`) they're overlaid onto the registered defaults. Omit
+---`overrides` to use the defaults as-is.
 ---@param entity Entity
 ---@param name string
 ---@param overrides? table
 function World:add_component(entity, name, overrides) end
 
 ---Returns a copy of the named component's data as a table, or `nil` if the
----entity does not have it. Mutating the returned table does **not** write back —
----use `set_component` to persist changes.
+---entity does not have it (or the native component isn't serializable). Mutating
+---the returned table does **not** write back — use `set_component` to persist.
 ---@param entity Entity
 ---@param name string
 ---@return table|nil
 function World:get_component(entity, name) end
 
----Replaces (or creates) the named component's data with `value`.
+---Writes the named component on an entity, creating it if absent. Only the
+---fields present in `value` are changed (a partial update, not a full replace).
 ---@param entity Entity
 ---@param name string
 ---@param value table
 function World:set_component(entity, name, value) end
 
----Removes the named script component from an entity.
+---Removes the named component from an entity.
 ---@param entity Entity
 ---@param name string
 function World:remove_component(entity, name) end
 
----Returns `true` if the entity has the named script component.
+---Returns `true` if the entity has the named component.
 ---@param entity Entity
 ---@param name string
 ---@return boolean
@@ -105,12 +121,15 @@ function World:has_component(entity, name) end
 -- ---------------------------------------------------------------------------
 
 ---Begins a query over entities that have **all** of the named components.
+---Names resolve to native components (e.g. `"Transform"`) or script components
+---declared with `register_component` — either kind can be fetched or filtered.
 ---Chain `:with`, `:without`, `:with_tag`, `:without_tag` to refine, then call
 ---`:for_each` to iterate.
 ---
 ---```lua
----world:query("Health"):with_tag("Player"):for_each(function(id, health)
----    world:log(tostring(id) .. " has " .. health.current .. " hp")
+---world:query("Transform"):with_tag("Player"):for_each(function(id, t)
+---    t.local_position[2] = t.local_position[2] + world:delta()
+---    world:set_component(id, "Transform", { local_position = t.local_position })
 ---end)
 ---```
 ---@param ... string component names to fetch (and pass to the `for_each` callback)

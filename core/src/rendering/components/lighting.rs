@@ -85,6 +85,38 @@ impl Default for Light {
 }
 
 impl Light {
+    pub fn serialize(&self) -> Option<Value> {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert("type".into(), "Light".into());
+        match self.light_type {
+            LightType::Point { radius } => {
+                map.insert("light_type".into(), "Point".into());
+                map.insert("radius".into(), (radius as f64).into());
+            }
+            LightType::Directional => {
+                map.insert("light_type".into(), "Directional".into());
+            }
+            LightType::Spot { length, angle } => {
+                map.insert("light_type".into(), "Spot".into());
+                map.insert("length".into(), (length as f64).into());
+                map.insert("angle".into(), (angle as f64).into());
+            }
+        }
+        let mut color = serde_yaml::Mapping::new();
+        color.insert("r".into(), (self.color.x as f64).into());
+        color.insert("g".into(), (self.color.y as f64).into());
+        color.insert("b".into(), (self.color.z as f64).into());
+        map.insert("color".into(), serde_yaml::Value::Mapping(color));
+        map.insert("intensity".into(), (self.intensity as f64).into());
+        map.insert("is_emitting".into(), self.is_emitting.into());
+        map.insert("is_flickering".into(), self.is_flickering.into());
+        map.insert("intensity_min".into(), (self.intensity_min as f64).into());
+        map.insert("intensity_max".into(), (self.intensity_max as f64).into());
+        map.insert("radius_min".into(), (self.radius_min as f64).into());
+        map.insert("radius_max".into(), (self.radius_max as f64).into());
+        Some(serde_yaml::Value::Mapping(map))
+    }
+
     pub fn deserialize(&mut self, value: &Value) -> Result<()> {
         if let Some(v) = value.get("light_type") {
             match v.as_str().unwrap_or_default() {
