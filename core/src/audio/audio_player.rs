@@ -351,81 +351,87 @@ impl AudioPlayer {
 
 #[update(mode = "all")]
 pub fn update_spatial_audio(world: &mut World) -> Result<()> {
+    use crate::audio::audio_listener::AudioListener;
     use crate::ecs::components::transform::Transform;
     use cgmath::InnerSpace;
 
-    // Find listener position and right vector from the active camera.
-    let listener = world
-        .get_entity_with_tag::<EditorCamera>()
-        .or_else(|_| world.get_entity_with_tag::<ActiveCamera>())
-        .ok()
-        .and_then(|cam_id| world.get_component::<Transform>(cam_id))
-        .map(|t| (t.global_position, t.calculate_global_right()));
+    // Query for the listener: entity with Transform + AudioListener tag.
+    // Falls back to EditorCamera then ActiveCamera if none is set.
+    let mut listener_data = None;
+    world
+        .query::<&Transform>()
+        .with_tag::<AudioListener>()
+        .for_each(|_, t| {
+            if listener_data.is_none() {
+                listener_data = Some((t.global_position, t.calculate_global_right()));
+            }
+        });
 
-    let (listener_pos, listener_right) = match listener {
+    if listener_data.is_none() {
+        world
+            .query::<&Transform>()
+            .with_tag::<EditorCamera>()
+            .for_each(|_, t| {
+                if listener_data.is_none() {
+                    listener_data = Some((t.global_position, t.calculate_global_right()));
+                }
+            });
+    }
+
+    if listener_data.is_none() {
+        world
+            .query::<&Transform>()
+            .with_tag::<ActiveCamera>()
+            .for_each(|_, t| {
+                if listener_data.is_none() {
+                    listener_data = Some((t.global_position, t.calculate_global_right()));
+                }
+            });
+    }
+
+    let (listener_pos, listener_right) = match listener_data {
         Some(l) => l,
         None => return Ok(()),
     };
 
-    let ids: Vec<_> = world.get_entities_with_component::<AudioPlayer>();
+    // Query all entities that have both AudioPlayer and Transform.
+    let spatial_sounds: Vec<_> = {
+        let mut acc = Vec::new();
+        world
+            .query::<(&AudioPlayer, &Transform)>()
+            .for_each(|_, (player, transform)| {
+                let source_pos = transform.global_position;
+                for s in player.audio.iter().filter(|s| s.spatial && s.is_playing()) {
+                    acc.push((source_pos, s.volume, s.max_distance, s.handle.clone()));
+                }
+            });
+        acc
+    };
 
-    for id in ids {
-        let source_pos = world
-            .get_component::<Transform>(id)
-            .map(|t| t.global_position);
+    for (source_pos, base_volume_db, max_distance, handle_arc) in spatial_sounds {
+        let delta = source_pos - listener_pos;
+        let dist = delta.magnitude();
 
-        let Some(source_pos) = source_pos else {
-            continue;
+        let t = (1.0_f32 - (dist / max_distance).min(1.0)).max(0.0);
+
+        let volume_db = if t <= 0.0 {
+            Decibels::SILENCE
+        } else {
+            let attenuation_db = 20.0 * t.log10();
+            Decibels(base_volume_db + attenuation_db)
         };
 
-        let player = match world.get_component::<AudioPlayer>(id) {
-            Some(p) => p,
-            None => continue,
+        let pan = if dist > 0.001 {
+            (delta / dist).dot(listener_right).clamp(-1.0, 1.0)
+        } else {
+            0.0
         };
 
-        // Collect what we need without holding a borrow.
-        let spatial_sounds: Vec<(
-            usize,
-            f32,
-            f32,
-            std::sync::Arc<std::sync::Mutex<Option<kira::sound::static_sound::StaticSoundHandle>>>,
-        )> = player
-            .audio
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.spatial && s.is_playing())
-            .map(|(i, s)| (i, s.volume, s.max_distance, s.handle.clone()))
-            .collect();
-
-        for (_, base_volume_db, max_distance, handle_arc) in spatial_sounds {
-            let delta = source_pos - listener_pos;
-            let dist = delta.magnitude();
-
-            // Linear falloff: 0.0 at max_distance, 1.0 at distance 0.
-            let t = (1.0_f32 - (dist / max_distance).min(1.0)).max(0.0);
-
-            let volume_db = if t <= 0.0 {
-                Decibels::SILENCE
-            } else {
-                // Convert linear gain to dB offset then add base volume.
-                let attenuation_db = 20.0 * t.log10();
-                Decibels(base_volume_db + attenuation_db)
-            };
-
-            // Pan based on dot product of direction-to-source with listener right.
-            let pan = if dist > 0.001 {
-                let dir = delta / dist;
-                dir.dot(listener_right).clamp(-1.0, 1.0)
-            } else {
-                0.0
-            };
-
-            if let Ok(mut guard) = handle_arc.lock()
-                && let Some(h) = guard.as_mut()
-            {
-                h.set_volume(volume_db, Tween::default());
-                h.set_panning(Panning(pan), Tween::default());
-            }
+        if let Ok(mut guard) = handle_arc.lock()
+            && let Some(h) = guard.as_mut()
+        {
+            h.set_volume(volume_db, Tween::default());
+            h.set_panning(Panning(pan), Tween::default());
         }
     }
 
