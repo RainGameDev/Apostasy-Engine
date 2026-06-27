@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use super::{
     EditorStyle,
-    assets_panel::EntityWindowState,
+    assets_panel::DataWindowState,
     shared::WindowLayout,
 };
 
@@ -212,7 +212,7 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     }
 
     let selected_id = world
-        .get_resource::<EntityWindowState>()
+        .get_resource::<DataWindowState>()
         .ok()
         .and_then(|s| s.selected_entry.clone());
 
@@ -1561,7 +1561,7 @@ fn save_asset(world: &mut World) {
                         if let Ok(am) = world.get_resource_mut::<AssetManager>() {
                             let _ = am.load_file(&path);
                         }
-                        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
+                        if let Ok(ow) = world.get_resource_mut::<DataWindowState>() {
                             ow.is_first_frame = true;
                         }
                         if let Ok(s) = world.get_resource_mut::<AssetEditorState>() {
@@ -1638,7 +1638,7 @@ fn create_asset(
                 if let Ok(am) = world.get_resource_mut::<AssetManager>() {
                     let _ = am.load_file(&path);
                 }
-                if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
+                if let Ok(ow) = world.get_resource_mut::<DataWindowState>() {
                     ow.is_first_frame = true;
                 }
                 // Load the new asset into the editor immediately.

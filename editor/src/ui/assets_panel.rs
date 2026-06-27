@@ -5,10 +5,10 @@ use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
 use apostasy_core::ecs::worldspace_serializer::load_worldspace;
 use apostasy_core::{
+    ecs::world::World,
     egui::{
         self, Color32, CursorIcon, FontId, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, Vec2, Window,
     },
-    ecs::world::World,
     ui::ui_context::EguiContext,
     update,
 };
@@ -37,7 +37,7 @@ pub enum SortDir {
 
 /// Container for a piece of data
 #[derive(Clone)]
-pub struct EntityEntry {
+pub struct DataEntry {
     pub hex_id: String,
     pub editor_id: String,
     pub entry_type: String,
@@ -79,13 +79,13 @@ impl FilterNode {
 }
 
 #[derive(Clone, Resource)]
-pub struct EntityWindowState {
+pub struct DataWindowState {
     pub open: bool,
     pub show_used_in_cell: bool,
     pub col_widths: [f32; 4],
     pub filter_tree: Vec<FilterNode>,
     pub selected_filter: Option<Vec<String>>,
-    pub entries: Vec<EntityEntry>,
+    pub entries: Vec<DataEntry>,
     pub filter_string: String,
     pub sort_col: SortColumn,
     pub sort_dir: SortDir,
@@ -98,7 +98,7 @@ pub struct EntityWindowState {
     pub rename_request_focus: bool,
 }
 
-impl Default for EntityWindowState {
+impl Default for DataWindowState {
     fn default() -> Self {
         Self {
             open: true,
@@ -120,13 +120,14 @@ impl Default for EntityWindowState {
     }
 }
 
-impl EntityWindowState {
+impl DataWindowState {
     pub fn populate(
         &mut self,
         registry_data: Vec<(String, Vec<(String, String)>)>,
         models: Vec<String>,
         shaders: Vec<String>,
         textures: Vec<String>,
+        audio: Vec<String>,
     ) {
         let mut tree = Vec::new();
         let mut entries = Vec::new();
@@ -144,6 +145,8 @@ impl EntityWindowState {
                 "Model".into()
             } else if id.starts_with("shader:") {
                 "Shader".into()
+            } else if id.starts_with("audio:") {
+                "Audio".into()
             } else if id.contains(":Material:") {
                 "Material".into()
             } else if let Some(rest) = id.split_once(':') {
@@ -168,7 +171,7 @@ impl EntityWindowState {
             data_children.push(FilterNode::leaf(class_name, &data_path));
             for (namespace, name) in class_entries {
                 let editor_id = format!("{}:{}:{}", namespace, class_name, name);
-                entries.push(EntityEntry {
+                entries.push(DataEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -191,7 +194,7 @@ impl EntityWindowState {
             gfx_children.push(FilterNode::leaf("Models", &gfx_path));
             for name in &models {
                 let editor_id = format!("model:{}", name);
-                entries.push(EntityEntry {
+                entries.push(DataEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -211,7 +214,7 @@ impl EntityWindowState {
             gfx_children.push(FilterNode::leaf("Shaders", &gfx_path));
             for name in &shaders {
                 let editor_id = format!("shader:{}", name);
-                entries.push(EntityEntry {
+                entries.push(DataEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -231,7 +234,7 @@ impl EntityWindowState {
             gfx_children.push(FilterNode::leaf("Textures", &gfx_path));
             for name in &textures {
                 let editor_id = format!("texture:{}", name);
-                entries.push(EntityEntry {
+                entries.push(DataEntry {
                     hex_id: make_hex(&editor_id),
                     editor_id: editor_id.clone(),
                     entry_type: make_type(&editor_id),
@@ -250,34 +253,82 @@ impl EntityWindowState {
             tree.push(FilterNode::branch("Graphics", &[], gfx_children));
         }
 
+        // "Audio" branch
+        if !audio.is_empty() {
+            let audio_path = vec!["Audio".to_string()];
+            let mut audio_children = Vec::new();
+
+            // Group by subdirectory (first path component), or flat if no subdir
+            let mut subdir_map: std::collections::BTreeMap<String, Vec<String>> =
+                std::collections::BTreeMap::new();
+            for name in &audio {
+                let subdir = Path::new(name)
+                    .parent()
+                    .and_then(|p| p.components().next())
+                    .and_then(|c| {
+                        if let std::path::Component::Normal(s) = c {
+                            s.to_str()
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or("")
+                    .to_string();
+                subdir_map.entry(subdir).or_default().push(name.clone());
+            }
+
+            for (subdir, files) in &subdir_map {
+                let label = if subdir.is_empty() { "audio" } else { subdir.as_str() };
+                let sub_path = vec!["Audio".to_string(), label.to_string()];
+                audio_children.push(FilterNode::leaf(label, &audio_path));
+                for name in files {
+                    let editor_id = format!("audio:{}", name);
+                    entries.push(DataEntry {
+                        hex_id: make_hex(&editor_id),
+                        editor_id: editor_id.clone(),
+                        entry_type: make_type(&editor_id),
+                        name: Path::new(name)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(name)
+                            .to_string(),
+                        count: 0,
+                        category_path: sub_path.clone(),
+                    });
+                }
+            }
+
+            tree.push(FilterNode::branch("Audio", &[], audio_children));
+        }
+
         self.filter_tree = tree;
         self.entries = entries;
     }
 }
 
 #[update(mode = "editor")]
-pub fn entity_window(world: &mut World) -> Result<()> {
+pub fn data_window(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let style = world
         .get_resource::<EditorStyle>()
         .cloned()
         .unwrap_or_default();
-    if world.get_resource::<EntityWindowState>().is_err() {
-        world.insert_resource(EntityWindowState::default());
+    if world.get_resource::<DataWindowState>().is_err() {
+        world.insert_resource(DataWindowState::default());
     }
     if !world.has_resource::<WindowLayout>() {
         return Ok(());
     }
 
     let state = match world.get_resource::<WindowLayout>() {
-        Ok(l) => l.entity_window.clone(),
+        Ok(l) => l.data_window.clone(),
         Err(_) => return Ok(()),
     };
 
     let pos = state.to_pos();
     let size = state.to_size();
 
-    let window = Window::new("Entity Window")
+    let window = Window::new("Data Window")
         .default_pos(pos)
         .collapsible(false)
         .default_size(size)
@@ -285,7 +336,7 @@ pub fn entity_window(world: &mut World) -> Result<()> {
         .movable(true);
 
     let needs_populate = world
-        .get_resource::<EntityWindowState>()
+        .get_resource::<DataWindowState>()
         .map(|s| s.is_first_frame)
         .unwrap_or(false);
     let populate_data = if needs_populate {
@@ -295,6 +346,7 @@ pub fn entity_window(world: &mut World) -> Result<()> {
                 am.model_names(),
                 am.shader_names(),
                 am.texture_names(),
+                am.audio_names(),
             )
         })
     } else {
@@ -302,17 +354,17 @@ pub fn entity_window(world: &mut World) -> Result<()> {
     };
 
     let mut window_open = world
-        .get_resource::<EntityWindowState>()
+        .get_resource::<DataWindowState>()
         .map(|s| s.open)
         .unwrap_or(true);
     if !window_open {
         return Ok(());
     }
 
-    let entity_window_resource = world.get_resource_mut::<EntityWindowState>()?;
+    let entity_window_resource = world.get_resource_mut::<DataWindowState>()?;
     if entity_window_resource.is_first_frame {
-        if let Some((registry_data, models, shaders, textures)) = populate_data {
-            entity_window_resource.populate(registry_data, models, shaders, textures);
+        if let Some((registry_data, models, shaders, textures, audio)) = populate_data {
+            entity_window_resource.populate(registry_data, models, shaders, textures, audio);
         }
         entity_window_resource.is_first_frame = false;
     }
@@ -553,7 +605,7 @@ pub fn entity_window(world: &mut World) -> Result<()> {
             };
 
             // filter + sort entries
-            let mut filtered: Vec<&EntityEntry> = entity_window_resource
+            let mut filtered: Vec<&DataEntry> = entity_window_resource
                 .entries
                 .iter()
                 .filter(|e| match &entity_window_resource.selected_filter {
@@ -614,6 +666,7 @@ pub fn entity_window(world: &mut World) -> Result<()> {
                         let is_model = entry.editor_id.starts_with("model:");
                         let is_shader = entry.editor_id.starts_with("shader:");
                         let is_material = entry.editor_id.contains(":Material:");
+                        let is_audio = entry.editor_id.starts_with("audio:");
                         let (row_rect, row_resp) = ui.allocate_exact_size(
                             Vec2::new(table_w, row_h),
                             Sense::click_and_drag(),
@@ -628,8 +681,8 @@ pub fn entity_window(world: &mut World) -> Result<()> {
                             entity_window_resource.selected_entry = Some(entry.editor_id.clone());
                         }
 
-                        // Texture, model, shader, and material rows are drag sources for DnD fields
-                        if is_texture || is_model || is_shader || is_material {
+                        // Texture, model, shader, material, and audio rows are drag sources for DnD fields
+                        if is_texture || is_model || is_shader || is_material || is_audio {
                             row_resp.dnd_set_drag_payload(entry.editor_id.clone());
                             if row_resp.hovered() {
                                 ui.ctx().set_cursor_icon(CursorIcon::Grab);
@@ -847,30 +900,26 @@ pub fn entity_window(world: &mut World) -> Result<()> {
         let rect = response.response.rect;
 
         let layout = world.get_resource_mut::<WindowLayout>()?;
-        layout.entity_window.update_from_rect(rect);
+        layout.data_window.update_from_rect(rect);
         layout.dirty = true;
     }
 
-    world.get_resource_mut::<EntityWindowState>()?.open = window_open;
+    world.get_resource_mut::<DataWindowState>()?.open = window_open;
 
     if let Some(name) = pending_scene_load {
         ow_scene_load(world, &name);
     }
     if let Some(name) = pending_scene_delete {
         ow_scene_delete(world, &name);
-        world
-            .get_resource_mut::<EntityWindowState>()?
-            .is_first_frame = true;
+        world.get_resource_mut::<DataWindowState>()?.is_first_frame = true;
     }
     if let Some((old, new)) = pending_scene_rename {
         ow_scene_rename(world, &old, &new);
-        world
-            .get_resource_mut::<EntityWindowState>()?
-            .is_first_frame = true;
+        world.get_resource_mut::<DataWindowState>()?.is_first_frame = true;
     }
 
     if let Some(ref id) = pending_open_in_editor {
-        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
+        if let Ok(ow) = world.get_resource_mut::<DataWindowState>() {
             ow.selected_entry = Some(id.clone());
         }
         if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
@@ -895,7 +944,7 @@ pub fn entity_window(world: &mut World) -> Result<()> {
     }
 
     if pending_refresh {
-        if let Ok(ow) = world.get_resource_mut::<EntityWindowState>() {
+        if let Ok(ow) = world.get_resource_mut::<DataWindowState>() {
             ow.is_first_frame = true;
         }
     }

@@ -81,6 +81,7 @@ use crate::{
 use winit::application::ApplicationHandler;
 
 pub mod assets;
+pub mod audio;
 pub mod ecs;
 pub mod items;
 pub mod packages;
