@@ -237,11 +237,7 @@ impl Inspect for AudioPlayer {
                 } else if sound.path.is_empty() {
                     ui.label(crate::egui::RichText::new("No file set").small().weak());
                 } else if sound.is_streaming() {
-                    ui.label(
-                        crate::egui::RichText::new("Streaming")
-                            .small()
-                            .weak(),
-                    );
+                    ui.label(crate::egui::RichText::new("Streaming").small().weak());
                 }
             });
             ui.add_space(4.0);

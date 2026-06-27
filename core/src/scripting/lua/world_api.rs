@@ -9,6 +9,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::assets::loaders::material_loader::MaterialLoader;
 use crate::audio::Audio;
 use crate::audio::audio_player::AudioPlayer;
+use crate::audio::layers::AudioLayer;
 use crate::audio::sound::Sound;
 use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
@@ -500,7 +501,9 @@ impl UserData for WorldHandle {
                             world.insert_resource(audio);
                         }
                         Err(e) => {
-                            crate::log_warn!("[lua] audio_play_oneshot: failed to create AudioManager: {e}");
+                            crate::log_warn!(
+                                "[lua] audio_play_oneshot: failed to create AudioManager: {e}"
+                            );
                             return Ok(());
                         }
                     }
@@ -517,8 +520,266 @@ impl UserData for WorldHandle {
                     None => return Ok(()),
                 };
                 if let Ok(audio) = world.get_resource::<Audio>() {
-                    if let Err(e) = audio.play_sound(crate::audio::layers::AudioLayer::default(), data) {
+                    if let Err(e) = audio.play_sound(AudioLayer::default(), data) {
                         crate::log_warn!("[lua] audio_play_oneshot: play failed: {e}");
+                    }
+                }
+                Ok(())
+            },
+        );
+
+        // Adds a Sound to an entity's AudioPlayer component and returns its 0-based index.
+        // opts is an optional table with any of: layer, volume, pitch, loop, spatial,
+        // max_distance, fade_in, fade_out, auto_play (all optional).
+        //
+        // Usage:
+        //   local idx = world:audio_add_sound(entity, "audio/click.ogg")
+        //   local idx = world:audio_add_sound(entity, "audio/theme.ogg", { layer="Music", loop=true, volume=-6 })
+        //   world:audio_play(entity, idx)
+        methods.add_method(
+            "audio_add_sound",
+            |_, this, (id, path, opts): (UserDataRef<EntityHandle>, String, Option<mlua::Table>)| {
+                let mut sound = Sound::default();
+                sound.path = path;
+
+                if let Some(t) = &opts {
+                    if let Ok(l) = t.get::<String>("layer")
+                        && let Some(layer) = AudioLayer::from_str(&l)
+                    {
+                        sound.layer = layer;
+                    }
+                    if let Ok(v) = t.get::<f32>("volume") {
+                        sound.volume = v;
+                    }
+                    if let Ok(p) = t.get::<f32>("pitch") {
+                        sound.pitch = p;
+                    }
+                    if let Ok(b) = t.get::<bool>("loop") {
+                        sound.looping = b;
+                    }
+                    if let Ok(b) = t.get::<bool>("spatial") {
+                        sound.spatial = b;
+                    }
+                    if let Ok(d) = t.get::<f32>("max_distance") {
+                        sound.max_distance = d;
+                    }
+                    if let Ok(f) = t.get::<f32>("fade_in") {
+                        sound.fade_in = f;
+                    }
+                    if let Ok(f) = t.get::<f32>("fade_out") {
+                        sound.fade_out = f;
+                    }
+                    if let Ok(b) = t.get::<bool>("auto_play") {
+                        sound.auto_play = b;
+                    }
+                }
+
+                if !sound.path.is_empty() {
+                    if let Err(e) = sound.reload() {
+                        crate::log_warn!("[lua] audio_add_sound: failed to load '{}': {e}", sound.path);
+                    }
+                }
+
+                let world = this.world();
+                if world.get_component::<AudioPlayer>(id.0).is_none() {
+                    world.add_component(id.0, AudioPlayer::default());
+                }
+
+                let idx = if let Some(player) = world.get_component_mut::<AudioPlayer>(id.0) {
+                    let idx = player.audio.len();
+                    player.audio.push(sound);
+                    idx
+                } else {
+                    return Ok(usize::MAX);
+                };
+
+                Ok(idx)
+            },
+        );
+
+        // Removes the sound at `index` from an entity's AudioPlayer.
+        methods.add_method(
+            "audio_remove_sound",
+            |_, this, (id, index): (UserDataRef<EntityHandle>, usize)| {
+                if let Some(player) = this.world().get_component_mut::<AudioPlayer>(id.0) {
+                    if index < player.audio.len() {
+                        player.audio.remove(index);
+                    }
+                }
+                Ok(())
+            },
+        );
+
+        // Returns the number of sounds on an entity's AudioPlayer (or 0 if none).
+        methods.add_method(
+            "audio_sound_count",
+            |_, this, id: UserDataRef<EntityHandle>| {
+                Ok(this
+                    .world()
+                    .get_component::<AudioPlayer>(id.0)
+                    .map(|p| p.audio.len())
+                    .unwrap_or(0))
+            },
+        );
+
+        // Plays a streaming music track (Music layer) without needing an entity.
+        // opts table: volume (dB, default 0), loop (bool, default true), fade_in (secs, default 0).
+        //
+        // Usage:
+        //   world:audio_play_music("audio/theme.ogg")
+        //   world:audio_play_music("audio/theme.ogg", { loop=false, volume=-10, fade_in=2.0 })
+        methods.add_method(
+            "audio_play_music",
+            |_, this, (path, opts): (String, Option<mlua::Table>)| {
+                use crate::assets::audio::resolve_audio_path;
+                use kira::sound::streaming::StreamingSoundData;
+                use kira::{Decibels, PlaybackRate, Tween};
+
+                let volume_db = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("volume").ok())
+                    .unwrap_or(0.0);
+                let do_loop = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<bool>("loop").ok())
+                    .unwrap_or(true);
+                let fade_in = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("fade_in").ok())
+                    .unwrap_or(0.0);
+                let pitch = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("pitch").ok())
+                    .unwrap_or(1.0);
+
+                let world = this.world();
+                if !world.has_resource::<Audio>() {
+                    match Audio::new() {
+                        Ok(audio) => {
+                            world.insert_resource(audio);
+                        }
+                        Err(e) => {
+                            crate::log_warn!(
+                                "[lua] audio_play_music: failed to create AudioManager: {e}"
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+
+                let resolved = match resolve_audio_path(&path) {
+                    Some(p) => p,
+                    None => {
+                        crate::log_warn!("[lua] audio_play_music: file not found: {path}");
+                        return Ok(());
+                    }
+                };
+
+                let data = match StreamingSoundData::from_file(&resolved) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        crate::log_warn!("[lua] audio_play_music: failed to open '{path}': {e}");
+                        return Ok(());
+                    }
+                };
+
+                let fade_tween = (fade_in > 0.0).then(|| Tween {
+                    duration: std::time::Duration::from_secs_f32(fade_in),
+                    ..Default::default()
+                });
+
+                let mut data = data
+                    .volume(Decibels(volume_db))
+                    .playback_rate(PlaybackRate(pitch as f64))
+                    .fade_in_tween(fade_tween);
+                if do_loop {
+                    data = data.loop_region(..);
+                }
+
+                if let Ok(audio) = world.get_resource::<Audio>() {
+                    if let Err(e) = audio.play_sound(AudioLayer::Music, data) {
+                        crate::log_warn!("[lua] audio_play_music: play failed: {e}");
+                    }
+                }
+                Ok(())
+            },
+        );
+
+        // Usage:
+        //   world:audio_play_sfx("audio/click.ogg")
+        //   world:audio_play_sfx("audio/footstep.ogg", { layer="FootStep", volume=-3, pitch=1.1 })
+        methods.add_method(
+            "audio_play_sfx",
+            |_, this, (path, opts): (String, Option<mlua::Table>)| {
+                use kira::{Decibels, PlaybackRate, Tween};
+
+                let layer_str = opts.as_ref().and_then(|t| t.get::<String>("layer").ok());
+                let layer = layer_str
+                    .as_deref()
+                    .and_then(AudioLayer::from_str)
+                    .unwrap_or(AudioLayer::SoundEffect);
+                let volume_db = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("volume").ok())
+                    .unwrap_or(0.0);
+                let pitch = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("pitch").ok())
+                    .unwrap_or(1.0);
+                let fade_in = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<f32>("fade_in").ok())
+                    .unwrap_or(0.0);
+                let do_loop = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<bool>("loop").ok())
+                    .unwrap_or(false);
+
+                let world = this.world();
+                if !world.has_resource::<Audio>() {
+                    match Audio::new() {
+                        Ok(audio) => {
+                            world.insert_resource(audio);
+                        }
+                        Err(e) => {
+                            crate::log_warn!(
+                                "[lua] audio_play_sfx: failed to create AudioManager: {e}"
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+
+                let sound = match Sound::from_path(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        crate::log_warn!("[lua] audio_play_sfx: {e}");
+                        return Ok(());
+                    }
+                };
+
+                let Some(raw) = sound.data else {
+                    return Ok(());
+                };
+
+                let fade_tween = (fade_in > 0.0).then(|| Tween {
+                    duration: std::time::Duration::from_secs_f32(fade_in),
+                    ..Default::default()
+                });
+
+                let mut data = raw
+                    .volume(Decibels(volume_db))
+                    .playback_rate(PlaybackRate(pitch as f64));
+                if do_loop {
+                    data = data.loop_region(..);
+                }
+                if let Some(tween) = fade_tween {
+                    data = data.fade_in_tween(tween);
+                }
+
+                if let Ok(audio) = world.get_resource::<Audio>() {
+                    if let Err(e) = audio.play_sound(layer, data) {
+                        crate::log_warn!("[lua] audio_play_sfx: play failed: {e}");
                     }
                 }
                 Ok(())
