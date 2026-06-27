@@ -7,7 +7,6 @@ pub mod layers;
 pub mod sound;
 
 use apostasy_macros::Resource;
-use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::TrackBuilder;
 use kira::{AudioManager, AudioManagerSettings, DefaultBackend};
 
@@ -86,11 +85,11 @@ impl Audio {
         }
     }
 
-    pub fn play_sound(
-        &self,
-        layer: AudioLayer,
-        data: StaticSoundData,
-    ) -> anyhow::Result<StaticSoundHandle> {
+    pub fn play_sound<D>(&self, layer: AudioLayer, data: D) -> anyhow::Result<D::Handle>
+    where
+        D: kira::sound::SoundData,
+        D::Error: std::fmt::Debug + Send + Sync + 'static,
+    {
         if let Some(track_arc) = self.tracks.get(&layer) {
             let mut track = track_arc
                 .lock()

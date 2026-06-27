@@ -1,7 +1,10 @@
 use anyhow::Result;
 use apostasy_macros::Component;
-use kira::sound::static_sound::StaticSoundHandle;
+use kira::sound::streaming::StreamingSoundData;
 use kira::{Decibels, Panning, PlaybackRate, Tween};
+
+use crate::assets::audio::resolve_audio_path;
+use crate::audio::sound::SoundHandle;
 
 use crate::audio::Audio;
 use crate::audio::layers::AudioLayer;
@@ -75,7 +78,7 @@ impl Inspect for AudioPlayer {
 
                             let is_playing = sound.is_playing();
                             let is_paused = sound.is_paused();
-                            let has_data = sound.data.is_some();
+                            let has_data = sound.is_ready();
 
                             // Play / pause / resume button
                             let (play_label, play_hover, play_clickable) = if is_playing {
@@ -121,7 +124,11 @@ impl Inspect for AudioPlayer {
                                         crate::egui::Sense::hover()
                                     }),
                                 )
-                                .on_hover_text(if stop_clickable { "Stop" } else { "Not playing" })
+                                .on_hover_text(if stop_clickable {
+                                    "Stop"
+                                } else {
+                                    "Not playing"
+                                })
                                 .clicked()
                                 && stop_clickable
                             {
@@ -220,15 +227,21 @@ impl Inspect for AudioPlayer {
                     ui.separator();
                 });
 
-                let loaded = sound.data.is_some();
-                if !loaded && !sound.path.is_empty() {
+                let ready = sound.is_ready();
+                if !ready && !sound.path.is_empty() && !sound.is_streaming() {
                     ui.label(
                         crate::egui::RichText::new("⚠ Not loaded — press Enter or unfocus path")
                             .small()
                             .color(crate::egui::Color32::YELLOW),
                     );
-                } else if !loaded {
+                } else if sound.path.is_empty() {
                     ui.label(crate::egui::RichText::new("No file set").small().weak());
+                } else if sound.is_streaming() {
+                    ui.label(
+                        crate::egui::RichText::new("Streaming")
+                            .small()
+                            .weak(),
+                    );
                 }
             });
             ui.add_space(4.0);
@@ -303,36 +316,11 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    // Handle stops — no AudioManager needed.
+    //
     for (id, idx) in &stop_requests {
         if let Some(player) = world.get_component::<AudioPlayer>(*id)
             && let Some(sound) = player.audio.get(*idx)
             && let Ok(mut guard) = sound.handle.lock()
-        {
-            if let Some(h) = guard.as_mut() {
-                let tween = if sound.fade_out > 0.0 {
-                    Tween {
-                        duration: std::time::Duration::from_secs_f32(sound.fade_out),
-                        ..Default::default()
-                    }
-                } else {
-                    Tween::default()
-                };
-                h.stop(tween);
-            }
-            *guard = None;
-        }
-        if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
-            player.pending_stop = None;
-        }
-    }
-
-    // Handle pauses — no AudioManager needed.
-    for (id, idx) in &pause_requests {
-        if let Some(player) = world.get_component::<AudioPlayer>(*id)
-            && let Some(sound) = player.audio.get(*idx)
-            && let Ok(mut guard) = sound.handle.lock()
-            && let Some(h) = guard.as_mut()
         {
             let tween = if sound.fade_out > 0.0 {
                 Tween {
@@ -342,19 +330,44 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             } else {
                 Tween::default()
             };
-            h.pause(tween);
+            for h in guard.iter_mut() {
+                h.stop(tween);
+            }
+            guard.clear();
+        }
+        if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
+            player.pending_stop = None;
+        }
+    }
+
+    // Puasing
+    for (id, idx) in &pause_requests {
+        if let Some(player) = world.get_component::<AudioPlayer>(*id)
+            && let Some(sound) = player.audio.get(*idx)
+            && let Ok(mut guard) = sound.handle.lock()
+        {
+            let tween = if sound.fade_out > 0.0 {
+                Tween {
+                    duration: std::time::Duration::from_secs_f32(sound.fade_out),
+                    ..Default::default()
+                }
+            } else {
+                Tween::default()
+            };
+            for h in guard.iter_mut() {
+                h.pause(tween);
+            }
         }
         if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
             player.pending_pause = None;
         }
     }
 
-    // Handle resumes — no AudioManager needed.
+    // Resume
     for (id, idx) in &resume_requests {
         if let Some(player) = world.get_component::<AudioPlayer>(*id)
             && let Some(sound) = player.audio.get(*idx)
             && let Ok(mut guard) = sound.handle.lock()
-            && let Some(h) = guard.as_mut()
         {
             let tween = if sound.fade_in > 0.0 {
                 Tween {
@@ -364,7 +377,9 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             } else {
                 Tween::default()
             };
-            h.resume(tween);
+            for h in guard.iter_mut() {
+                h.resume(tween);
+            }
         }
         if let Some(player) = world.get_component_mut::<AudioPlayer>(*id) {
             player.pending_resume = None;
@@ -401,13 +416,26 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
             .and_then(|p| p.audio.get(idx))
             .map(|s| s.handle.clone());
 
+        // Remove finished instances before adding a new one.
+        if let Some(arc) = &handle_arc
+            && let Ok(mut g) = arc.lock()
+        {
+            g.retain(|h| {
+                use kira::sound::PlaybackState;
+                matches!(
+                    h.state(),
+                    PlaybackState::Playing | PlaybackState::Pausing | PlaybackState::Paused
+                )
+            });
+        }
+
         if let Some(player) = world.get_component::<AudioPlayer>(id) {
             match player.play(idx, &audio) {
                 Ok(handle) => {
                     if let Some(arc) = handle_arc
                         && let Ok(mut g) = arc.lock()
                     {
-                        *g = Some(handle);
+                        g.push(handle);
                     }
                 }
                 Err(e) => {
@@ -504,26 +532,42 @@ impl AudioPlayer {
         Ok(())
     }
 
-    /// Plays a sound by index, returning the handle.
-    /// Returns an error if no data is loaded.
-    pub fn play(&self, index: usize, audio: &Audio) -> Result<StaticSoundHandle> {
+    /// Plays a sound by index, returning a `SoundHandle`.
+    /// Music-layer sounds stream from disk; all others use the preloaded buffer.
+    pub fn play(&self, index: usize, audio: &Audio) -> Result<SoundHandle> {
         let sound = &self.audio[index];
-        let mut data = sound
-            .data
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("Sound at index {} has no loaded data", index))?
-            .volume(kira::Decibels(sound.volume))
-            .playback_rate(PlaybackRate(sound.pitch as f64));
-        if sound.looping {
-            data = data.loop_region(..);
+
+        let fade_tween = (sound.fade_in > 0.0).then(|| Tween {
+            duration: std::time::Duration::from_secs_f32(sound.fade_in),
+            ..Default::default()
+        });
+
+        if sound.is_streaming() {
+            let resolved = resolve_audio_path(&sound.path)
+                .ok_or_else(|| anyhow::anyhow!("Audio file not found: {}", sound.path))?;
+            let mut data = StreamingSoundData::from_file(&resolved)?
+                .volume(kira::Decibels(sound.volume))
+                .playback_rate(PlaybackRate(sound.pitch as f64))
+                .fade_in_tween(fade_tween);
+            if sound.looping {
+                data = data.loop_region(..);
+            }
+            Ok(SoundHandle::Streaming(audio.play_sound(sound.layer, data)?))
+        } else {
+            let mut data = sound
+                .data
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Sound at index {} has no loaded data", index))?
+                .volume(kira::Decibels(sound.volume))
+                .playback_rate(PlaybackRate(sound.pitch as f64));
+            if sound.looping {
+                data = data.loop_region(..);
+            }
+            if let Some(tween) = fade_tween {
+                data = data.fade_in_tween(tween);
+            }
+            Ok(SoundHandle::Static(audio.play_sound(sound.layer, data)?))
         }
-        if sound.fade_in > 0.0 {
-            data = data.fade_in_tween(Tween {
-                duration: std::time::Duration::from_secs_f32(sound.fade_in),
-                ..Default::default()
-            });
-        }
-        audio.play_sound(sound.layer, data)
     }
 }
 
@@ -580,7 +624,7 @@ pub fn auto_play_audio(world: &mut World) -> Result<()> {
                         if let Some(arc) = handle_arc
                             && let Ok(mut g) = arc.lock()
                         {
-                            *g = Some(handle);
+                            g.push(handle);
                         }
                     }
                     Err(e) => {
@@ -679,11 +723,11 @@ pub fn update_spatial_audio(world: &mut World) -> Result<()> {
             0.0
         };
 
-        if let Ok(mut guard) = handle_arc.lock()
-            && let Some(h) = guard.as_mut()
-        {
-            h.set_volume(volume_db, Tween::default());
-            h.set_panning(Panning(pan), Tween::default());
+        if let Ok(mut guard) = handle_arc.lock() {
+            for h in guard.iter_mut() {
+                h.set_volume(volume_db, Tween::default());
+                h.set_panning(Panning(pan), Tween::default());
+            }
         }
     }
 
