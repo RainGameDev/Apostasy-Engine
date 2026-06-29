@@ -51,6 +51,8 @@ pub struct CellSearchState {
     pub cell_rename_focus: bool,
     // whether to show worldspaces list instead of cells
     pub show_worldspaces: bool,
+    // selected worldspace name (in worldspaces tab)
+    pub selected_worldspace: Option<String>,
     // create worldspace dialog state
     pub create_ws_open: bool,
     pub create_ws_name: String,
@@ -74,6 +76,7 @@ impl Default for CellSearchState {
             cell_rename_buf: String::new(),
             cell_rename_focus: false,
             show_worldspaces: false,
+            selected_worldspace: None,
             create_ws_open: false,
             create_ws_name: String::new(),
             create_ws_interior: false,
@@ -192,6 +195,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
     let mut pending_goto_cell: Option<Vector3<i32>> = None;
     let mut pending_cell_rename: Option<(Vector3<i32>, String)> = None;
     let mut show_worldspaces = world.get_resource::<CellSearchState>()?.show_worldspaces;
+    let mut selected_worldspace: Option<String> =
+        world.get_resource::<CellSearchState>()?.selected_worldspace.clone();
 
     let row_h = style.row_height();
     let header_h = style.header_height();
@@ -370,11 +375,16 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                                         for (idx, ws_name) in ws_names.iter().enumerate() {
                                             let is_current = ws_name == &world.worldspace().name;
+                                            let is_ws_selected =
+                                                selected_worldspace.as_deref() == Some(ws_name);
                                             let (row_rect, row_resp) = ui.allocate_exact_size(
                                                 Vec2::new(avail_w, row_h),
                                                 Sense::click(),
                                             );
-                                            let bg = if is_current {
+                                            if row_resp.clicked() {
+                                                selected_worldspace = Some(ws_name.clone());
+                                            }
+                                            let bg = if is_ws_selected {
                                                 style.sel_bg
                                             } else if row_resp.hovered() {
                                                 style.hover_bg
@@ -393,7 +403,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ws_name_w - 12.0,
                                                 ws_name,
                                                 font_row.clone(),
-                                                if is_current {
+                                                if is_ws_selected || is_current {
                                                     style.text_col
                                                 } else {
                                                     style.dim_col
@@ -872,11 +882,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let filtered: Vec<&EntityRefEntry> = entity_entries
                                 .iter()
                                 .filter(|e| {
-                                    let Some(cell) = selected_cell else {
-                                        return false;
-                                    };
-                                    if e.entity_id.cell != cell {
-                                        return false;
+                                    if !show_worldspaces {
+                                        let Some(cell) = selected_cell else {
+                                            return false;
+                                        };
+                                        if e.entity_id.cell != cell {
+                                            return false;
+                                        }
                                     }
                                     if filter_value.trim().is_empty() {
                                         return true;
@@ -1117,6 +1129,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.cell_rename_buf = cell_rename_buf;
         s.cell_rename_focus = cell_rename_focus;
         s.show_worldspaces = show_worldspaces;
+        s.selected_worldspace = selected_worldspace;
     }
 
     if let Some(response) = window {
