@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use ash::vk;
-use cgmath::Vector3;
+use cgmath::{Vector3, Zero};
 
 use crate::{
-    ecs::world::World,
-    rendering::vulkan::rendering_context::VulkanRenderingContext,
-    terrain::TerrainChunkMap,
+    ecs::{components::transform::Transform, world::World},
+    physics::{
+        collider::{Collider, ColliderShape},
+        velocity::Velocity,
+    },
+    rendering::{shared::model::Bvh, vulkan::rendering_context::VulkanRenderingContext},
+    terrain::{TerrainChunkMap, mesh_builder::build_terrain_collider},
 };
 
 use super::{
@@ -34,6 +40,33 @@ pub fn rebuild_dirty_terrain(
 
         let neighbors = gather_neighbors(world, &chunk);
         let new_mesh = build_terrain_mesh(&chunk, &neighbors, context, command_pool)?;
+
+        let terrain_triangles = build_terrain_collider(&chunk);
+        let bvh = Bvh::build(terrain_triangles.clone());
+        let terrain_collider = Collider::new_static(
+            ColliderShape::Mesh {
+                triangles: Arc::new(terrain_triangles),
+                bvh: Arc::new(bvh),
+                model_path: String::new(),
+            },
+            Vector3::zero(),
+        );
+
+        world.remove_component::<Collider>(id);
+        world.add_component(id, terrain_collider);
+
+        if !world.has_component::<Transform>(id) {
+            world.add_component(
+                id,
+                Transform {
+                    ..Default::default()
+                },
+            );
+        }
+
+        if !world.has_component::<Velocity>(id) {
+            world.add_component(id, Velocity::static_entity());
+        }
 
         // Queue old gpu buffers for deferred destruction.
         if let Some(old) = world.get_component::<TerrainMesh>(id) {
@@ -66,23 +99,52 @@ fn gather_neighbors(world: &World, chunk: &TerrainChunk) -> NeighborBorders {
 
     // Sample one step *inside* each neighbor so both chunks produce the same central
     // difference gradient at their shared border vertex. See NeighborBorders doc.
-    let left_col = map.0.get(&Vector3::new(coord.x - 1, 0, coord.z))
+    let left_col = map
+        .0
+        .get(&Vector3::new(coord.x - 1, 0, coord.z))
         .and_then(|&id| world.get_component::<TerrainChunk>(id))
-        .map(|c| (0..side).map(|z| c.heights[r.saturating_sub(1) + z * side]).collect::<Vec<_>>());
+        .map(|c| {
+            (0..side)
+                .map(|z| c.heights[r.saturating_sub(1) + z * side])
+                .collect::<Vec<_>>()
+        });
 
-    let right_col = map.0.get(&Vector3::new(coord.x + 1, 0, coord.z))
+    let right_col = map
+        .0
+        .get(&Vector3::new(coord.x + 1, 0, coord.z))
         .and_then(|&id| world.get_component::<TerrainChunk>(id))
-        .map(|c| (0..side).map(|z| c.heights[1.min(r) + z * side]).collect::<Vec<_>>());
+        .map(|c| {
+            (0..side)
+                .map(|z| c.heights[1.min(r) + z * side])
+                .collect::<Vec<_>>()
+        });
 
-    let top_row = map.0.get(&Vector3::new(coord.x, 0, coord.z - 1))
+    let top_row = map
+        .0
+        .get(&Vector3::new(coord.x, 0, coord.z - 1))
         .and_then(|&id| world.get_component::<TerrainChunk>(id))
-        .map(|c| (0..side).map(|x| c.heights[x + r.saturating_sub(1) * side]).collect::<Vec<_>>());
+        .map(|c| {
+            (0..side)
+                .map(|x| c.heights[x + r.saturating_sub(1) * side])
+                .collect::<Vec<_>>()
+        });
 
-    let bottom_row = map.0.get(&Vector3::new(coord.x, 0, coord.z + 1))
+    let bottom_row = map
+        .0
+        .get(&Vector3::new(coord.x, 0, coord.z + 1))
         .and_then(|&id| world.get_component::<TerrainChunk>(id))
-        .map(|c| (0..side).map(|x| c.heights[x + 1.min(r) * side]).collect::<Vec<_>>());
+        .map(|c| {
+            (0..side)
+                .map(|x| c.heights[x + 1.min(r) * side])
+                .collect::<Vec<_>>()
+        });
 
-    NeighborBorders { left_col, right_col, top_row, bottom_row }
+    NeighborBorders {
+        left_col,
+        right_col,
+        top_row,
+        bottom_row,
+    }
 }
 
 fn queue_old_buffers(graveyard: &mut Vec<(vk::Buffer, vk::DeviceMemory)>, mesh: &TerrainMesh) {

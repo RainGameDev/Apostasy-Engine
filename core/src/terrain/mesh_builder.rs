@@ -83,7 +83,11 @@ pub fn build_terrain_mesh(
             };
 
             let get_color = |gi: usize| -> [f32; 3] {
-                chunk.vertex_colors.get(gi).copied().unwrap_or([1.0, 1.0, 1.0])
+                chunk
+                    .vertex_colors
+                    .get(gi)
+                    .copied()
+                    .unwrap_or([1.0, 1.0, 1.0])
             };
 
             // Triangle 1: tl, bl, tr
@@ -180,4 +184,45 @@ fn compute_normal(
     } else {
         Vector3::new(0.0, 1.0, 0.0)
     }
+}
+
+/// Makes the terrain colider from its mesh.
+pub fn build_terrain_collider(chunk: &TerrainChunk) -> Vec<[Vector3<f32>; 3]> {
+    let r = chunk.resolution as usize;
+    let side = r + 1;
+    let cell_size = CELL_SIZE as f32;
+    let step = cell_size / r as f32;
+
+    let origin_x = chunk.cell_coord.x as f32 * cell_size;
+    let origin_z = chunk.cell_coord.z as f32 * cell_size;
+
+    // Positions of the mesh
+    let mut grid_positions: Vec<Vector3<f32>> = Vec::with_capacity(side * side);
+
+    // add the positions
+    for z in 0..side {
+        for x in 0..side {
+            let h = chunk.height_at(x, z);
+            let wx = origin_x + x as f32 * step;
+            let wz = origin_z + z as f32 * step;
+
+            grid_positions.push(Vector3::new(wx, h, wz));
+        }
+    }
+
+    let mut triangles: Vec<[Vector3<f32>; 3]> = Vec::with_capacity(r * r * 2);
+    // loop through the vertices and make triangles
+    for x in 0..r {
+        for z in 0..r {
+            let tl = x + z * side;
+            let tr = (x + 1) + z * side;
+            let bl = x + (z + 1) * side;
+            let br = (x + 1) + (z + 1) * side;
+
+            triangles.push([grid_positions[tl], grid_positions[bl], grid_positions[tr]]);
+            triangles.push([grid_positions[tr], grid_positions[bl], grid_positions[br]]);
+        }
+    }
+
+    triangles
 }

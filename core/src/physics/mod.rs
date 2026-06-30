@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use apostasy_macros::{Component, Inspect, fixed_update, update};
+use apostasy_macros::{Component, Inspect, Resource, fixed_update, update};
 
 use crate::{
     assets::asset_manager::AssetManager,
-    ecs::{cell::EntityId, components::transform::Transform, world::World},
+    ecs::{cell::EntityId, components::transform::Transform, tags::Player, world::World},
     physics::{collider::{Collider, ColliderShape}, velocity::Velocity},
     rendering::shared::model::Bvh,
 };
@@ -14,6 +14,17 @@ pub mod collider;
 pub mod collision_system;
 pub mod raycast;
 pub mod velocity;
+
+/// When `true`, all colliders are ignored and physics (other than the
+/// player's own velocity) stops processing, letting the player free-float
+/// through the world. Toggled by the `tcl` console command.
+#[derive(Resource, Clone, Default)]
+pub struct Noclip(pub bool);
+
+/// When `true`, every `Collider` gets a wireframe debug visual showing its shape.
+/// Toggled by the `trc` console command.
+#[derive(Resource, Clone, Default)]
+pub struct ColliderRenderDebug(pub bool);
 
 #[derive(Component, Inspect, Clone, Debug)]
 pub struct Gravity {
@@ -121,8 +132,12 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
 
 #[fixed_update(priority = 10)]
 pub fn apply_gravity(world: &mut World, delta: f32) -> Result<()> {
+    let noclip = world.get_resource::<Noclip>().map(|n| n.0).unwrap_or(false);
     let ids = world.get_entities_with_component::<Velocity>();
     for id in ids {
+        if noclip && !world.has_tag::<Player>(id) {
+            continue;
+        }
         let gravity_strength = world.get_component::<Gravity>(id).map(|g| g.strength);
         if let Some(gravity) = gravity_strength {
             if let Some(velocity) = world.get_component_mut::<Velocity>(id) {

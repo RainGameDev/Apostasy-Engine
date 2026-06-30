@@ -6,9 +6,12 @@ use cgmath::{InnerSpace, Quaternion, Vector3, Zero};
 use egui::{ComboBox, DragAndDrop};
 
 use crate::{
-    ecs::{cell::EntityId, component::Inspect, components::transform::Transform, world::World},
-    physics::velocity::Velocity,
-    rendering::shared::model::Bvh,
+    ecs::{
+        cell::EntityId, component::Inspect, components::transform::Transform,
+        tags::ColliderDebugVisual, world::World,
+    },
+    physics::{ColliderRenderDebug, velocity::Velocity},
+    rendering::{components::model_renderer::ModelRenderer, shared::model::Bvh},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -623,6 +626,15 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
         }
     }
 
+    if world.get_resource::<crate::physics::Noclip>().map(|n| n.0).unwrap_or(false) {
+        if let Some(ev_id) = world.get_entities_with_component::<CollisionEvents>().into_iter().next() {
+            if let Some(ev) = world.get_component_mut::<CollisionEvents>(ev_id) {
+                ev.events.clear();
+            }
+        }
+        return Ok(());
+    }
+
     let snapshot = build_snapshot(world);
     let n = snapshot.len();
 
@@ -790,6 +802,84 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
 
     Ok(())
 }
+/// Returns the primitive debug-visual model and the scale needed to match the
+/// collider's shape, or `None` for shapes without a debug primitive (Mesh).
+fn debug_visual_for_shape(shape: &ColliderShape) -> Option<(&'static str, Vector3<f32>)> {
+    let half = shape.half_extents();
+    match shape {
+        ColliderShape::Cuboid { .. } => Some(("m_default_cube", half)),
+        ColliderShape::Sphere { .. } => Some(("m_default_sphere", half)),
+        ColliderShape::Cylinder { .. } | ColliderShape::Capsule { .. } => {
+            Some(("m_default_cylinder", Vector3::new(half.x, half.y * 2.0, half.z)))
+        }
+        ColliderShape::Mesh { .. } => None,
+    }
+}
+
+/// Spawns/updates wireframe debug visuals for every `Collider` while `ColliderRenderDebug` is enabled.
+#[update(mode = "all")]
+pub fn collider_debug_render_system(world: &mut World) -> Result<()> {
+    let enabled = world
+        .get_resource::<ColliderRenderDebug>()
+        .map(|r| r.0)
+        .unwrap_or(false);
+
+    if !enabled {
+        for id in world.get_entities_with_tag::<ColliderDebugVisual>() {
+            world.despawn(id);
+        }
+        return Ok(());
+    }
+
+    // Clean up debug visuals whose owner no longer has a Collider.
+    for debug_id in world.get_entities_with_tag::<ColliderDebugVisual>() {
+        let stale = match world.get_parent_id(debug_id) {
+            Some(parent_id) => !world.has_component::<Collider>(parent_id),
+            None => true,
+        };
+        if stale {
+            world.despawn(debug_id);
+        }
+    }
+
+    for owner_id in world.get_entities_with_component::<Collider>() {
+        let collider = match world.get_component::<Collider>(owner_id) {
+            Some(c) => c.clone(),
+            None => continue,
+        };
+
+        let Some((model_path, scale)) = debug_visual_for_shape(&collider.shape) else {
+            continue;
+        };
+
+        let debug_id = world
+            .get_children_ids(owner_id)
+            .into_iter()
+            .find(|id| world.has_tag::<ColliderDebugVisual>(*id))
+            .unwrap_or_else(|| {
+                let id = world.spawn().id();
+                world.add_component(id, Transform::default());
+                world.add_component(id, ModelRenderer::from_path(model_path));
+                world.add_tag::<ColliderDebugVisual>(id);
+                let _ = world.set_parent(id, Some(owner_id));
+                id
+            });
+
+        if let Some(mr) = world.get_component_mut::<ModelRenderer>(debug_id) {
+            if mr.model_path != model_path {
+                *mr = ModelRenderer::from_path(model_path);
+            }
+            mr.is_wireframe = true;
+        }
+        if let Some(t) = world.get_component_mut::<Transform>(debug_id) {
+            t.local_position = collider.offset;
+            t.local_scale = scale;
+        }
+    }
+
+    Ok(())
+}
+
 fn apply_position_correction(world: &mut World, id: EntityId, offset: Vector3<f32>) {
     if offset.magnitude2() < 1e-6 {
         return;

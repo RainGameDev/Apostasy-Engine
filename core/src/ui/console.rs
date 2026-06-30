@@ -12,6 +12,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::ecs::resources::input_manager::{InputManager, KeyAction, KeyBind};
 use crate::ecs::world::World;
+use crate::physics::{ColliderRenderDebug, Noclip};
 use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::ui::ui_context::EguiContext;
 
@@ -463,6 +464,33 @@ fn toggle_wireframe(world: &mut World, _args: &[String]) -> CommandOutcome {
     CommandOutcome::Success("Wireframe on".to_string())
 }
 
+/// Toggles the `Noclip` resource.
+/// Disables colliders and non-player velocities so the player free-floats through the world.
+fn toggle_collision(world: &mut World, _args: &[String]) -> CommandOutcome {
+    if let Ok(noclip) = world.get_resource_mut::<Noclip>() {
+        noclip.0 = !noclip.0;
+        let on = noclip.0;
+        return CommandOutcome::Success(format!("Noclip {}", if on { "on" } else { "off" }));
+    }
+    world.insert_resource(Noclip(true));
+    CommandOutcome::Success("Noclip on".to_string())
+}
+
+/// Toggles the `ColliderRenderDebug` resource.
+/// Shows a wireframe debug visual over every entity's collider.
+fn toggle_collider_render(world: &mut World, _args: &[String]) -> CommandOutcome {
+    if let Ok(debug) = world.get_resource_mut::<ColliderRenderDebug>() {
+        debug.0 = !debug.0;
+        let on = debug.0;
+        return CommandOutcome::Success(format!(
+            "Collider render {}",
+            if on { "on" } else { "off" }
+        ));
+    }
+    world.insert_resource(ColliderRenderDebug(true));
+    CommandOutcome::Success("Collider render on".to_string())
+}
+
 /// Splits an input line into tokens.
 fn tokenize(line: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -558,6 +586,22 @@ pub fn console_start(world: &mut World) -> Result<()> {
             .description("Toggles wireframe rendering for everything (models, terrain, voxels)")
             .args(0, Some(0))
             .handler(toggle_wireframe),
+    );
+
+    console.register(
+        CommandBuilder::new("tcl")
+            .usage("tcl")
+            .description("Toggles collision: disables colliders and non-player velocities so the player free-floats through the world")
+            .args(0, Some(0))
+            .handler(toggle_collision),
+    );
+
+    console.register(
+        CommandBuilder::new("trc")
+            .usage("trc")
+            .description("Toggles wireframe debug visuals showing every entity's collider shape")
+            .args(0, Some(0))
+            .handler(toggle_collider_render),
     );
 
     world.insert_resource(console);

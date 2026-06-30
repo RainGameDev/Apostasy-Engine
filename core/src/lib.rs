@@ -54,6 +54,7 @@ use crate::rendering::shared::frustrum::EntitiesDrawing;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
+use crate::physics::Noclip;
 use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::rendering::shared::push_constants::{
     PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
@@ -183,6 +184,7 @@ impl Core {
         world.insert_resource(AntiAliasing::default());
         world.insert_resource(ShadowDistance::default());
         world.insert_resource(GlobalWireframe::default());
+        world.insert_resource(Noclip::default());
         world.insert_resource(InspectorRegistry::build());
         world.insert_resource(WindowInfo::default());
 

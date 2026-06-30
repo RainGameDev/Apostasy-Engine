@@ -191,9 +191,14 @@ impl Velocity {
 #[update(priority = 20)]
 fn velocity_process(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
+    let noclip = world.get_resource::<crate::physics::Noclip>().map(|n| n.0).unwrap_or(false);
 
     let ids = world.get_entities_with_component::<Velocity>();
     for id in ids {
+        if noclip && !world.has_tag::<Player>(id) {
+            continue;
+        }
+
         let (linear, angular, grounded) = {
             let vel = match world.get_component_mut::<Velocity>(id) {
                 Some(v) => v,

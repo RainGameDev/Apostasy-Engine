@@ -5,6 +5,10 @@ pub mod skips_serilization;
 #[derive(Tag, Clone)]
 pub struct Player;
 
+/// Marks a debug-only entity spawned by the `trc` console command to visualize a Collider.
+#[derive(Tag, Clone)]
+pub struct ColliderDebugVisual;
+
 use std::any::Any;
 
 /// A trait that defines a tag that can be attached to an entity.
