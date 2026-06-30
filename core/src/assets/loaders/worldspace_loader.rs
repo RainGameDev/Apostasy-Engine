@@ -1,7 +1,8 @@
+use parking_lot::RwLock;
 use std::{
     any::Any,
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::Result;
@@ -36,7 +37,7 @@ impl YamlAssetLoader for WorldspaceLoader {
             .ok_or_else(|| anyhow::anyhow!("Missing 'name' in worldspace"))?
             .to_string();
 
-        let mut registry = self.registry.write().unwrap();
+        let mut registry = self.registry.write();
         registry.worldspaces.insert(name, raw.clone());
         Ok(())
     }
@@ -54,7 +55,7 @@ impl YamlAssetLoader for WorldspaceLoader {
     }
 
     fn list_entries(&self) -> Vec<(String, String)> {
-        let registry = self.registry.read().unwrap();
+        let registry = self.registry.read();
         registry
             .worldspaces
             .keys()

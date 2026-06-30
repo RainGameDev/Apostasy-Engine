@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     path::Path,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use crate::{

@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     any::Any,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::{Error, Result};
@@ -33,7 +34,7 @@ impl YamlAssetLoader for BiomeLoader {
             .to_string();
 
         {
-            let registry = self.registry.read().unwrap();
+            let registry = self.registry.read();
             for reg in registry.defs.iter() {
                 if reg.name == name && reg.namespace == namespace {
                     return Err(Error::msg(format!(
@@ -158,7 +159,7 @@ impl YamlAssetLoader for BiomeLoader {
             terrain_shaping,
         };
 
-        let mut registry = self.registry.write().unwrap();
+        let mut registry = self.registry.write();
         // Second duplicate check under write lock to avoid a TOCTOU race.
         for reg in registry.defs.iter() {
             if reg.name == name && reg.namespace == namespace {
@@ -189,7 +190,7 @@ impl YamlAssetLoader for BiomeLoader {
         self
     }
     fn list_entries(&self) -> Vec<(String, String)> {
-        let registry = self.registry.read().unwrap();
+        let registry = self.registry.read();
         registry.defs.iter().map(|d| (d.namespace.clone(), d.name.clone())).collect()
     }
 }

@@ -48,7 +48,7 @@ impl PipelineManager {
         name: &str,
     ) -> Result<vk::ShaderModule> {
         let shader = self.shader_registry.load_shader(name)?;
-        let shader = shader.read().unwrap();
+        let shader = shader.read();
         Ok(context.create_shader_module(&shader.bytes)?)
     }
 

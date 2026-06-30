@@ -29,13 +29,13 @@ pub fn generate_chunk_data(
 ) -> GeneratedChunkData {
     let full = Instant::now();
 
-    let noise = NOISE.read().unwrap().unwrap();
+    let noise = NOISE.read().unwrap();
     let cavern_noise = Perlin::new(seed.wrapping_add(10));
     let tunnel_noise = Perlin::new(seed.wrapping_add(11));
 
-    let temp_noise = TEMPERATURE_NOISE.read().unwrap().unwrap();
-    let humid_noise = HUMIDITY_NOISE.read().unwrap().unwrap();
-    let continental_noise = CONTINENTAL_NOISE.read().unwrap().unwrap();
+    let temp_noise = TEMPERATURE_NOISE.read().unwrap();
+    let humid_noise = HUMIDITY_NOISE.read().unwrap();
+    let continental_noise = CONTINENTAL_NOISE.read().unwrap();
 
     let world_x = position.x as f64 * 32.0;
     let world_z = position.z as f64 * 32.0;

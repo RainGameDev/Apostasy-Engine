@@ -168,9 +168,10 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         .map(|l| {
             l.registry
                 .read()
-                .ok()
-                .map(|r| r.worldspaces.keys().cloned().collect::<Vec<_>>())
-                .unwrap_or_default()
+                .worldspaces
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
@@ -575,7 +576,6 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             .and_then(|l| {
                 l.registry
                     .read()
-                    .ok()?
                     .worldspaces
                     .get(scene_name.as_str())
                     .cloned()

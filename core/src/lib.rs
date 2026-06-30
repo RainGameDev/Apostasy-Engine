@@ -12,8 +12,9 @@ use winit::keyboard::KeyCode;
 use winit::keyboard::PhysicalKey;
 
 use std::path::Path;
-use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
+
+use parking_lot::RwLock;
 
 use anyhow::Result;
 use winit::{
@@ -107,6 +108,7 @@ pub use egui_extras;
 pub use epaint;
 pub use lru;
 pub use noise;
+pub use parking_lot;
 pub use num_cpus;
 pub use rand;
 pub use rayon;
@@ -224,7 +226,7 @@ impl Core {
                     let mut world = self.world.lock().unwrap();
                     let asset_manager = world.get_resource::<AssetManager>().unwrap().clone();
 
-                    let model_registry = asset_manager.model_loader.registry.read().unwrap();
+                    let model_registry = asset_manager.model_loader.registry.read();
 
                     world.get_resource_mut::<WindowInfo>().unwrap().window_size =
                         rendering_info.window.outer_size().into();
@@ -795,7 +797,7 @@ impl Core {
                         .ok()
                         .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
                         .map(|loader| {
-                            loader.registry.read().unwrap()
+                            loader.registry.read()
                                 .materials
                                 .iter()
                                 .filter_map(|(k, mat)| {
@@ -813,7 +815,7 @@ impl Core {
                         .ok()
                         .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
                         .map(|loader| {
-                            loader.registry.read().unwrap()
+                            loader.registry.read()
                                 .materials
                                 .iter()
                                 .map(|(k, mat)| (k.clone(), mat.color))

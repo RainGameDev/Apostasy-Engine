@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::assets::shader::{
@@ -77,7 +78,7 @@ pub struct ShaderRegistry {
 }
 impl Clone for ShaderRegistry {
     fn clone(&self) -> Self {
-        let shaders = self.shaders.read().unwrap().clone();
+        let shaders = self.shaders.read().clone();
         Self {
             shaders: RwLock::new(shaders),
         }
@@ -99,16 +100,16 @@ impl ShaderRegistry {
 
     /// Returns a cached shader, compiling it from source if it isn't loaded yet.
     pub fn load_shader(&self, name: &str) -> Result<Arc<RwLock<ShaderAsset>>> {
-        if let Some(existing) = self.shaders.read().unwrap().get(name).cloned() {
+        if let Some(existing) = self.shaders.read().get(name).cloned() {
             return Ok(existing);
         }
         let asset = Arc::new(RwLock::new(ShaderAsset::load(name)?));
-        self.shaders.write().unwrap().insert(name.to_string(), asset.clone());
+        self.shaders.write().insert(name.to_string(), asset.clone());
         Ok(asset)
     }
 
     pub fn get_shader(&self, name: &str) -> Option<Arc<RwLock<ShaderAsset>>> {
-        self.shaders.read().unwrap().get(name).cloned()
+        self.shaders.read().get(name).cloned()
     }
 
     /// Scans all known shader directories and compiles every `.vert` / `.frag` file found.
@@ -136,8 +137,8 @@ impl ShaderRegistry {
     }
 
     pub fn reload_shader(&self, name: &str) -> Result<bool> {
-        if let Some(asset) = self.shaders.read().unwrap().get(name).cloned() {
-            let mut asset = asset.write().unwrap();
+        if let Some(asset) = self.shaders.read().get(name).cloned() {
+            let mut asset = asset.write();
             asset.reload_if_needed()
         } else {
             Ok(false)
@@ -146,8 +147,8 @@ impl ShaderRegistry {
 
     pub fn reload_changed_shaders(&self) -> Result<Vec<String>> {
         let mut reloaded = Vec::new();
-        for (name, asset) in self.shaders.read().unwrap().iter() {
-            let mut asset = asset.write().unwrap();
+        for (name, asset) in self.shaders.read().iter() {
+            let mut asset = asset.write();
             if asset.reload_if_needed()? {
                 reloaded.push(name.clone());
             }

@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     any::Any,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::{Error, Result};
@@ -34,7 +35,7 @@ impl YamlAssetLoader for ItemLoader {
             .to_string();
 
         {
-            let registry = self.registry.read().unwrap();
+            let registry = self.registry.read();
 
             for reg in registry.defs.iter() {
                 if reg.1.name == name && reg.1.namespace == namespace {
@@ -73,7 +74,7 @@ impl YamlAssetLoader for ItemLoader {
             components,
         };
 
-        let mut registry = self.registry.write().unwrap();
+        let mut registry = self.registry.write();
 
         for reg in registry.defs.iter() {
             if reg.1.name == name && reg.1.namespace == namespace {
@@ -105,7 +106,7 @@ impl YamlAssetLoader for ItemLoader {
         self
     }
     fn list_entries(&self) -> Vec<(String, String)> {
-        let registry = self.registry.read().unwrap();
+        let registry = self.registry.read();
         registry.defs.values().map(|d| (d.namespace.clone(), d.name.clone())).collect()
     }
 }

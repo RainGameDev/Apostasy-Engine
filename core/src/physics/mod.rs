@@ -70,7 +70,6 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
         .model_loader
         .registry
         .read()
-        .unwrap()
         .paths
         .clone();
 

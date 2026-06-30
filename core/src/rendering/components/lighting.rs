@@ -8,11 +8,7 @@ use rand::{RngExt, rng};
 use serde_yaml::Value;
 
 use crate::{
-    ecs::{
-        component::Inspect,
-        systems::DeltaTime,
-        world::World,
-    },
+    ecs::{component::Inspect, systems::DeltaTime, world::World},
     ui::LABEL_WIDTH,
 };
 
@@ -326,7 +322,7 @@ impl Inspect for Light {
 
 #[update(mode = "all")]
 pub fn light_flicker(world: &mut World) -> Result<()> {
-    let delta = world.get_resource::<DeltaTime>().unwrap().0;
+    let delta = world.get_resource::<DeltaTime>()?.0;
     let light_ids = world.get_entities_with_component::<Light>();
 
     for id in light_ids {

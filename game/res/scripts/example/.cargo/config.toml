@@ -1,3 +1,0 @@
-[target.wasm32-unknown-unknown]
-# wasm uses rust-lld which does not accept -fuse-ld flags; clear any host linker flags.
-rustflags = []

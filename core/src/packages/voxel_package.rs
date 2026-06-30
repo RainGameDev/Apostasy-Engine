@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     path::Path,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::Result;
@@ -13,8 +14,8 @@ use crate::{
             biome_loader::BiomeLoader, structure_loader::StructureLoader, voxel_loader::VoxelLoader,
         },
     },
-    log,
     ecs::world::World,
+    log,
     physics::collision_system::voxel_collision_system,
     rendering::shared::push_constants::VoxelPushConstants,
     voxels::{
@@ -70,8 +71,7 @@ pub(crate) fn add_voxel_package(world: &mut World) {
     }
     let atlas_builder = Arc::try_unwrap(atlas_builder)
         .unwrap()
-        .into_inner()
-        .unwrap();
+        .into_inner();
 
     let (atlas_image, atlas_tiles) = atlas_builder.build();
     world.insert_resource(VoxelBreakProgress::default());
@@ -87,8 +87,8 @@ pub(crate) fn add_voxel_package(world: &mut World) {
 }
 
 fn update_voxel_atlas(world: &mut World) -> Result<()> {
-    let atlas = world.get_resource::<VoxelTextureAtlas>().unwrap().clone();
-    let voxel_push_constants = world.get_resource_mut::<VoxelPushConstants>().unwrap();
+    let atlas = world.get_resource::<VoxelTextureAtlas>()?.clone();
+    let voxel_push_constants = world.get_resource_mut::<VoxelPushConstants>()?;
     voxel_push_constants.set_atlas_tiles(atlas.atlas_size);
 
     Ok(())

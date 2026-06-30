@@ -198,7 +198,8 @@ fn chunk_position_map(world: &World) -> HashMap<(i32, i32, i32), EntityId> {
         .into_iter()
         .filter_map(|id| {
             let t = world.get_component::<VoxelTransform>(id)?;
-            world.has_component::<Chunk>(id)
+            world
+                .has_component::<Chunk>(id)
                 .then_some(((t.position.x, t.position.y, t.position.z), id))
         })
         .collect()
@@ -215,9 +216,7 @@ fn sorted_remesh_candidates(world: &World) -> Vec<(EntityId, Vector3<i32>)> {
         })
         .collect();
 
-    candidates.sort_by_key(|(id, _)| {
-        !world.has_tag::<VoxelBreakRemesh>(*id)
-    });
+    candidates.sort_by_key(|(id, _)| !world.has_tag::<VoxelBreakRemesh>(*id));
 
     candidates
 }
@@ -302,7 +301,7 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
     if !world.has_resource::<AssetManager>() {
         world.insert_resource(AssetManager::new());
     }
-    let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
+    let asset_manager = world.get_resource_mut::<AssetManager>()?;
 
     let biome_registry = Arc::new(
         asset_manager
@@ -310,7 +309,6 @@ pub fn dispatch_remesh_jobs(world: &mut World) -> Result<()> {
             .unwrap()
             .registry
             .read()
-            .unwrap()
             .clone(),
     );
 

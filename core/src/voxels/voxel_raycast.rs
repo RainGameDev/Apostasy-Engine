@@ -2,9 +2,7 @@ use crate::ecs::world::World;
 use crate::physics::raycast::{Direction, Ray, get_camera_ray};
 use crate::rendering::components::camera::Camera;
 use crate::voxels::voxel::{VoxelId, VoxelRegistry};
-use crate::{
-    ecs::components::transform::Transform, voxels::voxel_components::is_solid::IsSolid,
-};
+use crate::{ecs::components::transform::Transform, voxels::voxel_components::is_solid::IsSolid};
 use anyhow::Result;
 use apostasy_macros::Resource;
 use cgmath::Vector3;
@@ -124,8 +122,14 @@ pub fn raycast_raw(
 /// Submits a raycast hit as a world resource
 pub fn voxel_raycast_system(world: &mut World, set_to: Option<VoxelId>, range: f32) -> Result<()> {
     let camera_ids = world.get_entities_with_component::<Camera>();
-    let camera_id = camera_ids.first().copied().ok_or_else(|| anyhow::anyhow!("No camera"))?;
-    let transform = world.get_component::<Transform>(camera_id).cloned().ok_or_else(|| anyhow::anyhow!("No transform"))?;
+    let camera_id = camera_ids
+        .first()
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("No camera"))?;
+    let transform = world
+        .get_component::<Transform>(camera_id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("No transform"))?;
     let ray = get_camera_ray(&transform, Direction::Forward);
     let chunk_map = world.build_raw_chunk_lookup();
 
@@ -146,7 +150,7 @@ pub fn voxel_raycast(
 ) -> Option<RaycastHit> {
     let ray = get_camera_ray(transform, direction);
     let chunk_map = world.build_raw_chunk_lookup();
-    let registry = world.get_resource::<VoxelRegistry>().unwrap();
+    let registry = world.get_resource::<VoxelRegistry>().ok()?;
     raycast_raw(&ray, distance, &chunk_map, None, registry)
 }
 

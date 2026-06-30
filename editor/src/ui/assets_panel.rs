@@ -957,7 +957,7 @@ fn ow_scene_load(world: &mut World, name: &str) {
         .get_resource::<AssetManager>()
         .ok()
         .and_then(|am| am.get_loader::<WorldspaceLoader>())
-        .and_then(|l| l.registry.read().ok()?.worldspaces.get(name).cloned());
+        .and_then(|l| l.registry.read().worldspaces.get(name).cloned());
 
     if let Some(value) = scene_value {
         EditorPreferences::save_last_scene(name);
@@ -976,7 +976,8 @@ fn ow_scene_delete(world: &mut World, name: &str) {
         .map(|l| Arc::clone(&l.registry));
 
     if let Some(arc) = registry_arc {
-        if let Ok(mut reg) = arc.write() {
+        {
+            let mut reg = arc.write();
             reg.worldspaces.remove(name);
         }
     }
@@ -1000,7 +1001,8 @@ fn ow_scene_rename(world: &mut World, old_name: &str, new_name: &str) {
         .map(|l| Arc::clone(&l.registry));
 
     if let Some(arc) = registry_arc {
-        if let Ok(mut reg) = arc.write() {
+        {
+            let mut reg = arc.write();
             if let Some(mut value) = reg.worldspaces.remove(old_name) {
                 if let serde_yaml::Value::Mapping(ref mut map) = value {
                     map.insert(

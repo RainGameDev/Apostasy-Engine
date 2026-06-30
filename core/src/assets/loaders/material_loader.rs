@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     any::Any,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::Result;
@@ -81,7 +82,7 @@ impl YamlAssetLoader for MaterialLoader {
             color,
             shader_path: shader,
         };
-        self.registry.write().unwrap().materials.insert(name, mat);
+        self.registry.write().materials.insert(name, mat);
         Ok(())
     }
 
@@ -98,7 +99,7 @@ impl YamlAssetLoader for MaterialLoader {
     }
 
     fn list_entries(&self) -> Vec<(String, String)> {
-        let reg = self.registry.read().unwrap();
+        let reg = self.registry.read();
         reg.materials
             .values()
             .map(|m| (m.namespace.clone(), m.name.clone()))

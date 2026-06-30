@@ -353,16 +353,11 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                     .ok()
                                     .and_then(|am| am.get_loader::<WorldspaceLoader>())
                                     .map(|l| {
-                                        l.registry
-                                            .read()
-                                            .ok()
-                                            .map(|r| {
-                                                let mut names: Vec<String> =
-                                                    r.worldspaces.keys().cloned().collect();
-                                                names.sort();
-                                                names
-                                            })
-                                            .unwrap_or_default()
+                                        let r = l.registry.read();
+                                        let mut names: Vec<String> =
+                                            r.worldspaces.keys().cloned().collect();
+                                        names.sort();
+                                        names
                                     })
                                     .unwrap_or_default();
 
@@ -418,7 +413,6 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 .and_then(|l| {
                                                     l.registry
                                                         .read()
-                                                        .ok()?
                                                         .worldspaces
                                                         .get(ws_name)
                                                         .cloned()
@@ -1287,7 +1281,7 @@ fn ow_scene_load_internal(world: &mut World, name: &str) {
         .get_resource::<AssetManager>()
         .ok()
         .and_then(|am| am.get_loader::<WorldspaceLoader>())
-        .and_then(|l| l.registry.read().ok()?.worldspaces.get(name).cloned());
+        .and_then(|l| l.registry.read().worldspaces.get(name).cloned());
 
     if let Some(value) = scene_value {
         EditorPreferences::save_last_scene(name);
@@ -1306,7 +1300,8 @@ fn ow_scene_delete_internal(world: &mut World, name: &str) {
         .map(|l| Arc::clone(&l.registry));
 
     if let Some(arc) = registry_arc {
-        if let Ok(mut reg) = arc.write() {
+        {
+            let mut reg = arc.write();
             reg.worldspaces.remove(name);
         }
     }

@@ -77,10 +77,10 @@ pub fn dispatch_chunk_jobs(world: &mut World, _delta: f32) -> Result<()> {
         world.get_resource_mut::<ChunkLoader>()?.seed = seed;
         world.remove_resource::<GetNewSeed>();
 
-        *NOISE.write().unwrap() = Some(Perlin::new(seed));
-        *TEMPERATURE_NOISE.write().unwrap() = Some(Perlin::new(seed.wrapping_add(1)));
-        *HUMIDITY_NOISE.write().unwrap() = Some(Perlin::new(seed.wrapping_add(10)));
-        *CONTINENTAL_NOISE.write().unwrap() = Some(Perlin::new(seed.wrapping_add(2)));
+        *NOISE.write() = Some(Perlin::new(seed));
+        *TEMPERATURE_NOISE.write() = Some(Perlin::new(seed.wrapping_add(1)));
+        *HUMIDITY_NOISE.write() = Some(Perlin::new(seed.wrapping_add(10)));
+        *CONTINENTAL_NOISE.write() = Some(Perlin::new(seed.wrapping_add(2)));
         return Ok(());
     }
 

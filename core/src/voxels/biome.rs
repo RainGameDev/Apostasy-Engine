@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 use anyhow::{Error, Result};
 
@@ -173,9 +173,9 @@ impl ClimateCache {
         let climate_scale = 8usize;
         let grid = (32 / climate_scale) + 1; // 5x5
 
-        let temp_noise = TEMPERATURE_NOISE.read().unwrap().unwrap();
-        let humid_noise = HUMIDITY_NOISE.read().unwrap().unwrap();
-        let continental_noise = CONTINENTAL_NOISE.read().unwrap().unwrap();
+        let temp_noise = TEMPERATURE_NOISE.read().unwrap();
+        let humid_noise = HUMIDITY_NOISE.read().unwrap();
+        let continental_noise = CONTINENTAL_NOISE.read().unwrap();
 
         let mut temp = [[0.0f64; 5]; 5];
         let mut humid = [[0.0f64; 5]; 5];
@@ -335,8 +335,8 @@ pub fn sample_biome_weights(
     _seed: u32,
     blend_distance: f64,
 ) -> Vec<(BiomeId, f64)> {
-    let temp_noise = TEMPERATURE_NOISE.read().unwrap().unwrap();
-    let humid_noise = HUMIDITY_NOISE.read().unwrap().unwrap();
+    let temp_noise = TEMPERATURE_NOISE.read().unwrap();
+    let humid_noise = HUMIDITY_NOISE.read().unwrap();
 
     let temperature = (temp_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;
     let humidity = (humid_noise.get([world_x * 0.001, world_z * 0.001]) + 1.0) * 0.5;

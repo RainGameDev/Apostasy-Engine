@@ -339,7 +339,7 @@ impl UserData for WorldHandle {
                 let rgba = table_to_rgba(&color);
                 if let Ok(am) = this.world().get_resource::<AssetManager>()
                     && let Some(loader) = am.get_loader::<MaterialLoader>()
-                    && let Some(mat) = loader.registry.write().unwrap().materials.get_mut(&name)
+                    && let Some(mat) = loader.registry.write().materials.get_mut(&name)
                 {
                     mat.color = rgba;
                 }
@@ -359,7 +359,6 @@ impl UserData for WorldHandle {
                     loader
                         .registry
                         .read()
-                        .unwrap()
                         .materials
                         .get(&name)
                         .map(|m| m.color)

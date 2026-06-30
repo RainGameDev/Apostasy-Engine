@@ -92,7 +92,7 @@ impl AssetManager {
     ) -> Result<ModelRegistry> {
         let mat_registry = self
             .get_loader::<MaterialLoader>()
-            .map(|l| l.registry.read().unwrap().clone())
+            .map(|l| l.registry.read().clone())
             .unwrap_or_default();
 
         let models = ModelLoader::load_all_models(
@@ -104,7 +104,7 @@ impl AssetManager {
             &mat_registry,
         )?;
 
-        let mut registry = self.model_loader.registry.write().unwrap();
+        let mut registry = self.model_loader.registry.write();
         for (name, model) in models {
             registry.paths.insert(name, model);
         }
@@ -116,7 +116,6 @@ impl AssetManager {
             .model_loader
             .registry
             .read()
-            .unwrap()
             .paths
             .keys()
             .cloned()

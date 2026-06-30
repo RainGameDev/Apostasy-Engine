@@ -42,7 +42,8 @@ use apostasy_core::{
         keyboard::{KeyCode, PhysicalKey},
     },
 };
-use std::sync::{Arc, RwLock};
+use apostasy_core::parking_lot::RwLock;
+use std::sync::Arc;
 
 use crate::ui::{
     cell_panel::CellSearchState,
@@ -129,7 +130,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         .ok()
         .and_then(|am| am.get_loader::<WorldspaceLoader>())
         .and_then(|l| {
-            let reg = l.registry.read().ok()?;
+            let reg = l.registry.read();
             if !last_scene_name.is_empty() {
                 if let Some(v) = reg.worldspaces.get(last_scene_name.as_str()).cloned() {
                     return Some((last_scene_name.clone(), v));

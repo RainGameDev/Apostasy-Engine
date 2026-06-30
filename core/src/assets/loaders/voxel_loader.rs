@@ -1,6 +1,7 @@
+use parking_lot::RwLock;
 use std::{
     any::Any,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::{Error, Result};
@@ -38,7 +39,7 @@ impl YamlAssetLoader for VoxelLoader {
             .to_string();
 
         {
-            let registry = self.registry.read().unwrap();
+            let registry = self.registry.read();
 
             for reg in registry.defs.iter() {
                 if reg.name == name && reg.namespace == namespace {
@@ -54,7 +55,7 @@ impl YamlAssetLoader for VoxelLoader {
         }
 
         let textures = if let Some(tex) = raw["textures"].as_mapping() {
-            let mut atlas = self.atlas_builder.write().unwrap();
+            let mut atlas = self.atlas_builder.write();
 
             let mut get = |key: &str, fallback: &str| -> Vec<u32> {
                 tex.get(key)
@@ -101,7 +102,7 @@ impl YamlAssetLoader for VoxelLoader {
             textures,
         };
 
-        let mut registry = self.registry.write().unwrap();
+        let mut registry = self.registry.write();
 
         for reg in registry.defs.iter() {
             if reg.name == name && reg.namespace == namespace {
@@ -134,7 +135,7 @@ impl YamlAssetLoader for VoxelLoader {
         self
     }
     fn list_entries(&self) -> Vec<(String, String)> {
-        let registry = self.registry.read().unwrap();
+        let registry = self.registry.read();
         registry.defs.iter().map(|d| (d.namespace.clone(), d.name.clone())).collect()
     }
 }

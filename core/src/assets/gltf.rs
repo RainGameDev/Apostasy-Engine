@@ -1,11 +1,9 @@
-use std::{
-    path::Path,
-    sync::{Arc, RwLock},
-};
+use std::{path::Path, sync::Arc};
 
 use anyhow::Result;
 use ash::vk::{self, CommandPool, SampleCountFlags};
-use cgmath::Vector3;
+use cgmath::{InnerSpace, Vector3};
+use parking_lot::RwLock;
 use hashbrown::HashMap;
 use walkdir::WalkDir;
 
@@ -93,7 +91,10 @@ pub fn load_model(
         .unwrap_or("model")
         .to_string();
 
-    let (gltf, buffers, images) = gltf::import(path.to_str().unwrap())?;
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("model path is not valid UTF-8: {:?}", path))?;
+    let (gltf, buffers, images) = gltf::import(path_str)?;
 
     let mut meshes = Vec::new();
 
@@ -102,13 +103,30 @@ pub fn load_model(
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-            let positions = reader.read_positions().unwrap().collect::<Vec<_>>();
-            let normals = reader.read_normals().unwrap().collect::<Vec<_>>();
-            let tex_coords = reader
-                .read_tex_coords(0)
-                .unwrap()
-                .into_f32()
-                .collect::<Vec<_>>();
+            // Positions are the only attribute we can't synthesise; skip a
+            // primitive that lacks them rather than crashing the whole load.
+            let Some(positions) = reader.read_positions().map(|p| p.collect::<Vec<_>>()) else {
+                log_error!("Skipping primitive in {:?}: no position data", path);
+                continue;
+            };
+
+            // Indices: fall back to a sequential list for non-indexed primitives.
+            let indices = match reader.read_indices() {
+                Some(i) => i.into_u32().collect::<Vec<_>>(),
+                None => (0..positions.len() as u32).collect::<Vec<_>>(),
+            };
+
+            // Normals: compute flat normals from the geometry when absent.
+            let normals = match reader.read_normals() {
+                Some(n) => n.collect::<Vec<_>>(),
+                None => compute_normals(&positions, &indices),
+            };
+
+            // UVs: default to (0, 0) when the mesh has none.
+            let tex_coords = match reader.read_tex_coords(0) {
+                Some(t) => t.into_f32().collect::<Vec<_>>(),
+                None => vec![[0.0, 0.0]; positions.len()],
+            };
 
             let vertices: Vec<Vertex> = positions
                 .iter()
@@ -122,12 +140,6 @@ pub fn load_model(
                     color: [1.0, 1.0, 1.0],
                 })
                 .collect();
-
-            let indices = reader
-                .read_indices()
-                .unwrap()
-                .into_u32()
-                .collect::<Vec<_>>();
 
             let vertex_buffer = context.create_vertex_buffer(vertices.as_slice(), command_pool)?;
             let index_buffer = context.create_index_buffer(&indices, command_pool)?;
@@ -182,6 +194,38 @@ pub fn load_model(
         meshes,
         collision_bvh,
     })
+}
+
+/// Computes per-vertex normals by accumulating face normals over the index list.
+/// Used as a fallback when a glTF primitive ships without a NORMAL attribute.
+fn compute_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut normals = vec![Vector3::new(0.0f32, 0.0, 0.0); positions.len()];
+
+    for tri in indices.chunks_exact(3) {
+        let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if a >= positions.len() || b >= positions.len() || c >= positions.len() {
+            continue;
+        }
+        let pa = Vector3::from(positions[a]);
+        let pb = Vector3::from(positions[b]);
+        let pc = Vector3::from(positions[c]);
+        let face = (pb - pa).cross(pc - pa);
+        normals[a] += face;
+        normals[b] += face;
+        normals[c] += face;
+    }
+
+    normals
+        .into_iter()
+        .map(|n| {
+            if n.magnitude2() > 1e-12 {
+                let n = n.normalize();
+                [n.x, n.y, n.z]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
+        })
+        .collect()
 }
 
 /// Resolves a mesh material: prefers a YAML-defined material by name, falls back

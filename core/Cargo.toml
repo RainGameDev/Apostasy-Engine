@@ -37,8 +37,7 @@ num_cpus = "1.16"
 lru = "0.18.0"
 thiserror = "2.0.18"
 walkdir = "2.5.0"
-wasmtime = "27"
-mlua = {version = "0.10", features = ["lua54", "vendored", "serialize"]}
+mlua ={version = "0.10", features = ["lua54", "vendored", "serialize"]}
 kira = { version = "0.12.1", features = ["symphonia", "mp3", "ogg", "flac", "wav", "aac", "aiff", "alac"] }
 
 [target.'cfg(unix)'.dependencies]
