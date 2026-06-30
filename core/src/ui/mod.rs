@@ -48,8 +48,7 @@ impl UIRenderer {
         )?;
         let context = Context::default();
 
-        // TODO: make style
-        // context.set_style(style);
+        context.all_styles_mut(|style| style.interaction.selectable_labels = false);
 
         let state = State::new(
             context.clone(),

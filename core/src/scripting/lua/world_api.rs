@@ -12,7 +12,9 @@ use crate::audio::audio_player::AudioPlayer;
 use crate::audio::layers::AudioLayer;
 use crate::audio::sound::Sound;
 use crate::ecs::components::get_component_registration;
-use crate::ecs::resources::input_manager::InputManager;
+use crate::ecs::resources::input_manager::{
+    InputManager, KeyBind, ModifierKeys, MouseBind, RepeatConfig,
+};
 use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
 use crate::packages::project_package::load_startup_worldspace;
@@ -291,6 +293,176 @@ impl UserData for WorldHandle {
                 t.set("x", v.x)?;
                 t.set("y", v.y)?;
                 Ok(t)
+            },
+        );
+        methods.add_method(
+            "input_vector_3d",
+            |lua,
+             this,
+             (x_pos, x_neg, y_pos, y_neg, z_pos, z_neg): (
+                String,
+                String,
+                String,
+                String,
+                String,
+                String,
+            )| {
+                let v = this
+                    .world()
+                    .get_resource::<InputManager>()
+                    .map(|im| im.input_vector_3d(&x_pos, &x_neg, &y_pos, &y_neg, &z_pos, &z_neg))
+                    .unwrap_or_else(|_| cgmath::Vector3::new(0.0, 0.0, 0.0));
+                let t = lua.create_table()?;
+                t.set("x", v.x)?;
+                t.set("y", v.y)?;
+                t.set("z", v.z)?;
+                Ok(t)
+            },
+        );
+
+        methods.add_method("mouse_position", |lua, this, ()| {
+            let pos = this
+                .world()
+                .get_resource::<InputManager>()
+                .map(|im| im.mouse_position)
+                .unwrap_or_default();
+            let t = lua.create_table()?;
+            t.set("x", pos.x)?;
+            t.set("y", pos.y)?;
+            Ok(t)
+        });
+
+        methods.add_method("mouse_delta", |lua, this, ()| {
+            let delta = this
+                .world()
+                .get_resource::<InputManager>()
+                .map(|im| im.mouse_delta)
+                .unwrap_or((0.0, 0.0));
+            let t = lua.create_table()?;
+            t.set("x", delta.0)?;
+            t.set("y", delta.1)?;
+            Ok(t)
+        });
+
+        methods.add_method("scroll_delta", |lua, this, ()| {
+            let delta = this
+                .world()
+                .get_resource::<InputManager>()
+                .map(|im| im.scroll_delta)
+                .unwrap_or((0.0, 0.0));
+            let t = lua.create_table()?;
+            t.set("x", delta.0)?;
+            t.set("y", delta.1)?;
+            Ok(t)
+        });
+
+        // Marks `name` as an active input context for this frame; binds with a
+        // matching `context` only fire while their context is active.
+        methods.add_method("set_input_context", |_, this, name: String| {
+            if let Ok(im) = this.world().get_resource_mut::<InputManager>() {
+                im.active_contexts.insert(name);
+            }
+            Ok(())
+        });
+
+        // Registers a new keybind. Fails (returns false) if `name` is already
+        // registered use `rebind_key` to overwrite an existing bind.
+        //
+        // ```lua
+        // world:register_keybind("Jump", "Space", "Press")
+        // world:register_keybind("Save", "KeyS", "Press", { ctrl = true })
+        // world:register_keybind("Sprint", "ShiftLeft", "Hold")
+        // world:register_keybind("Interact", "KeyE", "Press", { context = "gameplay" })
+        // ```
+        methods.add_method(
+            "register_keybind",
+            |_, this, (name, key, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_keybind(&key, &action, opts.as_ref())?;
+                let world = this.world();
+                let Ok(im) = world.get_resource_mut::<InputManager>() else {
+                    return Ok(false);
+                };
+                match im.register_keybind(name.clone(), bind) {
+                    Ok(()) => Ok(true),
+                    Err(e) => {
+                        crate::log_error!("[lua] register_keybind('{name}') failed: {e}");
+                        Ok(false)
+                    }
+                }
+            },
+        );
+
+        // Registers a default keybind only takes effect if `name` has no bind
+        // yet (e.g. nothing was loaded from the keybinds file). Use this for
+        // bootstrapping defaults; never errors.
+        methods.add_method(
+            "register_default_keybind",
+            |_, this, (name, key, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_keybind(&key, &action, opts.as_ref())?;
+                if let Ok(im) = this.world().get_resource_mut::<InputManager>() {
+                    im.register_default_keybind(name, bind);
+                }
+                Ok(())
+            },
+        );
+
+        // Overwrites the bind for `name`, persisting the change use for
+        // remapping from a settings/preferences UI.
+        methods.add_method(
+            "rebind_key",
+            |_, this, (name, key, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_keybind(&key, &action, opts.as_ref())?;
+                if let Ok(im) = this.world().get_resource_mut::<InputManager>() {
+                    im.rebind_key(name, bind);
+                }
+                Ok(())
+            },
+        );
+
+        // Mouse-button equivalents of the keybind methods above.
+        methods.add_method(
+            "register_mousebind",
+            |_,
+             this,
+             (name, button, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_mousebind(&button, &action, opts.as_ref())?;
+                let world = this.world();
+                let Ok(im) = world.get_resource_mut::<InputManager>() else {
+                    return Ok(false);
+                };
+                match im.register_mousebind(name.clone(), bind) {
+                    Ok(()) => Ok(true),
+                    Err(e) => {
+                        crate::log_error!("[lua] register_mousebind('{name}') failed: {e}");
+                        Ok(false)
+                    }
+                }
+            },
+        );
+
+        methods.add_method(
+            "register_default_mousebind",
+            |_,
+             this,
+             (name, button, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_mousebind(&button, &action, opts.as_ref())?;
+                if let Ok(im) = this.world().get_resource_mut::<InputManager>() {
+                    im.register_default_mousebind(name, bind);
+                }
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "rebind_mouse",
+            |_,
+             this,
+             (name, button, action, opts): (String, String, String, Option<mlua::Table>)| {
+                let bind = lua_to_mousebind(&button, &action, opts.as_ref())?;
+                if let Ok(im) = this.world().get_resource_mut::<InputManager>() {
+                    im.rebind_mouse(name, bind);
+                }
+                Ok(())
             },
         );
 
@@ -909,6 +1081,66 @@ impl UserData for WorldHandle {
             Ok(())
         });
     }
+}
+
+/// Reads `ctrl`/`shift`/`alt` booleans out of an optional Lua opts table.
+fn modifiers_from_opts(opts: Option<&mlua::Table>) -> ModifierKeys {
+    let Some(opts) = opts else {
+        return ModifierKeys::default();
+    };
+    ModifierKeys {
+        ctrl: opts.get::<bool>("ctrl").unwrap_or(false),
+        shift: opts.get::<bool>("shift").unwrap_or(false),
+        alt: opts.get::<bool>("alt").unwrap_or(false),
+    }
+}
+
+/// Reads an optional `context` string out of a Lua opts table.
+fn context_from_opts(opts: Option<&mlua::Table>) -> Option<String> {
+    opts.and_then(|o| o.get::<String>("context").ok())
+}
+
+/// Reads `repeat_delay`/`repeat_rate` out of a Lua opts table; only present if
+/// at least one of the two fields was set.
+fn repeat_from_opts(opts: Option<&mlua::Table>) -> Option<RepeatConfig> {
+    let opts = opts?;
+    let delay = opts.get::<f32>("repeat_delay").ok();
+    let rate = opts.get::<f32>("repeat_rate").ok();
+    if delay.is_none() && rate.is_none() {
+        return None;
+    }
+    let default = RepeatConfig::default();
+    Some(RepeatConfig::new(
+        delay.unwrap_or(default.initial_delay_secs),
+        rate.unwrap_or(default.rate_hz),
+    ))
+}
+
+/// Builds a `KeyBind` from Lua-provided strings ("Space", "Press", ...) and an
+/// optional opts table ({ ctrl, shift, alt, context, repeat_delay, repeat_rate }).
+fn lua_to_keybind(key: &str, action: &str, opts: Option<&mlua::Table>) -> mlua::Result<KeyBind> {
+    let key = InputManager::string_to_key(key).map_err(mlua::Error::external)?;
+    let action = InputManager::string_to_action(action).map_err(mlua::Error::external)?;
+    let mut bind = KeyBind::new(key, action);
+    bind.modifiers = modifiers_from_opts(opts);
+    bind.context = context_from_opts(opts);
+    bind.repeat = repeat_from_opts(opts);
+    Ok(bind)
+}
+
+/// Builds a `MouseBind` from Lua-provided strings ("Left", "Press", ...) and an
+/// optional opts table ({ ctrl, shift, alt, context }).
+fn lua_to_mousebind(
+    button: &str,
+    action: &str,
+    opts: Option<&mlua::Table>,
+) -> mlua::Result<MouseBind> {
+    let button = InputManager::string_to_mouse_button(button).map_err(mlua::Error::external)?;
+    let action = InputManager::string_to_action(action).map_err(mlua::Error::external)?;
+    let mut bind = MouseBind::new(button, action);
+    bind.modifiers = modifiers_from_opts(opts);
+    bind.context = context_from_opts(opts);
+    Ok(bind)
 }
 
 /// Reads a Lua value as a `Vector3<f32>`. Accepts both the `{x, y, z}` keyed

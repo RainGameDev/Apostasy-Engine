@@ -47,6 +47,17 @@ impl Default for RenderingSettings {
     }
 }
 
+impl RenderingSettings {
+    /// Same as `default()` but rasterizes triangle edges only, with backface
+    /// culling disabled so wireframe meshes stay visible from any angle.
+    pub fn wireframe() -> Self {
+        let mut settings = Self::default();
+        settings.rasterization_settings.polygon_mode = vk::PolygonMode::LINE;
+        settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
+        settings
+    }
+}
+
 /// The settings for the primitive topology
 #[derive(Clone, Copy)]
 pub struct PrimitiveTopologySettings {

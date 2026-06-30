@@ -12,6 +12,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::ecs::resources::input_manager::{InputManager, KeyAction, KeyBind};
 use crate::ecs::world::World;
+use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::ui::ui_context::EguiContext;
 
 /// Maximum number of log lines retained by the console.
@@ -450,6 +451,18 @@ impl Console {
     }
 }
 
+/// Toggles the `GlobalWireframe` resource.
+/// Renders all meshes as wireframes.
+fn toggle_wireframe(world: &mut World, _args: &[String]) -> CommandOutcome {
+    if let Ok(wireframe) = world.get_resource_mut::<GlobalWireframe>() {
+        wireframe.0 = !wireframe.0;
+        let on = wireframe.0;
+        return CommandOutcome::Success(format!("Wireframe {}", if on { "on" } else { "off" }));
+    }
+    world.insert_resource(GlobalWireframe(true));
+    CommandOutcome::Success("Wireframe on".to_string())
+}
+
 /// Splits an input line into tokens.
 fn tokenize(line: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -537,6 +550,14 @@ pub fn console_start(world: &mut World) -> Result<()> {
             .description("Prints the given text back")
             .args(1, None)
             .handler(|_world, args| CommandOutcome::Success(args.join(" "))),
+    );
+
+    console.register(
+        CommandBuilder::new("twf")
+            .usage("twf")
+            .description("Toggles wireframe rendering for everything (models, terrain, voxels)")
+            .args(0, Some(0))
+            .handler(toggle_wireframe),
     );
 
     world.insert_resource(console);

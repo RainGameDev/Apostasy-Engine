@@ -307,6 +307,102 @@ function World:is_mousebind_active(name) end
 ---@return { x: number, y: number }
 function World:input_vector_2d(left, right, up, down) end
 
+---Builds a 3D direction vector from six keybind names, same semantics as
+---`input_vector_2d` but with an extra (z_pos, z_neg) axis.
+---@param x_pos string
+---@param x_neg string
+---@param y_pos string
+---@param y_neg string
+---@param z_pos string
+---@param z_neg string
+---@return { x: number, y: number, z: number }
+function World:input_vector_3d(x_pos, x_neg, y_pos, y_neg, z_pos, z_neg) end
+
+---Cursor position in physical pixels relative to the top-left of the window.
+---@return { x: number, y: number }
+function World:mouse_position() end
+
+---Raw mouse delta accumulated this frame, not affected by cursor
+---acceleration or OS pointer speed use this for camera look.
+---@return { x: number, y: number }
+function World:mouse_delta() end
+
+---Scroll wheel delta accumulated this frame, in pixels.
+---@return { x: number, y: number }
+function World:scroll_delta() end
+
+---Marks `name` as an active input context for the remainder of this frame.
+---Binds registered with `opts.context == name` only fire while their
+---context is active; call this before checking those binds.
+---@param name string
+function World:set_input_context(name) end
+
+---@class KeybindOpts
+---@field ctrl? boolean            Only fires while Ctrl is held (Press/Release binds).
+---@field shift? boolean           Only fires while Shift is held (Press/Release binds).
+---@field alt? boolean             Only fires while Alt is held (Press/Release binds).
+---@field context? string          Only fires while this context is active (see `set_input_context`).
+---@field repeat_delay? number     Seconds held before a Press bind starts auto-repeating.
+---@field repeat_rate? number      Repeats per second once auto-repeat has started.
+
+---Registers a new keybind. Fails (returns `false` and logs) if `name` is
+---already registered use `rebind_key` to overwrite an existing bind.
+---`key` is a physical key name (e.g. `"Space"`, `"KeyW"`, `"ShiftLeft"`),
+---`action` is one of `"Press"`, `"Release"`, `"Hold"`.
+---
+---```lua
+---world:register_keybind("Jump", "Space", "Press")
+---world:register_keybind("Save", "KeyS", "Press", { ctrl = true })
+---world:register_keybind("Sprint", "ShiftLeft", "Hold")
+---world:register_keybind("Interact", "KeyE", "Press", { context = "gameplay" })
+---```
+---@param name   string
+---@param key    string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+---@return boolean registered
+function World:register_keybind(name, key, action, opts) end
+
+---Registers a default keybind only takes effect if `name` has no bind yet
+---(e.g. nothing was loaded from the keybinds file). Use for bootstrapping
+---defaults on startup; never errors.
+---@param name   string
+---@param key    string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+function World:register_default_keybind(name, key, action, opts) end
+
+---Overwrites the bind for `name` and persists the change. Use this for
+---remapping from a settings/preferences UI.
+---@param name   string
+---@param key    string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+function World:rebind_key(name, key, action, opts) end
+
+---Mouse-button equivalent of `register_keybind`. `button` is one of
+---`"Left"`, `"Right"`, `"Middle"`, `"Back"`, `"Forward"`.
+---@param name   string
+---@param button string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+---@return boolean registered
+function World:register_mousebind(name, button, action, opts) end
+
+---Mouse-button equivalent of `register_default_keybind`.
+---@param name   string
+---@param button string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+function World:register_default_mousebind(name, button, action, opts) end
+
+---Mouse-button equivalent of `rebind_key`. Use for remapping mouse buttons.
+---@param name   string
+---@param button string
+---@param action "Press"|"Release"|"Hold"
+---@param opts?  KeybindOpts
+function World:rebind_mouse(name, button, action, opts) end
+
 -- ---------------------------------------------------------------------------
 -- UI (egui immediate-mode)
 -- ---------------------------------------------------------------------------

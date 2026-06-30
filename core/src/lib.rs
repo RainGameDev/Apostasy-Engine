@@ -54,6 +54,7 @@ use crate::rendering::shared::frustrum::EntitiesDrawing;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::push_constants::ModelPushConstants;
+use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::rendering::shared::push_constants::{
     PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
     ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
@@ -181,6 +182,7 @@ impl Core {
         world.insert_resource(WindowManager::default());
         world.insert_resource(AntiAliasing::default());
         world.insert_resource(ShadowDistance::default());
+        world.insert_resource(GlobalWireframe::default());
         world.insert_resource(InspectorRegistry::build());
         world.insert_resource(WindowInfo::default());
 
@@ -263,6 +265,10 @@ impl Core {
                         .get_resource_mut::<ModelPushConstants>()
                         .unwrap()
                         .clone();
+                    let global_wireframe = world
+                        .get_resource::<GlobalWireframe>()
+                        .map(|w| w.0)
+                        .unwrap_or(false);
 
                     let Some(renderer) = &mut rendering_info.renderer else {
                         log_error!("No renderer found!");
@@ -935,7 +941,7 @@ impl Core {
                             {
                                 mesh_push.color_modifier = *color;
                             }
-                            if model_renderer.is_wireframe {
+                            if model_renderer.is_wireframe || global_wireframe {
                                 if let Err(e) = renderer.wireframe_render(
                                     Box::new(mesh.clone()),
                                     push_constants.clone(),
@@ -1020,13 +1026,24 @@ impl Core {
                                     );
                                 terrain_push.layer_count = chunk.active_layer_count as u32;
                             }
-                            if let Err(e) = renderer.render(
-                                Box::new(terrain_mesh),
-                                push_constants.clone(),
-                                &terrain_push,
-                                terrain_atlas_ds,
-                                Some("sdr_default_terrain"),
-                            ) {
+                            let terrain_render = if global_wireframe {
+                                renderer.wireframe_render(
+                                    Box::new(terrain_mesh),
+                                    push_constants.clone(),
+                                    &terrain_push,
+                                    terrain_atlas_ds,
+                                    Some("sdr_default_terrain"),
+                                )
+                            } else {
+                                renderer.render(
+                                    Box::new(terrain_mesh),
+                                    push_constants.clone(),
+                                    &terrain_push,
+                                    terrain_atlas_ds,
+                                    Some("sdr_default_terrain"),
+                                )
+                            };
+                            if let Err(e) = terrain_render {
                                 log_error!("Failed to render terrain: {}", e);
                             }
                         }
@@ -1086,6 +1103,7 @@ impl Core {
                                 texture_atlas,
                                 &chunk_push,
                                 &voxel_chunk_push,
+                                global_wireframe,
                             ) {
                                 log_error!("Failed to render voxel: {}", e);
                             }

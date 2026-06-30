@@ -87,13 +87,15 @@ pub trait RenderingAPI {
         shader_override: Option<&str>,
     ) -> Result<()>;
 
-    /// Draws a voxel mesh using the provided texture atlas.
+    /// Draws a voxel mesh using the provided texture atlas. `wireframe` selects
+    /// the line-rasterized voxel pipeline instead of the filled one.
     fn voxel_render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
         atlas: &VoxelTextureAtlas,
         push_constants: &PushConstants,
         voxel_push_constants: &VoxelPushConstants,
+        wireframe: bool,
     ) -> Result<()>;
 
     /// Draws a water voxel mesh using the provided texture atlas.

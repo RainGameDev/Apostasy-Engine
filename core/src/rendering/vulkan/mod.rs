@@ -199,7 +199,7 @@ impl VulkanRenderer {
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
-                RenderingSettings::default(),
+                RenderingSettings::wireframe(),
                 pipeline_layout,
                 aa_amount,
             )?;
@@ -223,7 +223,7 @@ impl VulkanRenderer {
 
             let voxel_wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
-                RenderingSettings::default(),
+                RenderingSettings::wireframe(),
                 voxel_pipeline_layout,
                 aa_amount,
             )?;
@@ -768,7 +768,7 @@ impl RenderingAPI for VulkanRenderer {
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
-                RenderingSettings::default(),
+                RenderingSettings::wireframe(),
                 pipeline_layout,
                 aa_amount,
             )?;
@@ -800,7 +800,7 @@ impl RenderingAPI for VulkanRenderer {
             )?;
             let voxel_wireframe_pipeline = context.create_graphics_pipeline(
                 pipeline_options,
-                RenderingSettings::default(),
+                RenderingSettings::wireframe(),
                 voxel_pipeline_layout,
                 aa_amount,
             )?;
@@ -2043,7 +2043,7 @@ impl RenderingAPI for VulkanRenderer {
         let pipeline = match shader_override {
             Some(name) => self
                 .pipeline_manager
-                .get_or_create_model_pipeline(name, &self.context.clone())?,
+                .get_or_create_model_pipeline(name, &self.context.clone(), false)?,
             None => self.get_pipeline("model"),
         };
 
@@ -2119,7 +2119,7 @@ impl RenderingAPI for VulkanRenderer {
         let pipeline = match shader_override {
             Some(name) => self
                 .pipeline_manager
-                .get_or_create_model_pipeline(name, &self.context.clone())?,
+                .get_or_create_model_pipeline(name, &self.context.clone(), true)?,
             None => self.get_pipeline("model::wireframe"),
         };
 
@@ -2178,6 +2178,7 @@ impl RenderingAPI for VulkanRenderer {
         atlas: &VoxelTextureAtlas,
         push_constants: &PushConstants,
         voxel_push_constants: &VoxelPushConstants,
+        wireframe: bool,
     ) -> Result<()> {
         let frame = &self.frames[self.current_frame];
         let mut data = push_constants.return_renderable();
@@ -2186,7 +2187,7 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.get_pipeline("voxel"),
+                self.get_pipeline(if wireframe { "voxel::wireframe" } else { "voxel" }),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,

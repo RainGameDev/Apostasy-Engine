@@ -16,6 +16,7 @@ use apostasy_core::{
     packages::{Packages, project_package::load_startup_worldspace},
     rendering::RenderingBackend,
     start,
+    ui::Console,
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
     update,
     winit::keyboard::{KeyCode, PhysicalKey},
@@ -81,9 +82,10 @@ pub fn cursor_and_pause(world: &mut World) -> Result<()> {
     }
 
     let paused = world.has_resource::<Paused>();
+    let console_open = world.get_resource::<Console>().is_ok_and(|c| c.open);
     {
         let cursor = world.get_resource_mut::<CursorManager>()?;
-        cursor.set_mode(if paused {
+        cursor.set_mode(if paused || console_open {
             CursorLockMode::NoneVisible
         } else {
             CursorLockMode::ConfinedHidden
@@ -98,7 +100,8 @@ pub fn cursor_and_pause(world: &mut World) -> Result<()> {
 
 #[update]
 pub fn fly_camera(world: &mut World) -> Result<()> {
-    if world.has_resource::<Paused>() {
+    let console_open = world.get_resource::<Console>().is_ok_and(|c| c.open);
+    if world.has_resource::<Paused>() || console_open {
         return Ok(());
     }
 

@@ -63,8 +63,13 @@ impl PipelineManager {
         &mut self,
         shader_name: &str,
         context: &Arc<VulkanRenderingContext>,
+        wireframe: bool,
     ) -> Result<Pipeline> {
-        let key = format!("model::{}", shader_name);
+        let key = if wireframe {
+            format!("model::{}::wireframe", shader_name)
+        } else {
+            format!("model::{}", shader_name)
+        };
         if let Some(&p) = self.pipeline_cache.get(&key) {
             return Ok(p);
         }
@@ -116,7 +121,11 @@ impl PipelineManager {
                 vertex_bindings: vec![Vertex::get_binding_description()],
                 vertex_attributes: Vertex::get_attribute_descriptions(),
             },
-            RenderingSettings::default(),
+            if wireframe {
+                RenderingSettings::wireframe()
+            } else {
+                RenderingSettings::default()
+            },
             layout,
             aa_amount,
         )?;

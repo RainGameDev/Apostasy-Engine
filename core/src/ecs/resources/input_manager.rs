@@ -341,7 +341,7 @@ impl InputManager {
     }
 
     /// Converts a physical key to a string.
-    fn key_to_string(key: &PhysicalKey) -> String {
+    pub(crate) fn key_to_string(key: &PhysicalKey) -> String {
         match key {
             PhysicalKey::Code(code) => format!("{:?}", code),
             PhysicalKey::Unidentified(native) => format!("Unidentified({:?})", native),
@@ -349,7 +349,7 @@ impl InputManager {
     }
 
     /// Converts a string to a physical key.
-    fn string_to_key(s: &str) -> Result<PhysicalKey> {
+    pub(crate) fn string_to_key(s: &str) -> Result<PhysicalKey> {
         if s.starts_with("Unidentified") {
             return Err(anyhow::anyhow!("Unidentified keys cannot be deserialized"));
         }
@@ -423,12 +423,12 @@ impl InputManager {
     }
 
     /// Converts a mouse button to a string.
-    fn mouse_button_to_string(button: &MouseButton) -> String {
+    pub(crate) fn mouse_button_to_string(button: &MouseButton) -> String {
         format!("{:?}", button)
     }
 
     /// Converts a string to a mouse button.
-    fn string_to_mouse_button(s: &str) -> Result<MouseButton> {
+    pub(crate) fn string_to_mouse_button(s: &str) -> Result<MouseButton> {
         match s {
             "Left" => Ok(MouseButton::Left),
             "Right" => Ok(MouseButton::Right),
@@ -440,12 +440,12 @@ impl InputManager {
     }
 
     /// Converts an action to a string
-    fn action_to_string(action: &KeyAction) -> String {
+    pub(crate) fn action_to_string(action: &KeyAction) -> String {
         format!("{:?}", action)
     }
 
     /// Converts a string to an action
-    fn string_to_action(s: &str) -> Result<KeyAction> {
+    pub(crate) fn string_to_action(s: &str) -> Result<KeyAction> {
         match s {
             "Press" => Ok(KeyAction::Press),
             "Release" => Ok(KeyAction::Release),
