@@ -108,6 +108,7 @@ impl AssetManager {
         for (name, model) in models {
             registry.paths.insert(name, model);
         }
+        registry.version = registry.version.wrapping_add(1);
 
         Ok(registry.clone())
     }

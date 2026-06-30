@@ -24,6 +24,7 @@ use crate::{
 #[derive(Default, Clone, Debug)]
 pub struct ModelRegistry {
     pub paths: HashMap<String, GpuModel>,
+    pub version: u64,
 }
 
 #[derive(Default, Clone)]

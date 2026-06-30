@@ -17,6 +17,8 @@ local fps_display = 60.0
 
 ---@param world World
 function start(world)
+	world:load_worldspace("default")
+
 	-- Camera — "FlyCamera" is the Rust tag in game/src/main.rs that the
 	-- movement + mouse-look system looks for.
 	local cam = world:spawn()
@@ -28,66 +30,6 @@ function start(world)
 	world:add_component(cam, "Camera", { fov_y = 90.0, is_main = true })
 	world:add_tag(cam, "ActiveCamera")
 	world:add_tag(cam, "FlyCamera")
-
-	-- Directional sun light.
-	local sun = world:spawn()
-	world:set_name(sun, "Sun")
-	world:add_component(sun, "Transform", { local_euler_angles = { -50, -30, 0 } })
-	world:add_component(sun, "Light", {
-		light_type = "Directional",
-		color = { r = 1.0, g = 0.95, b = 0.85 },
-		intensity = 1.6,
-		is_emitting = true,
-	})
-
-	-- Ground plane.
-	local ground = world:spawn()
-	world:set_name(ground, "Ground")
-	world:add_component(ground, "Transform", { local_scale = { 30, 1, 30 } })
-	world:add_component(ground, "ModelRenderer", { model_path = "m_default_plane" })
-
-	-- Ring of alternating cubes and spheres.
-	for i = 0, 7 do
-		local angle = i / 8 * math.pi * 2
-		local r = 6.0
-		local prop = world:spawn()
-		world:set_name(prop, "Prop_" .. i)
-		world:add_component(prop, "Transform", {
-			local_position = { math.cos(angle) * r, 0.6, math.sin(angle) * r },
-			local_scale = { 0.6, 0.6, 0.6 },
-		})
-		local model = (i % 2 == 0) and "m_default_cube" or "m_default_sphere"
-		world:add_component(prop, "ModelRenderer", { model_path = model })
-	end
-
-	-- Cone on a pedestal in the centre.
-	local pedestal = world:spawn()
-	world:set_name(pedestal, "Pedestal")
-	world:add_component(pedestal, "Transform", {
-		local_position = { 0, 1, 0 },
-		local_scale = { 0.8, 2.0, 0.8 },
-	})
-	world:add_component(pedestal, "ModelRenderer", { model_path = "m_default_cylinder" })
-
-	gem_entity = world:spawn()
-	world:set_name(gem_entity, "Gem")
-	world:add_component(gem_entity, "Transform", {
-		local_position = { 0, 3.2, 0 },
-		local_scale = { 0.5, 0.5, 0.5 },
-	})
-	world:add_component(gem_entity, "ModelRenderer", { model_path = "m_default_cone" })
-
-	-- Warm point light near the gem.
-	local glow = world:spawn()
-	world:set_name(glow, "GemGlow")
-	world:add_component(glow, "Transform", { local_position = { 0, 3.5, 0 } })
-	world:add_component(glow, "Light", {
-		light_type = "Point",
-		radius = 10.0,
-		color = { r = 0.4, g = 0.9, b = 1.0 },
-		intensity = 2.5,
-		is_emitting = true,
-	})
 
 	world:log("[game] scene ready")
 end

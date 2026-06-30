@@ -1,4 +1,3 @@
-
 use cgmath::Vector3;
 use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
@@ -16,7 +15,7 @@ use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
-use crate::packages::project_package::load_startup_scene;
+use crate::packages::project_package::load_startup_worldspace;
 use crate::physics::raycast::{Ray, build_collider_snapshot, raycast_colliders_raw};
 use crate::scripting::lua::ui_api::invoke_with_ui;
 use crate::ui::ui_context::EguiContext;
@@ -343,9 +342,12 @@ impl UserData for WorldHandle {
                 let rgba = table_to_rgba(&color);
                 if let Ok(am) = this.world().get_resource::<AssetManager>()
                     && let Some(loader) = am.get_loader::<MaterialLoader>()
-                    && let Some(mat) = loader.registry.write().materials.get_mut(&name)
                 {
-                    mat.color = rgba;
+                    let mut registry = loader.registry.write();
+                    if let Some(mat) = registry.materials.get_mut(&name) {
+                        mat.color = rgba;
+                        registry.version = registry.version.wrapping_add(1);
+                    }
                 }
                 Ok(())
             },
@@ -439,20 +441,20 @@ impl UserData for WorldHandle {
             ids_to_table(lua, this.world().get_all_ids())
         });
 
-        // ---- scenes ----
-        // Loads a worldspace/scene by name, despawning the current scene's
+        // ---- worldspaces ----
+        // Loads a worldspace/worldspace by name, despawning the current scene's
         // entities first. `retain_tags` is an optional list of tag names whose
         // entities survive the switch (e.g. {"Player"}); pass nothing to clear
-        // everything. Returns true if the scene was found and loaded.
+        // everything. Returns true if the worldspace was found and loaded.
         methods.add_method(
-            "load_scene",
+            "load_worldspace",
             |_, this, (name, retain_tags): (String, Option<Vec<String>>)| {
                 let tags = retain_tags.unwrap_or_default();
                 let tag_refs: Vec<&str> = tags.iter().map(String::as_str).collect();
-                match load_startup_scene(this.world(), &name, &tag_refs) {
+                match load_startup_worldspace(this.world(), &name, &tag_refs) {
                     Ok(()) => Ok(true),
                     Err(e) => {
-                        crate::log_error!("[lua] load_scene('{name}') failed: {e}");
+                        crate::log_error!("[lua] load_worldspace('{name}') failed: {e}");
                         Ok(false)
                     }
                 }
@@ -828,14 +830,20 @@ impl UserData for WorldHandle {
 
                 let (maybe_opts, func) = match third {
                     Some(f) => {
-                        let opts = if let mlua::Value::Table(t) = second { Some(t) } else { None };
+                        let opts = if let mlua::Value::Table(t) = second {
+                            Some(t)
+                        } else {
+                            None
+                        };
                         (opts, f)
                     }
                     None => match second {
                         mlua::Value::Function(f) => (None, f),
-                        _ => return Err(mlua::Error::runtime(
-                            "ui_window: 2nd arg must be a function or an options table",
-                        )),
+                        _ => {
+                            return Err(mlua::Error::runtime(
+                                "ui_window: 2nd arg must be a function or an options table",
+                            ));
+                        }
                     },
                 };
 
@@ -861,19 +869,22 @@ impl UserData for WorldHandle {
                     }
                     if let Ok(anchor_str) = opts.get::<String>("anchor") {
                         let align = match anchor_str.as_str() {
-                            "top_left"     => Some(egui::Align2::LEFT_TOP),
-                            "top_right"    => Some(egui::Align2::RIGHT_TOP),
-                            "bottom_left"  => Some(egui::Align2::LEFT_BOTTOM),
+                            "top_left" => Some(egui::Align2::LEFT_TOP),
+                            "top_right" => Some(egui::Align2::RIGHT_TOP),
+                            "bottom_left" => Some(egui::Align2::LEFT_BOTTOM),
                             "bottom_right" => Some(egui::Align2::RIGHT_BOTTOM),
-                            "center"       => Some(egui::Align2::CENTER_CENTER),
+                            "center" => Some(egui::Align2::CENTER_CENTER),
                             _ => None,
                         };
                         if let Some(a) = align {
-                            let offset = opts.get::<mlua::Table>("offset")
-                                .map(|t| egui::Vec2::new(
-                                    t.get::<f32>(1).unwrap_or(0.0),
-                                    t.get::<f32>(2).unwrap_or(0.0),
-                                ))
+                            let offset = opts
+                                .get::<mlua::Table>("offset")
+                                .map(|t| {
+                                    egui::Vec2::new(
+                                        t.get::<f32>(1).unwrap_or(0.0),
+                                        t.get::<f32>(2).unwrap_or(0.0),
+                                    )
+                                })
                                 .unwrap_or(egui::Vec2::ZERO);
                             window = window.anchor(a, offset);
                         }

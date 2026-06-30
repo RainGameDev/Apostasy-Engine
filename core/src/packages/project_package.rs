@@ -56,8 +56,12 @@ pub(crate) fn add_project_package(world: &mut World) {
     world.insert_resource(ProjectRoot(project_dir()));
 }
 
-pub fn load_startup_scene(world: &mut World, scene_name: &str, retain_tags: &[&str]) -> Result<()> {
-    let scene_value = world
+pub fn load_startup_worldspace(
+    world: &mut World,
+    worldspace_name: &str,
+    retain_tags: &[&str],
+) -> Result<()> {
+    let worldspace_value = world
         .get_resource::<AssetManager>()
         .ok()
         .and_then(|am| am.get_loader::<WorldspaceLoader>())
@@ -65,16 +69,19 @@ pub fn load_startup_scene(world: &mut World, scene_name: &str, retain_tags: &[&s
             let registry = loader.registry.read();
             registry
                 .worldspaces
-                .get(scene_name)
+                .get(worldspace_name)
                 .or_else(|| registry.worldspaces.get("default"))
                 .cloned()
         });
 
-    if let Some(value) = scene_value {
+    if let Some(value) = worldspace_value {
         load_worldspace(world, &value, retain_tags)?;
-        log!("Loaded startup scene '{}'", scene_name);
+        log!("Loaded startup worldspace '{}'", worldspace_name);
     } else {
-        log_warn!("No startup scene '{}' found in project", scene_name);
+        log_warn!(
+            "No startup worldspace '{}' found in project",
+            worldspace_name
+        );
     }
 
     let terrain_dir = project_dir().join("terrain");

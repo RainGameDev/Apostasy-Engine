@@ -140,12 +140,23 @@ pub fn project_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../project")
 }
 
+#[derive(Default)]
+struct MaterialLookupCache {
+    valid: bool,
+    model_version: u64,
+    material_version: u64,
+    gpu_mat_by_name: std::collections::HashMap<String, GpuMaterial>,
+    yaml_shader_by_name: std::collections::HashMap<String, String>,
+    yaml_color_by_name: std::collections::HashMap<String, [f32; 4]>,
+}
+
 pub struct Core {
     pub rendering_api: RenderingBackend,
     pub rendering_info: Option<Arc<Mutex<RenderingInfo>>>,
     pub world: Arc<Mutex<World>>,
     pub asset_loader: AssetManager,
     pub packages: Vec<Packages>,
+    material_cache: MaterialLookupCache,
 }
 
 impl Core {
@@ -190,6 +201,7 @@ impl Core {
             world: Arc::new(Mutex::new(world)),
             asset_loader: AssetManager::new(),
             packages,
+            material_cache: MaterialLookupCache::default(),
         }
     }
 
@@ -780,52 +792,76 @@ impl Core {
                         log_error!("Failed to begin viewport render: {}", e);
                     }
 
-                    // Build a name → GpuMaterial lookup for material_override on ModelRenderer.
-                    let gpu_mat_by_name: std::collections::HashMap<String, GpuMaterial> = {
-                        let mut map = std::collections::HashMap::new();
+                    // Rebuild the material lookup maps only when the model or material
+                    // registries have changed since the last build.
+                    let cur_model_version = model_registry.version;
+                    let cur_material_version = asset_manager
+                        .get_loader::<crate::assets::loaders::material_loader::MaterialLoader>()
+                        .map(|loader| loader.registry.read().version)
+                        .unwrap_or(0);
+
+                    let cache = &mut self.material_cache;
+                    if !cache.valid
+                        || cache.model_version != cur_model_version
+                        || cache.material_version != cur_material_version
+                    {
+                        // name → GpuMaterial lookup for material_override on ModelRenderer.
+                        let mut gpu_mat_by_name = std::collections::HashMap::new();
                         for model in model_registry.paths.values() {
                             for mesh in &model.meshes {
                                 if let Some(ref mat) = mesh.material {
-                                    map.entry(mesh.material_name.clone())
+                                    gpu_mat_by_name
+                                        .entry(mesh.material_name.clone())
                                         .or_insert_with(|| mat.clone());
                                 }
                             }
                         }
-                        map
-                    };
 
-                    // Snapshot shader_path values from YAML materials so overrides on
-                    // standalone materials (not embedded in any glTF mesh) can apply shaders.
-                    let yaml_shader_by_name: std::collections::HashMap<String, String> = world
-                        .get_resource::<AssetManager>()
-                        .ok()
-                        .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
-                        .map(|loader| {
-                            loader.registry.read()
-                                .materials
-                                .iter()
-                                .filter_map(|(k, mat)| {
-                                    mat.shader_path.as_ref().map(|s| (k.clone(), s.clone()))
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default();
+                        let material_loader = asset_manager
+                            .get_loader::<crate::assets::loaders::material_loader::MaterialLoader>();
 
-                    // YAML materials aren't uploaded as GpuMaterials (no texture), but
-                    // their flat `color` still applies as a color modifier when named by
-                    // a ModelRenderer's material_override.
-                    let yaml_color_by_name: std::collections::HashMap<String, [f32; 4]> = world
-                        .get_resource::<AssetManager>()
-                        .ok()
-                        .and_then(|am| am.get_loader::<crate::assets::loaders::material_loader::MaterialLoader>())
-                        .map(|loader| {
-                            loader.registry.read()
-                                .materials
-                                .iter()
-                                .map(|(k, mat)| (k.clone(), mat.color))
-                                .collect()
-                        })
-                        .unwrap_or_default();
+                        // shader_path from YAML materials so overrides on standalone
+                        // materials (not embedded in any glTF mesh) can apply shaders.
+                        let yaml_shader_by_name = material_loader
+                            .map(|loader| {
+                                loader
+                                    .registry
+                                    .read()
+                                    .materials
+                                    .iter()
+                                    .filter_map(|(k, mat)| {
+                                        mat.shader_path.as_ref().map(|s| (k.clone(), s.clone()))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        // YAML materials aren't uploaded as GpuMaterials (no texture), but
+                        // their flat `color` still applies as a color modifier when named
+                        // by a ModelRenderer's material_override.
+                        let yaml_color_by_name = material_loader
+                            .map(|loader| {
+                                loader
+                                    .registry
+                                    .read()
+                                    .materials
+                                    .iter()
+                                    .map(|(k, mat)| (k.clone(), mat.color))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        cache.gpu_mat_by_name = gpu_mat_by_name;
+                        cache.yaml_shader_by_name = yaml_shader_by_name;
+                        cache.yaml_color_by_name = yaml_color_by_name;
+                        cache.model_version = cur_model_version;
+                        cache.material_version = cur_material_version;
+                        cache.valid = true;
+                    }
+
+                    let gpu_mat_by_name = &cache.gpu_mat_by_name;
+                    let yaml_shader_by_name = &cache.yaml_shader_by_name;
+                    let yaml_color_by_name = &cache.yaml_color_by_name;
 
                     let entity_ids = world.get_entities_with_component::<ModelRenderer>();
 

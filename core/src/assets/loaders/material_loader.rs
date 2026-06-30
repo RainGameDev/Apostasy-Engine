@@ -27,6 +27,7 @@ pub struct Material {
 pub struct MaterialRegistry {
     /// Keyed by material name as declared in the YAML
     pub materials: HashMap<String, Material>,
+    pub version: u64,
 }
 
 #[derive(Clone)]
@@ -82,7 +83,9 @@ impl YamlAssetLoader for MaterialLoader {
             color,
             shader_path: shader,
         };
-        self.registry.write().materials.insert(name, mat);
+        let mut registry = self.registry.write();
+        registry.materials.insert(name, mat);
+        registry.version = registry.version.wrapping_add(1);
         Ok(())
     }
 

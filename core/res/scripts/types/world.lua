@@ -134,7 +134,7 @@ function World:get_all_entities() end
 -- `#[derive(Component)]` type, e.g. `"Transform"`, `"Velocity"`, `"Light"`,
 -- `"Camera"`, `"Collider"`, `"ModelRenderer"`), then falls back to script
 -- components declared with `register_component`. Native component tables use the
--- same field layout as the scene format — vectors are `[x, y, z]` arrays:
+-- same field layout as the worldspace format — vectors are `[x, y, z]` arrays:
 --
 -- ```lua
 -- world:add_component(e, "Transform", { local_position = { 0, 5, 0 } })
@@ -460,22 +460,22 @@ function UiHandle:space(amount) end
 function World:ui_window(title, opts_or_callback, callback) end
 
 -- ---------------------------------------------------------------------------
--- Scenes
+-- worldspaces
 -- ---------------------------------------------------------------------------
 
----Loads a worldspace/scene by name, despawning the current scene's entities
+---Loads a worldspace/worldspace by name, despawning the current scene's entities
 ---first. `retain_tags` is an optional list of tag names whose entities survive
----the switch; omit it to clear everything. Falls back to the `"default"` scene
----if `name` is not found. Returns `true` if a scene was loaded.
+---the switch; omit it to clear everything. Falls back to the `"default"` worldspace
+---if `name` is not found. Returns `true` if a worldspace was loaded.
 ---
 ---```lua
------  switch scenes, keeping the player entity
----world:load_scene("dungeon_01", { "Player" })
+-----  switch worldspaces, keeping the player entity
+---world:load_worldspace("dungeon_01", { "Player" })
 ---```
 ---@param name        string
 ---@param retain_tags? string[]
 ---@return boolean loaded
-function World:load_scene(name, retain_tags) end
+function World:load_worldspace(name, retain_tags) end
 
 -- ---------------------------------------------------------------------------
 -- Logging
