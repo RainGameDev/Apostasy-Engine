@@ -136,6 +136,10 @@ impl EngineMode {
     }
 }
 
+pub fn project_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../project")
+}
+
 pub struct Core {
     pub rendering_api: RenderingBackend,
     pub rendering_info: Option<Arc<Mutex<RenderingInfo>>>,

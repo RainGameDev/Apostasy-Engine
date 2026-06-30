@@ -1,12 +1,12 @@
 use apostasy_core::{
-    egui,
     ecs::resources::input_manager::{InputManager, KeyAction, KeyBind, ModifierKeys},
+    egui,
     winit::keyboard::{KeyCode, PhysicalKey},
 };
 
 use super::EditorStyle;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// --- Helpers -----------------------------------------------------------------
 
 pub fn is_modifier_key(key: &PhysicalKey) -> bool {
     matches!(
@@ -25,36 +25,67 @@ pub fn is_modifier_key(key: &PhysicalKey) -> bool {
 pub fn pretty_key(key: &PhysicalKey) -> String {
     match key {
         PhysicalKey::Code(code) => match code {
-            KeyCode::KeyA => "A",  KeyCode::KeyB => "B",  KeyCode::KeyC => "C",
-            KeyCode::KeyD => "D",  KeyCode::KeyE => "E",  KeyCode::KeyF => "F",
-            KeyCode::KeyG => "G",  KeyCode::KeyH => "H",  KeyCode::KeyI => "I",
-            KeyCode::KeyJ => "J",  KeyCode::KeyK => "K",  KeyCode::KeyL => "L",
-            KeyCode::KeyM => "M",  KeyCode::KeyN => "N",  KeyCode::KeyO => "O",
-            KeyCode::KeyP => "P",  KeyCode::KeyQ => "Q",  KeyCode::KeyR => "R",
-            KeyCode::KeyS => "S",  KeyCode::KeyT => "T",  KeyCode::KeyU => "U",
-            KeyCode::KeyV => "V",  KeyCode::KeyW => "W",  KeyCode::KeyX => "X",
-            KeyCode::KeyY => "Y",  KeyCode::KeyZ => "Z",
-            KeyCode::Digit0 => "0", KeyCode::Digit1 => "1", KeyCode::Digit2 => "2",
-            KeyCode::Digit3 => "3", KeyCode::Digit4 => "4", KeyCode::Digit5 => "5",
-            KeyCode::Digit6 => "6", KeyCode::Digit7 => "7", KeyCode::Digit8 => "8",
+            KeyCode::KeyA => "A",
+            KeyCode::KeyB => "B",
+            KeyCode::KeyC => "C",
+            KeyCode::KeyD => "D",
+            KeyCode::KeyE => "E",
+            KeyCode::KeyF => "F",
+            KeyCode::KeyG => "G",
+            KeyCode::KeyH => "H",
+            KeyCode::KeyI => "I",
+            KeyCode::KeyJ => "J",
+            KeyCode::KeyK => "K",
+            KeyCode::KeyL => "L",
+            KeyCode::KeyM => "M",
+            KeyCode::KeyN => "N",
+            KeyCode::KeyO => "O",
+            KeyCode::KeyP => "P",
+            KeyCode::KeyQ => "Q",
+            KeyCode::KeyR => "R",
+            KeyCode::KeyS => "S",
+            KeyCode::KeyT => "T",
+            KeyCode::KeyU => "U",
+            KeyCode::KeyV => "V",
+            KeyCode::KeyW => "W",
+            KeyCode::KeyX => "X",
+            KeyCode::KeyY => "Y",
+            KeyCode::KeyZ => "Z",
+            KeyCode::Digit0 => "0",
+            KeyCode::Digit1 => "1",
+            KeyCode::Digit2 => "2",
+            KeyCode::Digit3 => "3",
+            KeyCode::Digit4 => "4",
+            KeyCode::Digit5 => "5",
+            KeyCode::Digit6 => "6",
+            KeyCode::Digit7 => "7",
+            KeyCode::Digit8 => "8",
             KeyCode::Digit9 => "9",
-            KeyCode::F1  => "F1",  KeyCode::F2  => "F2",  KeyCode::F3  => "F3",
-            KeyCode::F4  => "F4",  KeyCode::F5  => "F5",  KeyCode::F6  => "F6",
-            KeyCode::F7  => "F7",  KeyCode::F8  => "F8",  KeyCode::F9  => "F9",
-            KeyCode::F10 => "F10", KeyCode::F11 => "F11", KeyCode::F12 => "F12",
-            KeyCode::ShiftLeft   | KeyCode::ShiftRight   => "Shift",
+            KeyCode::F1 => "F1",
+            KeyCode::F2 => "F2",
+            KeyCode::F3 => "F3",
+            KeyCode::F4 => "F4",
+            KeyCode::F5 => "F5",
+            KeyCode::F6 => "F6",
+            KeyCode::F7 => "F7",
+            KeyCode::F8 => "F8",
+            KeyCode::F9 => "F9",
+            KeyCode::F10 => "F10",
+            KeyCode::F11 => "F11",
+            KeyCode::F12 => "F12",
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => "Shift",
             KeyCode::ControlLeft | KeyCode::ControlRight => "Ctrl",
-            KeyCode::AltLeft     | KeyCode::AltRight     => "Alt",
-            KeyCode::Space     => "Space",
-            KeyCode::Enter     => "Enter",
-            KeyCode::Escape    => "Esc",
-            KeyCode::Tab       => "Tab",
+            KeyCode::AltLeft | KeyCode::AltRight => "Alt",
+            KeyCode::Space => "Space",
+            KeyCode::Enter => "Enter",
+            KeyCode::Escape => "Esc",
+            KeyCode::Tab => "Tab",
             KeyCode::Backspace => "Backspace",
-            KeyCode::Delete    => "Delete",
-            KeyCode::ArrowLeft  => "Left",
+            KeyCode::Delete => "Delete",
+            KeyCode::ArrowLeft => "Left",
             KeyCode::ArrowRight => "Right",
-            KeyCode::ArrowUp    => "Up",
-            KeyCode::ArrowDown  => "Down",
+            KeyCode::ArrowUp => "Up",
+            KeyCode::ArrowDown => "Down",
             other => return format!("{other:?}"),
         }
         .to_string(),
@@ -65,18 +96,28 @@ pub fn pretty_key(key: &PhysicalKey) -> String {
 /// Human-readable representation of a full keybind combo, e.g. "Ctrl+C".
 pub fn pretty_bind(bind: &KeyBind) -> String {
     let mut parts: Vec<&str> = Vec::new();
-    if bind.modifiers.ctrl  { parts.push("Ctrl"); }
-    if bind.modifiers.alt   { parts.push("Alt"); }
-    if bind.modifiers.shift { parts.push("Shift"); }
+    if bind.modifiers.ctrl {
+        parts.push("Ctrl");
+    }
+    if bind.modifiers.alt {
+        parts.push("Alt");
+    }
+    if bind.modifiers.shift {
+        parts.push("Shift");
+    }
     let key = pretty_key(&bind.key);
     // Avoid doubling "Shift/Ctrl/Alt" for modifier-key binds themselves.
     if parts.iter().any(|p| key.eq_ignore_ascii_case(p)) {
         return key;
     }
-    if parts.is_empty() { key } else { format!("{}+{}", parts.join("+"), key) }
+    if parts.is_empty() {
+        key
+    } else {
+        format!("{}+{}", parts.join("+"), key)
+    }
 }
 
-// ─── KeybindCapture ──────────────────────────────────────────────────────────
+// --- KeybindCapture ----------------------------------------------------------
 
 /// Snapshot of InputManager state needed by keybind widgets.
 /// Extract this once before your egui closure and pass it to each widget call.
@@ -91,24 +132,32 @@ pub struct KeybindCapture {
 
 impl KeybindCapture {
     pub fn from_inputs(inputs: &InputManager) -> Self {
-        let escape = inputs.keys_pressed.contains(&PhysicalKey::Code(KeyCode::Escape));
+        let escape = inputs
+            .keys_pressed
+            .contains(&PhysicalKey::Code(KeyCode::Escape));
         let pressed = inputs
             .keys_pressed
             .iter()
-            .filter(|k| {
-                !is_modifier_key(k) && !matches!(*k, PhysicalKey::Code(KeyCode::Escape))
-            })
+            .filter(|k| !is_modifier_key(k) && !matches!(*k, PhysicalKey::Code(KeyCode::Escape)))
             .copied()
             .collect();
-        Self { pressed, modifiers: inputs.modifiers(), escape }
+        Self {
+            pressed,
+            modifiers: inputs.modifiers(),
+            escape,
+        }
     }
 
     pub fn none() -> Self {
-        Self { pressed: Vec::new(), modifiers: ModifierKeys::default(), escape: false }
+        Self {
+            pressed: Vec::new(),
+            modifiers: ModifierKeys::default(),
+            escape: false,
+        }
     }
 }
 
-// ─── Widget ──────────────────────────────────────────────────────────────────
+// --- Widget ------------------------------------------------------------------
 
 /// Clickable chip that captures a new keybinding.
 ///
@@ -133,7 +182,9 @@ pub fn keybind_editor(
         if capture.escape {
             ui.memory_mut(|m| m.data.insert_temp(id, false));
         } else if let Some(&key) = capture.pressed.first() {
-            let action = current.map(|b| b.action.clone()).unwrap_or(KeyAction::Press);
+            let action = current
+                .map(|b| b.action.clone())
+                .unwrap_or(KeyAction::Press);
             let context = current.and_then(|b| b.context.clone());
             let mut new_bind = KeyBind::new(key, action);
             new_bind.modifiers = capture.modifiers.clone();
@@ -145,9 +196,15 @@ pub fn keybind_editor(
 
     let label = if listening {
         let mut s = String::new();
-        if capture.modifiers.ctrl  { s.push_str("Ctrl+"); }
-        if capture.modifiers.alt   { s.push_str("Alt+"); }
-        if capture.modifiers.shift { s.push_str("Shift+"); }
+        if capture.modifiers.ctrl {
+            s.push_str("Ctrl+");
+        }
+        if capture.modifiers.alt {
+            s.push_str("Alt+");
+        }
+        if capture.modifiers.shift {
+            s.push_str("Shift+");
+        }
         s.push('_');
         s
     } else {
@@ -161,9 +218,13 @@ pub fn keybind_editor(
         ui.allocate_exact_size(egui::Vec2::new(chip_w, row_h), egui::Sense::click());
 
     let was_clicked = resp.clicked();
-    let is_hovered  = resp.hovered();
+    let is_hovered = resp.hovered();
 
-    let bg = if listening { style.sel_bg } else { style.hover_bg };
+    let bg = if listening {
+        style.sel_bg
+    } else {
+        style.hover_bg
+    };
     ui.painter().rect_filled(chip_rect, 3.0, bg);
 
     if listening {

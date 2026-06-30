@@ -1711,7 +1711,17 @@ impl RenderingAPI for VulkanRenderer {
             ) {
                 Ok(()) => {
                     self.last_fence_wait_ns = fence_start.elapsed().as_nanos() as u64;
-                    self.buffer_graveyard.drain(..);
+                    // The fence is now signalled, so the GPU is done with any work
+                    // that referenced these buffers. Actually destroy them — draining
+                    // alone just drops the raw handles and leaks the GPU allocations.
+                    for (buffer, memory) in self.buffer_graveyard.drain(..) {
+                        if buffer != vk::Buffer::null() {
+                            self.context.device.destroy_buffer(buffer, None);
+                        }
+                        if memory != vk::DeviceMemory::null() {
+                            self.context.device.free_memory(memory, None);
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("Fence wait failed (likely device timeout): {}", e);

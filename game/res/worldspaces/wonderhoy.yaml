@@ -1,5 +1,0 @@
-name: wonderhoy
-namespace: game
-class: worldspace
-is_interior: true
-cells: {}

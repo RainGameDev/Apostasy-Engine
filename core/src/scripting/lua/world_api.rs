@@ -1,3 +1,4 @@
+
 use cgmath::Vector3;
 use mlua::{LuaSerdeExt, MetaMethod, UserData, UserDataMethods, UserDataRef};
 use serde_yaml::Value as YamlValue;
@@ -15,7 +16,10 @@ use crate::ecs::components::get_component_registration;
 use crate::ecs::resources::input_manager::InputManager;
 use crate::ecs::systems::{DeltaTime, EngineTimer};
 use crate::ecs::{World, cell::EntityId};
+use crate::packages::project_package::load_startup_scene;
 use crate::physics::raycast::{Ray, build_collider_snapshot, raycast_colliders_raw};
+use crate::scripting::lua::ui_api::invoke_with_ui;
+use crate::ui::ui_context::EguiContext;
 
 /// An entity reference for lua.
 #[derive(Copy, Clone)]
@@ -355,14 +359,7 @@ impl UserData for WorldHandle {
                 .get_resource::<AssetManager>()
                 .ok()
                 .and_then(|am| am.get_loader::<MaterialLoader>())
-                .and_then(|loader| {
-                    loader
-                        .registry
-                        .read()
-                        .materials
-                        .get(&name)
-                        .map(|m| m.color)
-                });
+                .and_then(|loader| loader.registry.read().materials.get(&name).map(|m| m.color));
             match color {
                 Some(c) => {
                     let t = lua.create_table()?;
@@ -441,6 +438,26 @@ impl UserData for WorldHandle {
         methods.add_method("get_all_entities", |lua, this, ()| {
             ids_to_table(lua, this.world().get_all_ids())
         });
+
+        // ---- scenes ----
+        // Loads a worldspace/scene by name, despawning the current scene's
+        // entities first. `retain_tags` is an optional list of tag names whose
+        // entities survive the switch (e.g. {"Player"}); pass nothing to clear
+        // everything. Returns true if the scene was found and loaded.
+        methods.add_method(
+            "load_scene",
+            |_, this, (name, retain_tags): (String, Option<Vec<String>>)| {
+                let tags = retain_tags.unwrap_or_default();
+                let tag_refs: Vec<&str> = tags.iter().map(String::as_str).collect();
+                match load_startup_scene(this.world(), &name, &tag_refs) {
+                    Ok(()) => Ok(true),
+                    Err(e) => {
+                        crate::log_error!("[lua] load_scene('{name}') failed: {e}");
+                        Ok(false)
+                    }
+                }
+            },
+        );
 
         // ---- audio ----
         // Sets pending_play on an entity's AudioPlayer component.
@@ -781,6 +798,89 @@ impl UserData for WorldHandle {
                         crate::log_warn!("[lua] audio_play_sfx: play failed: {e}");
                     }
                 }
+                Ok(())
+            },
+        );
+
+        // ---- egui UI ----
+        // Opens a floating egui window, calling `callback(ui)` with a UiHandle.
+        // Only valid during update/fixed_update (between begin_ui and end_ui).
+        //
+        // Simple form:
+        //   world:ui_window("My Window", function(ui) ... end)
+        //
+        // With options table:
+        //   world:ui_window("HUD", {
+        //       anchor       = "top_left",  -- "top_left","top_right","bottom_left","bottom_right","center"
+        //       offset       = {10, 10},    -- pixels from the anchor point
+        //       pos          = {100, 200},  -- fixed screen position (overrides anchor)
+        //       size         = {300, 200},  -- default window size
+        //       no_title_bar = true,        -- hide the title bar
+        //       resizable    = false,       -- prevent resizing
+        //   }, function(ui) ... end)
+        methods.add_method(
+            "ui_window",
+            |lua, this, (title, second, third): (String, mlua::Value, Option<mlua::Function>)| {
+                let ctx = match this.world().get_resource::<EguiContext>() {
+                    Ok(c) => c.0.clone(),
+                    Err(_) => return Ok(()),
+                };
+
+                let (maybe_opts, func) = match third {
+                    Some(f) => {
+                        let opts = if let mlua::Value::Table(t) = second { Some(t) } else { None };
+                        (opts, f)
+                    }
+                    None => match second {
+                        mlua::Value::Function(f) => (None, f),
+                        _ => return Err(mlua::Error::runtime(
+                            "ui_window: 2nd arg must be a function or an options table",
+                        )),
+                    },
+                };
+
+                let mut window = egui::Window::new(&title);
+                if let Some(opts) = &maybe_opts {
+                    if let Ok(pos) = opts.get::<mlua::Table>("pos") {
+                        window = window.fixed_pos([
+                            pos.get::<f32>(1).unwrap_or(0.0),
+                            pos.get::<f32>(2).unwrap_or(0.0),
+                        ]);
+                    }
+                    if let Ok(size) = opts.get::<mlua::Table>("size") {
+                        window = window.default_size([
+                            size.get::<f32>(1).unwrap_or(200.0),
+                            size.get::<f32>(2).unwrap_or(100.0),
+                        ]);
+                    }
+                    if opts.get::<bool>("no_title_bar").unwrap_or(false) {
+                        window = window.title_bar(false);
+                    }
+                    if let Ok(v) = opts.get::<bool>("resizable") {
+                        window = window.resizable(v);
+                    }
+                    if let Ok(anchor_str) = opts.get::<String>("anchor") {
+                        let align = match anchor_str.as_str() {
+                            "top_left"     => Some(egui::Align2::LEFT_TOP),
+                            "top_right"    => Some(egui::Align2::RIGHT_TOP),
+                            "bottom_left"  => Some(egui::Align2::LEFT_BOTTOM),
+                            "bottom_right" => Some(egui::Align2::RIGHT_BOTTOM),
+                            "center"       => Some(egui::Align2::CENTER_CENTER),
+                            _ => None,
+                        };
+                        if let Some(a) = align {
+                            let offset = opts.get::<mlua::Table>("offset")
+                                .map(|t| egui::Vec2::new(
+                                    t.get::<f32>(1).unwrap_or(0.0),
+                                    t.get::<f32>(2).unwrap_or(0.0),
+                                ))
+                                .unwrap_or(egui::Vec2::ZERO);
+                            window = window.anchor(a, offset);
+                        }
+                    }
+                }
+
+                window.show(&ctx, |ui| invoke_with_ui(lua, ui, &func));
                 Ok(())
             },
         );

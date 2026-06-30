@@ -285,9 +285,11 @@ pub fn discover_terrain_textures(dir: &Path) -> Vec<String> {
 pub fn load_terrain_texture(path: &str) -> DynamicImage {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut candidates = vec![
+        manifest.join("../project").join(path),
         Path::new("res/").join(path),
         manifest.join("res/").join(path),
         manifest.join("../game/res/").join(path),
+        manifest.join("../editor/res/").join(path),
     ];
     // Also try the path as-is (for absolute paths from drag-drop or typed paths)
     candidates.push(Path::new(path).to_path_buf());
@@ -301,5 +303,7 @@ pub fn load_terrain_texture(path: &str) -> DynamicImage {
     }
 
     log_warn!("Terrain texture not found: {}", path);
-    DynamicImage::new_rgba8(1, 1)
+    let mut fallback = image::RgbaImage::new(1, 1);
+    fallback.put_pixel(0, 0, image::Rgba([128, 128, 128, 255]));
+    DynamicImage::ImageRgba8(fallback)
 }

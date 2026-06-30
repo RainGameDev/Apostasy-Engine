@@ -308,6 +308,176 @@ function World:is_mousebind_active(name) end
 function World:input_vector_2d(left, right, up, down) end
 
 -- ---------------------------------------------------------------------------
+-- UI (egui immediate-mode)
+-- ---------------------------------------------------------------------------
+--
+-- UI calls are only valid during `update` and `fixed_update` (the engine
+-- opens the egui frame before update systems run and closes it after
+-- fixed_update).  Calling them in `prerender` or `late_update` is a no-op.
+--
+-- The `UiHandle` passed to a callback is invalidated once the callback
+-- returns — never store it in a global or capture it in a closure that
+-- outlives the frame.
+--
+-- ```lua
+-- function update(world)
+--     world:ui_window("HUD", function(ui)
+--         ui:label("Health: " .. player.hp)
+--         ui:separator()
+--         if ui:button("Use potion") then heal(world) end
+--         local spd = ui:slider("Speed", walk_speed, 0.0, 10.0)
+--         walk_speed = spd
+--     end)
+-- end
+-- ```
+
+---A transient handle to an egui `Ui` context, only valid inside its
+---callback. Every method is a no-op if called on a stale handle.
+---@class UiHandle
+local UiHandle = {}
+
+-- -- text ---------------------------------------------------------------------
+
+---@param text string
+function UiHandle:label(text) end
+
+---Large heading text.
+---@param text string
+function UiHandle:heading(text) end
+
+---Small sub-label text.
+---@param text string
+function UiHandle:small(text) end
+
+---Colored label. Components are 0–255 integers.
+---@param color { r: integer, g: integer, b: integer, a: integer }|integer[]
+---@param text string
+function UiHandle:colored_label(color, text) end
+
+-- -- interactive widgets -------------------------------------------------------
+
+---Returns `true` on the frame the button is clicked.
+---@param text string
+---@return boolean
+function UiHandle:button(text) end
+
+---Checkbox. Returns the new value.
+---@param text string
+---@param value boolean
+---@return boolean
+function UiHandle:checkbox(text, value) end
+
+---Horizontal slider. Returns the (possibly changed) value.
+---@param label string
+---@param value number
+---@param min number
+---@param max number
+---@return number
+function UiHandle:slider(label, value, min, max) end
+
+---Drag-number field. `speed` is change-per-pixel (default 1.0). Returns new value.
+---@param label string
+---@param value number
+---@param speed? number
+---@return number
+function UiHandle:drag(label, value, speed) end
+
+---Single-line text field. Label and field are on the same row.
+---Returns the (possibly edited) string.
+---@param label string
+---@param text string
+---@return string
+function UiHandle:text_input(label, text) end
+
+---Dropdown combo box. `options` is a 1-indexed string array. `selected` is
+---1-based. Returns the new 1-based selected index.
+---@param label string
+---@param options string[]
+---@param selected integer
+---@return integer
+function UiHandle:combo_box(label, options, selected) end
+
+---Horizontal progress bar. `fraction` is clamped to 0.0–1.0.
+---@param fraction number
+function UiHandle:progress_bar(fraction) end
+
+-- -- layout containers ---------------------------------------------------------
+
+---Lays out widgets in a horizontal row.
+---@param callback fun(ui: UiHandle)
+function UiHandle:horizontal(callback) end
+
+---Explicit vertical stack (useful inside a `horizontal` to re-enter vertical flow).
+---@param callback fun(ui: UiHandle)
+function UiHandle:vertical(callback) end
+
+---Splits into `n` equal columns. `callback` receives a 1-indexed table of
+---`UiHandle`s — one per column.
+---@param n integer
+---@param callback fun(cols: UiHandle[])
+function UiHandle:columns(n, callback) end
+
+---Collapsible section with a clickable heading.
+---@param label string
+---@param callback fun(ui: UiHandle)
+function UiHandle:collapsing(label, callback) end
+
+-- -- misc ---------------------------------------------------------------------
+
+---Horizontal separator line.
+function UiHandle:separator() end
+
+---Adds `amount` egui points of blank space.
+---@param amount number
+function UiHandle:space(amount) end
+
+-- -- World UI methods ----------------------------------------------------------
+--
+-- Only valid during `update` / `fixed_update` (the egui pass is open between
+-- `begin_ui` and `end_ui`, which bracket those two system stages).
+
+---@class UiWindowOpts
+---@field anchor?       "top_left"|"top_right"|"bottom_left"|"bottom_right"|"center"
+---@field offset?       number[]   -- {x, y} pixel offset from the anchor point
+---@field pos?          number[]   -- {x, y} fixed screen position (overrides anchor)
+---@field size?         number[]   -- {w, h} default window size
+---@field no_title_bar? boolean    -- hide the title bar
+---@field resizable?    boolean    -- allow / prevent resizing (default true)
+
+---Opens a floating egui window and calls `callback` with a `UiHandle`.
+---
+---```lua
+-----  simple
+---world:ui_window("HUD", function(ui) ui:label("hello") end)
+---
+-----  pinned to top-right with no title bar
+---world:ui_window("HUD", { anchor="top_right", offset={-10,10}, no_title_bar=true },
+---    function(ui) ui:label("HP: 87") end)
+---```
+---@param title    string
+---@param opts_or_callback UiWindowOpts|fun(ui: UiHandle)
+---@param callback? fun(ui: UiHandle)
+function World:ui_window(title, opts_or_callback, callback) end
+
+-- ---------------------------------------------------------------------------
+-- Scenes
+-- ---------------------------------------------------------------------------
+
+---Loads a worldspace/scene by name, despawning the current scene's entities
+---first. `retain_tags` is an optional list of tag names whose entities survive
+---the switch; omit it to clear everything. Falls back to the `"default"` scene
+---if `name` is not found. Returns `true` if a scene was loaded.
+---
+---```lua
+-----  switch scenes, keeping the player entity
+---world:load_scene("dungeon_01", { "Player" })
+---```
+---@param name        string
+---@param retain_tags? string[]
+---@return boolean loaded
+function World:load_scene(name, retain_tags) end
+
+-- ---------------------------------------------------------------------------
 -- Logging
 -- ---------------------------------------------------------------------------
 

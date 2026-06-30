@@ -19,7 +19,7 @@ impl Default for ModelRenderer {
     fn default() -> Self {
         Self {
             model: None,
-            model_path: "cube".to_string(),
+            model_path: "m_default_cube".to_string(),
             material_override: None,
             is_wireframe: false,
         }

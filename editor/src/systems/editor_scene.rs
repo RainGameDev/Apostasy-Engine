@@ -4,10 +4,9 @@ use apostasy_core::{
         asset_manager::AssetManager,
         loaders::{
             biome_loader::BiomeLoader,
-            material_loader::MaterialLoader,
             structure_loader::StructureLoader,
             voxel_loader::VoxelLoader,
-            worldspace_loader::{WorldspaceLoader, WorldspaceRegistry},
+            worldspace_loader::WorldspaceLoader,
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
@@ -63,7 +62,6 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
     let voxel_registry = Arc::new(RwLock::new(VoxelRegistry::default()));
     let structure_registry = Arc::new(RwLock::new(StructureRegistry::default()));
     let atlas_builder = Arc::new(RwLock::new(AtlasBuilder::new(16)));
-    let scene_registry = Arc::new(RwLock::new(WorldspaceRegistry::default()));
 
     {
         let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
@@ -77,25 +75,13 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
         asset_manager.register_loader(StructureLoader {
             registry: Arc::clone(&structure_registry),
         });
-        asset_manager.register_loader(WorldspaceLoader {
-            registry: Arc::clone(&scene_registry),
-        });
-        asset_manager.register_loader(MaterialLoader::new());
 
-        // let game_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../game/res");
-        // if game_res.exists() {
-        //     let _ = asset_manager.load_directory(&game_res);
-        // }
-
-        let core_res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/res");
-        if core_res.exists() {
-            let _ = asset_manager.load_directory(&core_res);
-        }
-
-        let editor_scenes =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
-        if editor_scenes.exists() {
-            let _ = asset_manager.load_directory(&editor_scenes);
+        // Worldspace + Material loaders and the project data are registered/loaded
+        // by Packages::Project. Load the project dir again here so the voxel/biome/
+        // structure loaders registered above pick up their definitions.
+        let project = apostasy_core::project_dir();
+        if project.is_dir() {
+            let _ = asset_manager.load_directory(&project);
         }
     }
 
@@ -141,7 +127,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
                 .map(|v| ("default".to_string(), v.clone()))
         });
 
-    let terrain_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/terrain");
+    let terrain_dir = apostasy_core::project_dir().join("terrain");
 
     if let Some((scene_name, scene_value)) = startup_scene {
         load_worldspace(world, &scene_value, &["EditorCamera"])?;
@@ -206,7 +192,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
                 ..Default::default()
             },
         );
-        world.add_component(sphere_id, ModelRenderer::from_path("sphere"));
+        world.add_component(sphere_id, ModelRenderer::from_path("m_default_sphere"));
         world.add_component(sphere_id, Velocity::default_sphere());
         world.add_component(sphere_id, Gravity::default());
         world.add_component(
@@ -224,7 +210,7 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
                 ..Default::default()
             },
         );
-        world.add_component(sphere2_id, ModelRenderer::from_path("sphere"));
+        world.add_component(sphere2_id, ModelRenderer::from_path("m_default_sphere"));
         world.add_component(sphere2_id, Velocity::default_sphere());
         world.add_component(sphere2_id, Gravity::default());
         world.add_component(

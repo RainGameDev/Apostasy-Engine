@@ -2,6 +2,7 @@ pub mod component;
 pub mod query;
 pub mod resource;
 pub mod runtime;
+pub mod ui_api;
 pub mod world_api;
 
 use anyhow::Result;

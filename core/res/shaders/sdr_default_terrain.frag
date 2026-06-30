@@ -197,5 +197,6 @@ void main() {
     // Normalize to guard against floating-point drift.
     vec4 baseColor = vec4(albedo / max(weightSum, 0.0001), 1.0);
 
-    outColor = vec4(baseColor.rgb * fragColor * max(lighting, vec3(0.05)), 1.0);
+    vec3 ambient = vec3(0.05);
+    outColor = vec4(baseColor.rgb * fragColor * (lighting + ambient), 1.0);
 }

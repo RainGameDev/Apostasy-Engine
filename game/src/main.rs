@@ -13,6 +13,7 @@ use apostasy_core::{
     },
     egui::{self, Color32, LayerId, Rect},
     init_core,
+    packages::{Packages, project_package::load_startup_scene},
     rendering::RenderingBackend,
     start,
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},
@@ -32,7 +33,13 @@ const SPRINT_MULTIPLIER: f32 = 3.0;
 const MOUSE_SENSITIVITY: f32 = 0.12;
 
 fn main() {
-    init_core(RenderingBackend::Vulkan, vec![]).unwrap();
+    init_core(RenderingBackend::Vulkan, vec![Packages::Project]).unwrap();
+}
+
+
+#[start(priority = 50)]
+pub fn load_scene(world: &mut World) -> Result<()> {
+    load_startup_scene(world, "default", &["FlyCamera"])
 }
 
 #[start]

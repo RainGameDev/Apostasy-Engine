@@ -1,7 +1,0 @@
-texture_layers:
-- textures/terrain/tx_trn_grass.png
-- textures/terrain/tx_trn_grass_path.png
-- textures/terrain/tx_trn_grassy_rock.png
-- textures/terrain/tx_trn_leafy_grass.png
-- textures/terrain/tx_trn_sparse_grass.png
-- textures/voxels/tx_vxl_dirt.png

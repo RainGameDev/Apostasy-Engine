@@ -8,7 +8,7 @@ pub mod systems;
 fn main() {
     init_core_with_mode(
         RenderingBackend::Vulkan,
-        vec![Packages::ItemSystem, Packages::Terrain],
+        vec![Packages::Project, Packages::ItemSystem, Packages::Terrain],
         EngineMode::Editor,
     )
     .unwrap();

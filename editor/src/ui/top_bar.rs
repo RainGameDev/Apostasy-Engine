@@ -64,11 +64,12 @@ impl GameProcess {
 }
 
 fn terrain_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/terrain")
+    apostasy_core::project_dir().join("terrain")
 }
 
 fn do_save(world: &mut World, name: &str) {
-    let scenes_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/worldspaces");
+    let scenes_dir = apostasy_core::project_dir().join("worldspaces");
+    let _ = std::fs::create_dir_all(&scenes_dir);
     let path = scenes_dir.join(format!("{}.yaml", name));
     if let Err(e) = save_worldspace(world, name, "game", &path) {
         apostasy_core::log_warn!("Failed to save scene '{}': {}", name, e);
