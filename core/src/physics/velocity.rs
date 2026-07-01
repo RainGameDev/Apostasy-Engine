@@ -135,10 +135,16 @@ impl Velocity {
         }
     }
     pub fn serialize(&self) -> Option<serde_yaml::Value> {
+        use crate::ecs::components::vec3_to_yaml;
         let mut map = serde_yaml::Mapping::new();
         map.insert("type".into(), "Velocity".into());
         map.insert("mass".into(), (self.mass as f64).into());
         map.insert("process".into(), self.process.into());
+        map.insert(
+            "linear_velocity".into(),
+            vec3_to_yaml(self.linear_velocity),
+        );
+        map.insert("is_grounded".into(), self.is_grounded.into());
         map.insert("mu_static".into(), (self.mu_static as f64).into());
         map.insert("mu_kinetic".into(), (self.mu_kinetic as f64).into());
         map.insert("restitution".into(), (self.restitution as f64).into());
@@ -153,6 +159,18 @@ impl Velocity {
         }
         if let Some(v) = value.get("process").and_then(|v| v.as_bool()) {
             self.process = v;
+        }
+        if let Some(seq) = value.get("linear_velocity").and_then(|v| v.as_sequence())
+            && seq.len() >= 3
+        {
+            self.linear_velocity = Vector3::new(
+                seq[0].as_f64().unwrap_or(0.0) as f32,
+                seq[1].as_f64().unwrap_or(0.0) as f32,
+                seq[2].as_f64().unwrap_or(0.0) as f32,
+            );
+        }
+        if let Some(v) = value.get("is_grounded").and_then(|v| v.as_bool()) {
+            self.is_grounded = v;
         }
         if let Some(v) = value.get("mu_static").and_then(|v| v.as_f64()) {
             self.mu_static = v as f32;

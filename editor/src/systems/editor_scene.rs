@@ -1,12 +1,11 @@
+use apostasy_core::parking_lot::RwLock;
 use apostasy_core::{
     anyhow::Result,
     assets::{
         asset_manager::AssetManager,
         loaders::{
-            biome_loader::BiomeLoader,
-            structure_loader::StructureLoader,
-            voxel_loader::VoxelLoader,
-            worldspace_loader::WorldspaceLoader,
+            biome_loader::BiomeLoader, structure_loader::StructureLoader,
+            voxel_loader::VoxelLoader, worldspace_loader::WorldspaceLoader,
         },
     },
     cgmath::{SquareMatrix, Vector3, Zero},
@@ -29,7 +28,7 @@ use apostasy_core::{
         model_renderer::ModelRenderer,
     },
     start,
-    terrain::persistence::load_terrain_cells,
+    terrain::{chunk::TerrainChunk, persistence::load_terrain_cells},
     ui::ui_context::ViewportSize,
     update,
     voxels::{
@@ -41,7 +40,6 @@ use apostasy_core::{
         keyboard::{KeyCode, PhysicalKey},
     },
 };
-use apostasy_core::parking_lot::RwLock;
 use std::sync::Arc;
 
 use crate::ui::{
@@ -339,6 +337,11 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
                 .unwrap_or(false);
 
             if !gizmo_consuming {
+                if let Some(ref hit) = hit {
+                    if world.has_component::<TerrainChunk>(hit.entity_id) {
+                        return Ok(());
+                    }
+                }
                 if let Ok(cell_search_state) = world.get_resource_mut::<CellSearchState>() {
                     if let Some(hit) = hit {
                         cell_search_state.selected_entity = Some(hit.entity_id);

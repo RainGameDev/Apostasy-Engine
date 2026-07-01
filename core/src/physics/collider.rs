@@ -7,10 +7,13 @@ use egui::{ComboBox, DragAndDrop};
 
 use crate::{
     ecs::{
-        cell::EntityId, component::Inspect, components::transform::Transform,
-        tags::ColliderDebugVisual, world::World,
+        cell::EntityId,
+        component::Inspect,
+        components::transform::Transform,
+        tags::{ColliderDebugVisual, Player},
+        world::World,
     },
-    physics::{ColliderRenderDebug, velocity::Velocity},
+    physics::{ColliderRenderDebug, PlayerColliderRenderDebug, velocity::Velocity},
     rendering::{components::model_renderer::ModelRenderer, shared::model::Bvh},
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
@@ -448,8 +451,20 @@ impl Collider {
                 )
                 .map(|v| -v);
             }
-            // cuboid/cylinder vs mesh, or mesh vs mesh — not supported, skip
-            (ColliderShape::Mesh { .. }, _) | (_, ColliderShape::Mesh { .. }) => {
+            (
+                ColliderShape::Cuboid { .. } | ColliderShape::Cylinder { .. },
+                ColliderShape::Mesh { bvh, .. },
+            ) => {
+                return obb_vs_mesh(center_a, &axes_a, half_a, bvh, pos_b, rotation_b);
+            }
+            (
+                ColliderShape::Mesh { bvh, .. },
+                ColliderShape::Cuboid { .. } | ColliderShape::Cylinder { .. },
+            ) => {
+                return obb_vs_mesh(center_b, &axes_b, half_b, bvh, pos_a, rotation_a).map(|v| -v);
+            }
+            // mesh vs mesh — not supported, skip
+            (ColliderShape::Mesh { .. }, _) => {
                 return None;
             }
 
@@ -527,6 +542,120 @@ fn project_obb(axis: Vector3<f32>, obb_axes: &[Vector3<f32>; 3], half: Vector3<f
     axis.dot(obb_axes[0]).abs() * half.x
         + axis.dot(obb_axes[1]).abs() * half.y
         + axis.dot(obb_axes[2]).abs() * half.z
+}
+
+fn obb_vs_mesh(
+    center: Vector3<f32>,
+    axes: &[Vector3<f32>; 3],
+    half_extents: Vector3<f32>,
+    bvh: &Bvh,
+    mesh_pos: Vector3<f32>,
+    mesh_rot: Quaternion<f32>,
+) -> Option<Vector3<f32>> {
+    if bvh.nodes.is_empty() {
+        return None;
+    }
+
+    // Transform the OBB into the mesh's local space (triangles are stored local).
+    let inv_rot = mesh_rot.conjugate();
+    let local_center = inv_rot * (center - mesh_pos);
+    let local_axes = [inv_rot * axes[0], inv_rot * axes[1], inv_rot * axes[2]];
+
+    // Conservative AABB around the (rotated) OBB, in local space, for BVH pruning.
+    let extent = Vector3::new(
+        project_obb(Vector3::new(1.0, 0.0, 0.0), &local_axes, half_extents),
+        project_obb(Vector3::new(0.0, 1.0, 0.0), &local_axes, half_extents),
+        project_obb(Vector3::new(0.0, 0.0, 1.0), &local_axes, half_extents),
+    );
+    let obb_min = local_center - extent;
+    let obb_max = local_center + extent;
+
+    let mut stack = vec![0u32];
+    let mut deepest: Option<Vector3<f32>> = None;
+    let mut max_depth = 0.0f32;
+
+    while let Some(idx) = stack.pop() {
+        let node = &bvh.nodes[idx as usize];
+
+        if !aabb_overlaps_aabb(node.aabb_min, node.aabb_max, obb_min, obb_max) {
+            continue;
+        }
+
+        if node.left == 0 {
+            for i in node.tri_start..node.tri_start + node.tri_count {
+                let tri = &bvh.triangles[i as usize];
+                if let Some((direction, depth)) =
+                    obb_vs_triangle(local_center, &local_axes, half_extents, tri)
+                {
+                    if depth > max_depth {
+                        max_depth = depth;
+                        deepest = Some(mesh_rot * direction * depth);
+                    }
+                }
+            }
+        } else {
+            stack.push(node.left);
+            stack.push(node.right);
+        }
+    }
+
+    deepest
+}
+
+fn obb_vs_triangle(
+    center: Vector3<f32>,
+    axes: &[Vector3<f32>; 3],
+    half_extents: Vector3<f32>,
+    tri: &[Vector3<f32>; 3],
+) -> Option<(Vector3<f32>, f32)> {
+    let tri_normal = triangle_normal(tri);
+    if tri_normal.magnitude2() < 1e-10 {
+        return None;
+    }
+    let tri_normal = tri_normal.normalize();
+
+    // Reject test on the box's 3 local axes
+    for axis in axes {
+        if overlap_along_axis(*axis, center, axes, half_extents, tri) <= 0.0 {
+            return None; // Separating axis found — no collision with this triangle.
+        }
+    }
+
+    // Reject and  resolve on the triangle's own face normal
+    let plane_value = tri[0].dot(tri_normal);
+    let box_center_proj = center.dot(tri_normal);
+    let box_radius = project_obb(tri_normal, axes, half_extents);
+    let overlap = box_radius - (box_center_proj - plane_value).abs();
+    if overlap <= 0.0 {
+        return None;
+    }
+
+    let min_axis = if box_center_proj >= plane_value {
+        tri_normal
+    } else {
+        -tri_normal
+    };
+
+    Some((min_axis, overlap))
+}
+
+fn overlap_along_axis(
+    axis: Vector3<f32>,
+    center: Vector3<f32>,
+    axes: &[Vector3<f32>; 3],
+    half_extents: Vector3<f32>,
+    tri: &[Vector3<f32>; 3],
+) -> f32 {
+    let box_center_proj = center.dot(axis);
+    let box_radius = project_obb(axis, axes, half_extents);
+
+    let t0 = tri[0].dot(axis);
+    let t1 = tri[1].dot(axis);
+    let t2 = tri[2].dot(axis);
+    let tri_min = t0.min(t1).min(t2);
+    let tri_max = t0.max(t1).max(t2);
+
+    (box_center_proj + box_radius).min(tri_max) - (box_center_proj - box_radius).max(tri_min)
 }
 
 /// Rotates a vector by a quaternion: q * v * q^-1
@@ -626,8 +755,16 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
         }
     }
 
-    if world.get_resource::<crate::physics::Noclip>().map(|n| n.0).unwrap_or(false) {
-        if let Some(ev_id) = world.get_entities_with_component::<CollisionEvents>().into_iter().next() {
+    if world
+        .get_resource::<crate::physics::Noclip>()
+        .map(|n| n.0)
+        .unwrap_or(false)
+    {
+        if let Some(ev_id) = world
+            .get_entities_with_component::<CollisionEvents>()
+            .into_iter()
+            .next()
+        {
             if let Some(ev) = world.get_component_mut::<CollisionEvents>(ev_id) {
                 ev.events.clear();
             }
@@ -794,7 +931,11 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
     }
 
     // Store events on whichever entity holds the CollisionEvents component
-    if let Some(ev_id) = world.get_entities_with_component::<CollisionEvents>().into_iter().next() {
+    if let Some(ev_id) = world
+        .get_entities_with_component::<CollisionEvents>()
+        .into_iter()
+        .next()
+    {
         if let Some(ev) = world.get_component_mut::<CollisionEvents>(ev_id) {
             ev.events = events;
         }
@@ -802,17 +943,103 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
 
     Ok(())
 }
-/// Returns the primitive debug-visual model and the scale needed to match the
-/// collider's shape, or `None` for shapes without a debug primitive (Mesh).
-fn debug_visual_for_shape(shape: &ColliderShape) -> Option<(&'static str, Vector3<f32>)> {
-    let half = shape.half_extents();
+/// Extra half-extent added to every axis of a collider debug visual so it renders
+/// slightly larger than the actual collider, keeping it visibly distinct from
+/// coincident mesh surfaces instead of z-fighting with them.
+pub(crate) const DEBUG_VISUAL_SIZE_OFFSET: f32 = 0.05;
+
+/// Where a collider debug visual's geometry should come from.
+pub enum DebugVisualSource {
+    /// One of the built-in primitive models (cube/sphere/cylinder), scaled to match.
+    Primitive {
+        model_path: &'static str,
+        scale: Vector3<f32>,
+    },
+    /// A mesh collider baked from a named, already-loaded model — reuse that model
+    /// directly as the debug visual instead of a primitive, scaled up slightly.
+    NamedModel {
+        model_path: String,
+        scale: Vector3<f32>,
+    },
+    /// A mesh collider with no backing model (e.g. terrain) — render its raw
+    /// collision triangles directly via `MeshColliderDebugSource`.
+    Triangles(Arc<Vec<[Vector3<f32>; 3]>>),
+}
+
+/// Returns the debug-visual geometry source for a collider shape (plus a small size
+/// offset), or `None` if it can't be visualized yet (e.g. an unresolved mesh collider).
+fn debug_visual_for_shape(shape: &ColliderShape) -> Option<DebugVisualSource> {
     match shape {
-        ColliderShape::Cuboid { .. } => Some(("m_default_cube", half)),
-        ColliderShape::Sphere { .. } => Some(("m_default_sphere", half)),
-        ColliderShape::Cylinder { .. } | ColliderShape::Capsule { .. } => {
-            Some(("m_default_cylinder", Vector3::new(half.x, half.y * 2.0, half.z)))
+        ColliderShape::Cuboid { .. } | ColliderShape::Sphere { .. } => {
+            let half = shape.half_extents()
+                + Vector3::new(
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                );
+            let model_path = if matches!(shape, ColliderShape::Sphere { .. }) {
+                "m_default_sphere"
+            } else {
+                "m_default_cube"
+            };
+            Some(DebugVisualSource::Primitive {
+                model_path,
+                scale: half,
+            })
         }
-        ColliderShape::Mesh { .. } => None,
+        ColliderShape::Cylinder { .. } | ColliderShape::Capsule { .. } => {
+            let half = shape.half_extents()
+                + Vector3::new(
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                    DEBUG_VISUAL_SIZE_OFFSET,
+                );
+            Some(DebugVisualSource::Primitive {
+                model_path: "m_default_cylinder",
+                scale: Vector3::new(half.x, half.y * 2.0, half.z),
+            })
+        }
+        ColliderShape::Mesh {
+            triangles,
+            bvh,
+            model_path,
+        } => {
+            if triangles.is_empty() {
+                return None;
+            }
+            if !model_path.is_empty() {
+                // Inflate by DEBUG_VISUAL_SIZE_OFFSET relative to the baked (scaled)
+                // bounding box, so the extra local_scale approximates a uniform
+                // world-space size increase once combined with the owner's scale.
+                let node = bvh.nodes.first()?;
+                let half_extent = (node.aabb_max - node.aabb_min) * 0.5;
+                let inflate = |h: f32| (h + DEBUG_VISUAL_SIZE_OFFSET) / h.max(1e-4);
+                let scale = Vector3::new(
+                    inflate(half_extent.x),
+                    inflate(half_extent.y),
+                    inflate(half_extent.z),
+                );
+                Some(DebugVisualSource::NamedModel {
+                    model_path: model_path.clone(),
+                    scale,
+                })
+            } else {
+                Some(DebugVisualSource::Triangles(triangles.clone()))
+            }
+        }
+    }
+}
+
+/// Marks a collider debug visual whose geometry is built at render time directly
+/// from a mesh collider's raw collision triangles (no backing named model exists).
+#[derive(Component, Inspect, Clone, Debug, Default)]
+pub struct MeshColliderDebugSource {
+    pub triangles: Vec<[Vector3<f32>; 3]>,
+}
+
+impl MeshColliderDebugSource {
+    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
@@ -824,32 +1051,48 @@ pub fn collider_debug_render_system(world: &mut World) -> Result<()> {
         .map(|r| r.0)
         .unwrap_or(false);
 
-    if !enabled {
+    let player_enabled = world
+        .get_resource::<PlayerColliderRenderDebug>()
+        .map(|r| r.0)
+        .unwrap_or(false);
+
+    if !enabled && !player_enabled {
         for id in world.get_entities_with_tag::<ColliderDebugVisual>() {
             world.despawn(id);
         }
         return Ok(());
     }
-
-    // Clean up debug visuals whose owner no longer has a Collider.
-    for debug_id in world.get_entities_with_tag::<ColliderDebugVisual>() {
-        let stale = match world.get_parent_id(debug_id) {
-            Some(parent_id) => !world.has_component::<Collider>(parent_id),
-            None => true,
-        };
-        if stale {
-            world.despawn(debug_id);
-        }
-    }
-
     for owner_id in world.get_entities_with_component::<Collider>() {
+        let is_player = world.has_tag::<Player>(owner_id);
+        let should_render = if is_player { player_enabled } else { enabled };
+        if !should_render {
+            if let Some(debug_id) = world
+                .get_children_ids(owner_id)
+                .into_iter()
+                .find(|id| world.has_tag::<ColliderDebugVisual>(*id))
+            {
+                world.despawn(debug_id);
+            }
+            continue;
+        }
+
         let collider = match world.get_component::<Collider>(owner_id) {
             Some(c) => c.clone(),
             None => continue,
         };
 
-        let Some((model_path, scale)) = debug_visual_for_shape(&collider.shape) else {
+        let Some(source) = debug_visual_for_shape(&collider.shape) else {
             continue;
+        };
+        let model_path: &str = match &source {
+            DebugVisualSource::Primitive { model_path, .. } => model_path,
+            DebugVisualSource::NamedModel { model_path, .. } => model_path.as_str(),
+            DebugVisualSource::Triangles(_) => "",
+        };
+        let scale = match &source {
+            DebugVisualSource::Primitive { scale, .. } => *scale,
+            DebugVisualSource::NamedModel { scale, .. } => *scale,
+            DebugVisualSource::Triangles(_) => Vector3::new(1.0, 1.0, 1.0),
         };
 
         let debug_id = world
@@ -875,6 +1118,25 @@ pub fn collider_debug_render_system(world: &mut World) -> Result<()> {
             t.local_position = collider.offset;
             t.local_scale = scale;
         }
+
+        if let DebugVisualSource::Triangles(triangles) = source {
+            let needs_update = world
+                .get_component::<MeshColliderDebugSource>(debug_id)
+                .map(|src| src.triangles.len() != triangles.len())
+                .unwrap_or(true);
+            if needs_update {
+                world.add_component(
+                    debug_id,
+                    MeshColliderDebugSource {
+                        triangles: (*triangles).clone(),
+                    },
+                );
+                // Force the renderer to rebuild the GPU mesh from the new triangles.
+                if let Some(mr) = world.get_component_mut::<ModelRenderer>(debug_id) {
+                    mr.model = None;
+                }
+            }
+        }
     }
 
     Ok(())
@@ -884,7 +1146,13 @@ fn apply_position_correction(world: &mut World, id: EntityId, offset: Vector3<f3
     if offset.magnitude2() < 1e-6 {
         return;
     }
-    let max_correction = 0.25;
+    // Detected overlap depth is already naturally bounded (radius for
+    // sphere/capsule, box extent for OBB), so resolving it fully in one frame
+    // is a bounded, sane snap. The old flat 0.25 clamp took several frames to
+    // recover from post-fall tunneling, leaving the character visibly sunk
+    // into the ground after landing; this ceiling only guards against
+    // pathological/corrupted geometry, not ordinary contacts.
+    let max_correction = 3.0;
     let offset = if offset.magnitude2() > max_correction * max_correction {
         offset.normalize() * max_correction
     } else {
@@ -1135,7 +1403,8 @@ fn capsule_vs_mesh(
         if node.left == 0 {
             for i in node.tri_start..node.tri_start + node.tri_count {
                 let tri = &bvh.triangles[i as usize];
-                let (closest_seg, closest_tri) = closest_points_segment_triangle(local_a, local_b, tri);
+                let (closest_seg, closest_tri) =
+                    closest_points_segment_triangle(local_a, local_b, tri);
                 let diff = closest_seg - closest_tri;
                 let dist2 = diff.magnitude2();
                 if dist2 < radius * radius {
@@ -1143,11 +1412,15 @@ fn capsule_vs_mesh(
                     let depth = radius - dist;
                     if depth > max_depth {
                         max_depth = depth;
-                        let local_normal = if dist > 1e-10 {
+                        let face_normal = triangle_normal(tri);
+                        let mut local_normal = if dist > 1e-10 {
                             diff / dist
                         } else {
-                            triangle_normal(tri)
+                            face_normal
                         };
+                        if local_normal.dot(face_normal) < 0.0 {
+                            local_normal = face_normal;
+                        }
                         deepest = Some(mesh_rot * local_normal * depth);
                     }
                 }
@@ -1395,4 +1668,154 @@ pub fn triangle_aabb(tris: &[[Vector3<f32>; 3]]) -> (Vector3<f32>, Vector3<f32>)
         }
     }
     (min, max)
+}
+
+#[cfg(test)]
+mod obb_vs_mesh_tests {
+    use super::*;
+
+    fn slope_bvh(rise: f32, run: f32) -> Bvh {
+        // Quad from x=0..run, z=0..4, height rises linearly with x.
+        let h = |x: f32| rise * (x / run);
+        let tl = Vector3::new(0.0, h(0.0), 0.0);
+        let tr = Vector3::new(run, h(run), 0.0);
+        let bl = Vector3::new(0.0, h(0.0), 4.0);
+        let br = Vector3::new(run, h(run), 4.0);
+        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
+    }
+
+    /// A box resting on (or embedded in) a sloped quad must always be detected as
+    /// overlapping, with depth that grows monotonically with true penetration.
+    /// Regression test for a bug where the triangle-normal axis always reported
+    /// exactly zero overlap (since a triangle's own normal always has zero-width
+    /// projection), causing every slope contact to be rejected outright.
+    #[test]
+    fn box_on_slope_is_always_detected_with_increasing_depth() {
+        let half = Vector3::new(0.5, 0.5, 0.5);
+        let axes = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ];
+
+        for &(rise, run) in &[(1.0, 4.0), (2.0, 4.0), (4.0, 4.0), (6.0, 4.0), (8.0, 4.0)] {
+            let bvh = slope_bvh(rise, run);
+            let x = run * 0.5;
+            let slope_h = rise * (x / run);
+
+            let mut last_depth = 0.0;
+            for &penetration in &[0.01, 0.05, 0.15, 0.25, 0.5] {
+                let center = Vector3::new(x, slope_h + half.y - penetration, 2.0);
+                let mtv = obb_vs_mesh(
+                    center,
+                    &axes,
+                    half,
+                    &bvh,
+                    Vector3::zero(),
+                    Quaternion::new(1.0, 0.0, 0.0, 0.0),
+                );
+
+                let depth = mtv
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "rise={rise} run={run} penetration={penetration}: expected a collision, got none"
+                        )
+                    })
+                    .magnitude();
+
+                assert!(
+                    depth > last_depth,
+                    "rise={rise} run={run} penetration={penetration}: depth {depth} did not increase from {last_depth}"
+                );
+                last_depth = depth;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod capsule_vs_mesh_tests {
+    use super::*;
+
+    fn flat_bvh() -> Bvh {
+        let tl = Vector3::new(-10.0, 0.0, -10.0);
+        let tr = Vector3::new(10.0, 0.0, -10.0);
+        let bl = Vector3::new(-10.0, 0.0, 10.0);
+        let br = Vector3::new(10.0, 0.0, 10.0);
+        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
+    }
+
+    fn slope_bvh(rise: f32, run: f32) -> Bvh {
+        let h = |x: f32| rise * (x / run);
+        let tl = Vector3::new(-run, h(-run), -run);
+        let tr = Vector3::new(run, h(run), -run);
+        let bl = Vector3::new(-run, h(-run), run);
+        let br = Vector3::new(run, h(run), run);
+        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
+    }
+
+    /// A capsule sinking into flat ground must always push upward (never
+    /// downward), even once deeply embedded.
+    /// Regression test for a sign flip in the raw closest-point direction.
+    #[test]
+    fn capsule_deeply_embedded_in_flat_ground_pushes_up_not_down() {
+        let bvh = flat_bvh();
+        let radius = 0.5f32;
+        let half_h = 0.5f32;
+
+        for i in 0..30 {
+            let center_y = 0.9 - (i as f32) * 0.1;
+            let center = Vector3::new(0.0, center_y, 0.0);
+            let seg_a = center + Vector3::new(0.0, half_h, 0.0);
+            let seg_b = center - Vector3::new(0.0, half_h, 0.0);
+            let result = capsule_vs_mesh(
+                seg_a,
+                seg_b,
+                radius,
+                &bvh,
+                Vector3::zero(),
+                Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            );
+            if let Some(mtv) = result {
+                assert!(
+                    mtv.y >= 0.0,
+                    "center.y={center_y}: expected upward push, got mtv.y={}",
+                    mtv.y
+                );
+            }
+        }
+    }
+
+    /// A capsule embedded in a slope, at increasing penetration, must always
+    /// push away from the surface (positive dot with the slope normal).
+    #[test]
+    fn capsule_on_slope_pushes_away_from_surface_at_any_depth() {
+        let radius = 0.5f32;
+        let half_h = 0.5f32;
+
+        for &(rise, run) in &[(1.0, 4.0), (2.0, 4.0), (4.0, 4.0)] {
+            let bvh = slope_bvh(rise, run);
+            let slope_normal = Vector3::new(-rise, run, 0.0).normalize();
+
+            for &pen in &[0.01, 0.05, 0.15, 0.3, 0.6] {
+                let center = Vector3::new(0.0, half_h + radius - pen, 0.0);
+                let seg_a = center + Vector3::new(0.0, half_h, 0.0);
+                let seg_b = center - Vector3::new(0.0, half_h, 0.0);
+                let result = capsule_vs_mesh(
+                    seg_a,
+                    seg_b,
+                    radius,
+                    &bvh,
+                    Vector3::zero(),
+                    Quaternion::new(1.0, 0.0, 0.0, 0.0),
+                );
+                if let Some(mtv) = result {
+                    assert!(
+                        mtv.dot(slope_normal) > 0.0,
+                        "rise={rise} run={run} pen={pen}: mtv={mtv:?} points into the slope"
+                    );
+                }
+            }
+        }
+    }
 }

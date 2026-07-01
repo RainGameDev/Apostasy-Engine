@@ -44,8 +44,9 @@ impl Default for Transform {
 }
 
 impl Transform {
-    /// Serializes the local transform fields. Global fields are derived each
-    /// frame, so they're omitted (and recomputed on `deserialize`).
+    /// Serializes the transform. Global fields are derived each frame by
+    /// `transform_update`, so they're included for reading (e.g. from Lua)
+    /// but ignored on `deserialize` — writing them back has no effect.
     pub fn serialize(&self) -> Option<serde_yaml::Value> {
         use crate::ecs::components::vec3_to_yaml;
         let mut map = serde_yaml::Mapping::new();
@@ -56,6 +57,24 @@ impl Transform {
             vec3_to_yaml(self.local_euler_angles),
         );
         map.insert("local_scale".into(), vec3_to_yaml(self.local_scale));
+        map.insert(
+            "global_position".into(),
+            vec3_to_yaml(self.global_position),
+        );
+        map.insert(
+            "global_euler_angles".into(),
+            vec3_to_yaml(self.global_euler_angles),
+        );
+        map.insert("global_scale".into(), vec3_to_yaml(self.global_scale));
+        map.insert(
+            "global_rotation".into(),
+            serde_yaml::Value::Sequence(vec![
+                (self.global_rotation.v.x as f64).into(),
+                (self.global_rotation.v.y as f64).into(),
+                (self.global_rotation.v.z as f64).into(),
+                (self.global_rotation.s as f64).into(),
+            ]),
+        );
         Some(serde_yaml::Value::Mapping(map))
     }
 
@@ -90,14 +109,6 @@ impl Transform {
             );
         }
 
-        self.global_position = self.local_position;
-        self.global_euler_angles = self.local_euler_angles;
-        self.global_scale = self.local_scale;
-        self.global_rotation = Quaternion::from(Euler {
-            x: Deg(self.local_euler_angles.x),
-            y: Deg(self.local_euler_angles.y),
-            z: Deg(self.local_euler_angles.z),
-        });
         Ok(())
     }
     /// Up direction in local space.

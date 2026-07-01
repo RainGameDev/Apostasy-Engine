@@ -53,8 +53,12 @@ use crate::rendering::shared::anti_alisaing::AntiAliasing;
 use crate::rendering::shared::frustrum::EntitiesDrawing;
 use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
+use crate::rendering::shared::model::build_collider_debug_model;
 use crate::rendering::shared::push_constants::ModelPushConstants;
-use crate::physics::Noclip;
+use crate::ecs::tags::ColliderDebugVisual;
+use crate::physics::{
+    ColliderRenderDebug, Noclip, PlayerColliderRenderDebug, collider::MeshColliderDebugSource,
+};
 use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::rendering::shared::push_constants::{
     PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
@@ -185,6 +189,8 @@ impl Core {
         world.insert_resource(ShadowDistance::default());
         world.insert_resource(GlobalWireframe::default());
         world.insert_resource(Noclip::default());
+        world.insert_resource(ColliderRenderDebug::default());
+        world.insert_resource(PlayerColliderRenderDebug::default());
         world.insert_resource(InspectorRegistry::build());
         world.insert_resource(WindowInfo::default());
 
@@ -872,6 +878,7 @@ impl Core {
                     let yaml_color_by_name = &cache.yaml_color_by_name;
 
                     let entity_ids = world.get_entities_with_component::<ModelRenderer>();
+                    let mut collider_debug_ids = Vec::new();
 
                     for id in entity_ids {
                         // Lazily load model if needed
@@ -880,17 +887,39 @@ impl Core {
                             .map(|mr| mr.model.is_none())
                             .unwrap_or(false)
                         {
-                            let model_path = match world.get_component::<ModelRenderer>(id) {
-                                Some(mr) => mr.model_path.clone(),
-                                None => continue,
-                            };
-                            let Some(model) = model_registry.paths.get(&model_path) else {
-                                continue;
-                            };
-                            let model = model.clone();
-                            if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
-                                mr.model = Some(Box::new(model));
+                            if let Some(source) = world.get_component::<MeshColliderDebugSource>(id)
+                            {
+                                let triangles = source.triangles.clone();
+                                if !triangles.is_empty()
+                                    && let Ok(command_pool) = renderer.get_command_pool()
+                                    && let Ok(model) = build_collider_debug_model(
+                                        &context,
+                                        command_pool,
+                                        &triangles,
+                                    )
+                                {
+                                    if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
+                                        mr.model = Some(Box::new(model));
+                                    }
+                                }
+                            } else {
+                                let model_path = match world.get_component::<ModelRenderer>(id) {
+                                    Some(mr) => mr.model_path.clone(),
+                                    None => continue,
+                                };
+                                let Some(model) = model_registry.paths.get(&model_path) else {
+                                    continue;
+                                };
+                                let model = model.clone();
+                                if let Some(mr) = world.get_component_mut::<ModelRenderer>(id) {
+                                    mr.model = Some(Box::new(model));
+                                }
                             }
+                        }
+
+                        if world.has_tag::<ColliderDebugVisual>(id) {
+                            collider_debug_ids.push(id);
+                            continue;
                         }
 
                         let model_renderer = match world.get_component::<ModelRenderer>(id) {
@@ -1133,6 +1162,36 @@ impl Core {
                                 &voxel_chunk_push,
                             ) {
                                 log_error!("Failed to render water: {}", e);
+                            }
+                        }
+                    }
+
+                    // Collider debug visuals render last, after models/terrain/voxels/water,
+                    // so their depth-testless overlay always draws on top instead of being
+                    // painted over by later opaque passes.
+                    for id in collider_debug_ids {
+                        let Some(model_renderer) = world.get_component::<ModelRenderer>(id) else {
+                            continue;
+                        };
+                        let Some(model) = model_renderer.model.clone() else {
+                            continue;
+                        };
+                        let Some(transform) = world.get_component::<Transform>(id) else {
+                            continue;
+                        };
+
+                        let mut model_push = model_push_constants.clone();
+                        model_push.world_position = transform.global_position;
+                        model_push.world_scale = transform.global_scale;
+                        model_push.world_rotation = transform.global_rotation;
+
+                        for mesh in &model.meshes {
+                            if let Err(e) = renderer.collider_debug_render(
+                                Box::new(mesh.clone()),
+                                push_constants.clone(),
+                                &model_push,
+                            ) {
+                                log_error!("Failed to render collider debug visual: {}", e);
                             }
                         }
                     }

@@ -1,9 +1,58 @@
 use std::sync::Arc;
 
-use ash::vk::{Buffer, DeviceMemory};
-use cgmath::{Vector3, Zero};
+use ash::vk::{Buffer, CommandPool, DeviceMemory};
+use cgmath::{InnerSpace, Vector3, Zero};
 
-use crate::{physics::collider::triangle_aabb, rendering::shared::material::GpuMaterial};
+use crate::{
+    physics::collider::{DEBUG_VISUAL_SIZE_OFFSET, triangle_aabb},
+    rendering::{shared::material::GpuMaterial, shared::vertex::Vertex, vulkan::rendering_context::VulkanRenderingContext},
+};
+
+/// Builds a one-off wireframe-only `GpuModel` from raw collision triangles. Used to
+/// visualize mesh colliders (e.g. terrain) that have no backing named model — each
+/// vertex is pushed out along its face normal by `DEBUG_VISUAL_SIZE_OFFSET`, matching
+/// the size increase applied to primitive collider debug visuals.
+pub fn build_collider_debug_model(
+    context: &Arc<VulkanRenderingContext>,
+    command_pool: CommandPool,
+    triangles: &[[Vector3<f32>; 3]],
+) -> anyhow::Result<GpuModel> {
+    let mut vertices = Vec::with_capacity(triangles.len() * 3);
+    let mut indices = Vec::with_capacity(triangles.len() * 3);
+    for tri in triangles {
+        let normal = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize();
+        for &p in tri {
+            let idx = vertices.len() as u32;
+            let offset_pos = p + normal * DEBUG_VISUAL_SIZE_OFFSET;
+            vertices.push(Vertex {
+                position: offset_pos.into(),
+                normal: normal.into(),
+                tex_coord: [0.0, 0.0],
+                weights: [0.0; 32],
+                color: [1.0, 1.0, 1.0],
+            });
+            indices.push(idx);
+        }
+    }
+
+    let (vertex_buffer, vertex_buffer_memory) =
+        context.create_vertex_buffer(&vertices, command_pool)?;
+    let (index_buffer, index_buffer_memory) = context.create_index_buffer(&indices, command_pool)?;
+
+    Ok(GpuModel {
+        name: "collider_debug_mesh".to_string(),
+        meshes: vec![Mesh {
+            vertex_buffer,
+            vertex_buffer_memory,
+            index_buffer,
+            index_buffer_memory,
+            index_count: indices.len() as u32,
+            material_name: String::new(),
+            material: None,
+        }],
+        collision_bvh: None,
+    })
+}
 
 #[derive(Clone, Debug)]
 pub struct GpuModel {

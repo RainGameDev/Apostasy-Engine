@@ -3,62 +3,19 @@ namespace: game
 class: worldspace
 is_interior: false
 cells:
-  -1,0,0:
+  0,0,-1:
     name: ''
     entities:
-    - name: Sphere
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
-      - type: Collider
-        shape: Capsule
-        radius: 1.0
-        height: 2.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - -1.1898783445358276
-        - 15.910329818725586
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags:
-      - Player
-      children: []
     - name: Cube
       components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_cube
-        material_override: ''
-        is_wireframe: false
       - type: Velocity
         mass: 1.0
         process: true
+        linear_velocity:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_grounded: false
         mu_static: 0.8999999761581421
         mu_kinetic: 0.800000011920929
         restitution: 0.10000000149011612
@@ -78,7 +35,73 @@ cells:
         is_area: false
       - type: Transform
         local_position:
-        - -4.0
+        - 4.0
+        - 10.0
+        - -3.600694179534912
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_position:
+        - 4.0
+        - 10.0
+        - -3.600694179534912
+        global_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
+      - type: Gravity
+        strength: 9.8100004196167
+      - type: ModelRenderer
+        model_path: m_default_cube
+        material_override: ''
+        is_wireframe: false
+      tags: []
+      children: []
+  -1,0,0:
+    name: ''
+    entities:
+    - name: Player
+      components:
+      - type: Velocity
+        mass: 1.0
+        process: true
+        linear_velocity:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_grounded: false
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.10000000149011612
+        linear_damping: 0.9990000128746033
+        angular_damping: 0.9980000257492065
+      - type: Collider
+        shape: Capsule
+        radius: 1.0
+        height: 2.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: false
+        is_area: false
+      - type: Transform
+        local_position:
+        - -7.665041923522949
         - 15.0
         - 0.0
         local_euler_angles:
@@ -89,6 +112,132 @@ cells:
         - 1.0
         - 1.0
         - 1.0
+        global_position:
+        - -7.665041923522949
+        - 15.0
+        - 0.0
+        global_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
+      - type: Gravity
+        strength: 9.8100004196167
+      - type: ModelRenderer
+        model_path: m_default_capsule
+        material_override: ''
+        is_wireframe: false
+      tags:
+      - Player
+      children:
+      - name: Camera
+        components:
+        - type: Camera
+          fov_y: 90.0
+          near: 0.0010000000474974513
+          far: 10000.0
+          is_main: false
+        - type: Transform
+          local_position:
+          - 0.0
+          - 1.109340786933899
+          - 0.0
+          local_euler_angles:
+          - 0.0
+          - 0.0
+          - 0.0
+          local_scale:
+          - 1.0
+          - 1.0
+          - 1.0
+          global_position:
+          - -7.665041923522949
+          - 16.10934066772461
+          - 0.0
+          global_euler_angles:
+          - 0.0
+          - 0.0
+          - 0.0
+          global_scale:
+          - 1.0
+          - 1.0
+          - 1.0
+          global_rotation:
+          - 0.0
+          - 0.0
+          - 0.0
+          - 1.0
+        tags:
+        - ActiveCamera
+        children: []
+    - name: Sphere
+      components:
+      - type: Velocity
+        mass: 1.0
+        process: true
+        linear_velocity:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_grounded: false
+        mu_static: 1.0
+        mu_kinetic: 1.0
+        restitution: 0.0
+        linear_damping: 1.0
+        angular_damping: 1.0
+      - type: Collider
+        shape: Sphere
+        radius: 1.0
+        offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        is_static: false
+        is_area: false
+      - type: Transform
+        local_position:
+        - -1.876395583152771
+        - 11.170671463012695
+        - 0.0
+        local_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_position:
+        - -1.876395583152771
+        - 11.170671463012695
+        - 0.0
+        global_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
+      - type: Gravity
+        strength: 9.8100004196167
+      - type: ModelRenderer
+        model_path: m_default_sphere
+        material_override: ''
+        is_wireframe: false
       tags: []
       children: []
     - name: Sun
@@ -119,148 +268,38 @@ cells:
         - 1.0
         - 1.0
         - 1.0
+        global_position:
+        - -17.517473220825195
+        - 37.5
+        - 31.172624588012695
+        global_euler_angles:
+        - -60.20000076293945
+        - 1.0
+        - 0.0
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - -0.5014916658401489
+        - 0.007549774367362261
+        - 0.004376451019197702
+        - 0.8651184439659119
       tags: []
-      children: []
-    - name: Sphere
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
-      - type: Collider
-        shape: Sphere
-        radius: 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - -1.876395583152771
-        - 11.170671463012695
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags:
-      - Player
       children: []
   0,0,0:
     name: ''
     entities:
     - name: Sphere
       components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_sphere
-        material_override: ''
-        is_wireframe: false
       - type: Velocity
         mass: 1.0
         process: true
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
-      - type: Collider
-        shape: Cylinder
-        radius: 1.0
-        height: 2.0
-        offset:
+        linear_velocity:
         - 0.0
         - 0.0
         - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - 1.9507609605789185
-        - 15.910329818725586
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags:
-      - Player
-      children: []
-    - name: Cube
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_cube
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.10000000149011612
-        linear_damping: 0.9990000128746033
-        angular_damping: 0.9980000257492065
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: false
-        is_area: false
-      - type: Transform
-        local_position:
-        - 4.0
-        - 10.0
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-      tags: []
-      children: []
-    - name: Sphere
-      components:
-      - type: Gravity
-        strength: 9.8100004196167
-      - type: ModelRenderer
-        model_path: m_default_sphere
-        material_override: ''
-        is_wireframe: false
-      - type: Velocity
-        mass: 1.0
-        process: true
+        is_grounded: false
         mu_static: 1.0
         mu_kinetic: 1.0
         restitution: 0.0
@@ -288,59 +327,28 @@ cells:
         - 1.0
         - 1.0
         - 1.0
-      tags:
-      - Player
-      children: []
-    - name: Floor
-      components:
+        global_position:
+        - 1.0
+        - 8.0
+        - 0.0
+        global_euler_angles:
+        - 0.0
+        - 0.0
+        - 0.0
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
+      - type: Gravity
+        strength: 9.8100004196167
       - type: ModelRenderer
-        model_path: m_default_cube
+        model_path: m_default_sphere
         material_override: ''
         is_wireframe: false
-      - type: Velocity
-        mass: 0.0
-        process: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.4000000059604645
-        linear_damping: 0.0
-        angular_damping: 0.0
-      - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
-        offset:
-        - 0.0
-        - 0.0
-        - 0.0
-        is_static: true
-        is_area: false
-      - type: AudioPlayer
-        sounds:
-        - path: audio/crickets.mp3
-          layer: Effect
-          volume: 6.0
-          pitch: 1.0
-          fade_in: 0.0
-          fade_out: 0.0
-          looping: true
-          auto_play: true
-          spatial: true
-          max_distance: 340.0
-      - type: Transform
-        local_position:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_euler_angles:
-        - 0.0
-        - 0.0
-        - 0.0
-        local_scale:
-        - 15.0
-        - 1.0
-        - 15.0
       tags: []
       children: []

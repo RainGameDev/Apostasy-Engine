@@ -174,6 +174,39 @@ impl EditorCommand for MoveEntityCmd {
     }
 }
 
+#[derive(Clone)]
+pub struct SetParentCmd {
+    pub id: EntityId,
+    pub old_parent: Option<EntityId>,
+    pub new_parent: Option<EntityId>,
+}
+
+impl EditorCommand for SetParentCmd {
+    fn execute(&mut self, world: &mut World) -> Result<()> {
+        world.set_parent(self.id, self.new_parent)
+    }
+
+    fn undo(&mut self, world: &mut World) -> Result<()> {
+        world.set_parent(self.id, self.old_parent)
+    }
+
+    fn remap_ids(&mut self, lookup: &dyn Fn(EntityId) -> Option<EntityId>) {
+        if let Some(new_id) = lookup(self.id) {
+            self.id = new_id;
+        }
+        if let Some(old_parent) = self.old_parent
+            && let Some(new_id) = lookup(old_parent)
+        {
+            self.old_parent = Some(new_id);
+        }
+        if let Some(new_parent) = self.new_parent
+            && let Some(new_id) = lookup(new_parent)
+        {
+            self.new_parent = Some(new_id);
+        }
+    }
+}
+
 // ========== Systems ==========
 
 #[start(mode = "editor")]

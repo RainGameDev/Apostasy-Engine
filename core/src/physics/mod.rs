@@ -6,7 +6,10 @@ use apostasy_macros::{Component, Inspect, Resource, fixed_update, update};
 use crate::{
     assets::asset_manager::AssetManager,
     ecs::{cell::EntityId, components::transform::Transform, tags::Player, world::World},
-    physics::{collider::{Collider, ColliderShape}, velocity::Velocity},
+    physics::{
+        collider::{Collider, ColliderShape},
+        velocity::Velocity,
+    },
     rendering::shared::model::Bvh,
 };
 
@@ -20,6 +23,11 @@ pub mod velocity;
 /// through the world. Toggled by the `tcl` console command.
 #[derive(Resource, Clone, Default)]
 pub struct Noclip(pub bool);
+
+/// When `true`, every `Collider` on an entity tagged `Player` gets a wireframe debug visual showing its shape.
+/// Toggled by the `tprc` console command.
+#[derive(Resource, Clone, Default)]
+pub struct PlayerColliderRenderDebug(pub bool);
 
 /// When `true`, every `Collider` gets a wireframe debug visual showing its shape.
 /// Toggled by the `trc` console command.
@@ -64,7 +72,10 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
         .into_iter()
         .filter(|&id| {
             if let Some(col) = world.get_component::<Collider>(id) {
-                if let ColliderShape::Mesh { bvh, model_path, .. } = &col.shape {
+                if let ColliderShape::Mesh {
+                    bvh, model_path, ..
+                } = &col.shape
+                {
                     return bvh.nodes.is_empty() && !model_path.is_empty();
                 }
             }
@@ -118,7 +129,12 @@ pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
                 let triangles = Arc::new(scaled_triangles);
 
                 if let Some(col) = world.get_component_mut::<Collider>(id) {
-                    if let ColliderShape::Mesh { bvh: b, triangles: t, .. } = &mut col.shape {
+                    if let ColliderShape::Mesh {
+                        bvh: b,
+                        triangles: t,
+                        ..
+                    } = &mut col.shape
+                    {
                         *b = world_bvh;
                         *t = triangles;
                     }

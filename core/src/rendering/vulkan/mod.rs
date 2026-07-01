@@ -162,6 +162,8 @@ impl VulkanRenderer {
         unsafe { self.context.device.device_wait_idle()? };
         let vertex_shader = self.load_shader_module(&self.default_vertex_shader)?;
         let fragment_shader = self.load_shader_module(&self.default_fragment_shader)?;
+        let collider_debug_fragment_shader =
+            self.load_shader_module("sdr_collider_debug.frag")?;
         let voxel_vertex_shader = self.load_shader_module(&self.voxel_vertex_shader)?;
         let voxel_fragment_shader = self.load_shader_module(&self.voxel_fragment_shader)?;
         let water_vertex_shader = self.load_shader_module(&self.water_vertex_shader)?;
@@ -198,8 +200,17 @@ impl VulkanRenderer {
                 aa_amount,
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
-                pipeline_options,
+                pipeline_options.clone(),
                 RenderingSettings::wireframe(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+            let collider_debug_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    fragment_shader: collider_debug_fragment_shader,
+                    ..pipeline_options
+                },
+                RenderingSettings::collider_debug(),
                 pipeline_layout,
                 aa_amount,
             )?;
@@ -254,6 +265,9 @@ impl VulkanRenderer {
             self.context
                 .device
                 .destroy_shader_module(fragment_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(collider_debug_fragment_shader, None);
             self.context
                 .device
                 .destroy_shader_module(voxel_fragment_shader, None);
@@ -385,6 +399,9 @@ impl VulkanRenderer {
             self.pipeline_manager
                 .pipeline_cache
                 .insert("model::wireframe".to_string(), wireframe_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("model::collider_debug".to_string(), collider_debug_pipeline);
             self.pipeline_manager
                 .pipeline_cache
                 .insert("voxel".to_string(), voxel_pipeline);
@@ -633,6 +650,10 @@ impl RenderingAPI for VulkanRenderer {
             &rendering_info.context.clone().into(),
             &default_fragment_shader,
         )?;
+        let collider_debug_fragment_shader = pipeline_manager.create_shader_module(
+            &rendering_info.context.clone().into(),
+            "sdr_collider_debug.frag",
+        )?;
         let voxel_vertex_shader = pipeline_manager
             .create_shader_module(&rendering_info.context.clone().into(), &voxel_vertex_shader)?;
         let voxel_fragment_shader = pipeline_manager.create_shader_module(
@@ -767,8 +788,17 @@ impl RenderingAPI for VulkanRenderer {
                 aa_amount,
             )?;
             let wireframe_pipeline = context.create_graphics_pipeline(
-                pipeline_options,
+                pipeline_options.clone(),
                 RenderingSettings::wireframe(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+            let collider_debug_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    fragment_shader: collider_debug_fragment_shader,
+                    ..pipeline_options
+                },
+                RenderingSettings::collider_debug(),
                 pipeline_layout,
                 aa_amount,
             )?;
@@ -835,6 +865,9 @@ impl RenderingAPI for VulkanRenderer {
                 .device
                 .destroy_shader_module(voxel_vertex_shader, None);
             context.device.destroy_shader_module(fragment_shader, None);
+            context
+                .device
+                .destroy_shader_module(collider_debug_fragment_shader, None);
             context
                 .device
                 .destroy_shader_module(voxel_fragment_shader, None);
@@ -1568,6 +1601,9 @@ impl RenderingAPI for VulkanRenderer {
                 .insert("model::wireframe".to_string(), wireframe_pipeline);
             pipeline_manager
                 .pipeline_cache
+                .insert("model::collider_debug".to_string(), collider_debug_pipeline);
+            pipeline_manager
+                .pipeline_cache
                 .insert("voxel".to_string(), voxel_pipeline);
             pipeline_manager
                 .pipeline_cache
@@ -2122,6 +2158,71 @@ impl RenderingAPI for VulkanRenderer {
                 .get_or_create_model_pipeline(name, &self.context.clone(), true)?,
             None => self.get_pipeline("model::wireframe"),
         };
+
+        let mut data = push_constants.return_renderable();
+        data.extend(model_push_constants.return_renderable());
+
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline,
+            );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.light_descriptor_set, albedo_ds],
+                &[],
+            );
+            self.context.device.cmd_push_constants(
+                frame.command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                &data,
+            );
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn collider_debug_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        push_constants: PushConstants,
+        model_push_constants: &ModelPushConstants,
+    ) -> anyhow::Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let albedo_ds = self
+            .default_white_material
+            .albedo
+            .as_ref()
+            .unwrap()
+            .descriptor_set;
+
+        let pipeline = self.get_pipeline("model::collider_debug");
 
         let mut data = push_constants.return_renderable();
         data.extend(model_push_constants.return_renderable());

@@ -2,19 +2,20 @@ use std::any::TypeId;
 
 use anyhow::Result;
 use apostasy_core::{
-    egui::{self, Margin, Rect, Stroke, Window},
-    log_warn,
     ecs::{
         component::{BoxedComponent, InspectorRegistry},
         tag::TagRegistration,
         world::World,
     },
+    egui::{self, Margin, Rect, Stroke, Window},
+    log_warn,
     scripting::lua::component::{LuaComponentRegistry, ScriptComponents},
     ui::{DRAG_SIZE, ui_context::EguiContext},
     update,
 };
 use apostasy_macros::Resource;
 
+use crate::systems::history::{EditorCommand, History, SetParentCmd};
 use crate::ui::{EditorStyle, cell_panel::CellSearchState};
 
 #[derive(Resource, Default, Clone)]
@@ -41,7 +42,9 @@ impl Default for InspectorPanelState {
     }
 }
 
-#[update(mode = "editor")]
+// Runs (along with `cell_search`) before `clear_drag_state`, so both drag-and-drop
+// consumers see `dragging_entity` before it's reset for the next drag.
+#[update(mode = "editor", priority = 1)]
 pub fn inspector(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let style = world
@@ -66,8 +69,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .ok()
         .and_then(|state| state.selected_entity);
 
-    let entity_name = selected_id
-        .and_then(|id| world.get_name(id).map(|n| n.to_string()));
+    let entity_name = selected_id.and_then(|id| world.get_name(id).map(|n| n.to_string()));
 
     let label_text = entity_name
         .as_ref()
@@ -80,16 +82,22 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .unwrap_or_default();
 
     // Build (TypeId, inspect_fn) pairs from InspectorRegistry
-    let fns: Vec<(TypeId, fn(&mut dyn std::any::Any, &mut egui::Ui))> = if let Some(_id) = selected_id {
-        let registry = world.get_resource::<InspectorRegistry>()?;
-        component_type_ids.iter()
-            .filter_map(|&type_id| {
-                registry.inspectors.get(&type_id).copied().map(|f| (type_id, f))
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let fns: Vec<(TypeId, fn(&mut dyn std::any::Any, &mut egui::Ui))> =
+        if let Some(_id) = selected_id {
+            let registry = world.get_resource::<InspectorRegistry>()?;
+            component_type_ids
+                .iter()
+                .filter_map(|&type_id| {
+                    registry
+                        .inspectors
+                        .get(&type_id)
+                        .copied()
+                        .map(|f| (type_id, f))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
     // Collect all registered component names once
     let all_component_names: Vec<&'static str> =
@@ -98,11 +106,15 @@ pub fn inspector(world: &mut World) -> Result<()> {
             .collect();
 
     // Collect names already on this entity
-    let existing_component_type_names: Vec<&'static str> = component_type_ids.iter()
-        .filter_map(|&type_id| selected_id.and_then(|id| world.get_component_type_name(id, type_id)))
+    let existing_component_type_names: Vec<&'static str> = component_type_ids
+        .iter()
+        .filter_map(|&type_id| {
+            selected_id.and_then(|id| world.get_component_type_name(id, type_id))
+        })
         .collect();
 
-    let existing_component_names: Vec<&str> = existing_component_type_names.iter()
+    let existing_component_names: Vec<&str> = existing_component_type_names
+        .iter()
         .map(|full_name| full_name.split("::").last().unwrap_or(full_name))
         .collect();
 
@@ -141,7 +153,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
         .map(|r| r.type_name)
         .collect();
 
-    let existing_tag_names: Vec<&'static str> = tag_type_ids.iter()
+    let existing_tag_names: Vec<&'static str> = tag_type_ids
+        .iter()
         .filter_map(|&type_id| {
             inventory::iter::<TagRegistration>()
                 .find(|r| (r.type_id)() == type_id)
@@ -162,6 +175,7 @@ pub fn inspector(world: &mut World) -> Result<()> {
     let mut tag_to_add: Option<String> = None;
     let mut tag_to_remove: Option<String> = None;
     let mut pending_name: Option<(apostasy_core::ecs::cell::EntityId, String)> = None;
+    let mut pending_parent: Option<Option<apostasy_core::ecs::cell::EntityId>> = None;
 
     let screen_height = ctx.input(|i| {
         i.raw
@@ -289,13 +303,94 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                 }
                             });
                         }
+
+                        let entity_parent_id = world.get_parent_id(id);
+
+                        {
+                            let dragging_entity: Option<apostasy_core::ecs::cell::EntityId> =
+                                world
+                                    .get_resource::<CellSearchState>()
+                                    .ok()
+                                    .and_then(|s| s.dragging_entity);
+
+                            let current_label = entity_parent_id
+                                .and_then(|p| world.get_name(p))
+                                .unwrap_or("None")
+                                .to_string();
+
+                            let can_drop = dragging_entity.is_some_and(|d| d != id);
+
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                ui.label("Parent");
+
+                                let has_unparent = entity_parent_id.is_some();
+                                let btn_w = if has_unparent { 22.0 } else { 0.0 };
+                                let box_w = (ui.available_width()
+                                    - btn_w
+                                    - if has_unparent {
+                                        ui.spacing().item_spacing.x
+                                    } else {
+                                        0.0
+                                    })
+                                .max(40.0);
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    egui::vec2(box_w, DRAG_SIZE.y),
+                                    egui::Sense::hover(),
+                                );
+                                let hovered = can_drop && resp.contains_pointer();
+
+                                let bg = if hovered { style.sel_bg } else { style.panel_bg };
+                                ui.painter().rect_filled(rect, 3.0, bg);
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    3.0,
+                                    egui::Stroke::new(1.0, style.div_col),
+                                    egui::StrokeKind::Inside,
+                                );
+                                let text_col =
+                                    if hovered { style.text_col } else { style.dim_col };
+                                let label = if hovered {
+                                    "Drop to set parent...".to_string()
+                                } else {
+                                    current_label.clone()
+                                };
+                                ui.painter().text(
+                                    rect.left_center() + egui::vec2(6.0, 0.0),
+                                    egui::Align2::LEFT_CENTER,
+                                    label,
+                                    ui.style().text_styles[&egui::TextStyle::Body].clone(),
+                                    text_col,
+                                );
+
+                                if hovered && ui.input(|i| i.pointer.any_released()) {
+                                    pending_parent = Some(dragging_entity);
+                                }
+
+                                if has_unparent
+                                    && ui
+                                        .add_sized(
+                                            egui::vec2(btn_w, DRAG_SIZE.y),
+                                            egui::Button::new("x"),
+                                        )
+                                        .clicked()
+                                {
+                                    pending_parent = Some(None);
+                                }
+                            });
+                        }
                         ui.add_space(6.0);
 
                         // Component inspector panels
                         for (type_id, inspect_fn) in &fns {
-                            let type_name = world.get_component_type_name(id, *type_id)
+                            let type_name = world
+                                .get_component_type_name(id, *type_id)
                                 .unwrap_or("Unknown");
-                            let short_name = type_name.split("::").last().unwrap_or(type_name).to_string();
+                            let short_name = type_name
+                                .split("::")
+                                .last()
+                                .unwrap_or(type_name)
+                                .to_string();
                             let copy_tid = *type_id;
                             let copy_fn = *inspect_fn;
 
@@ -311,7 +406,13 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                         ui.button("󰍜").context_menu(|ui| {
                                             ui.set_min_width(196.0);
                                             ui.separator();
-                                            if ui.add_sized(DRAG_SIZE, egui::Button::new("Remove Component")).clicked() {
+                                            if ui
+                                                .add_sized(
+                                                    DRAG_SIZE,
+                                                    egui::Button::new("Remove Component"),
+                                                )
+                                                .clicked()
+                                            {
                                                 component_to_remove = Some(copy_tid);
                                             }
                                             // Copy/cut/paste of boxed components needs type-erased cloning
@@ -332,7 +433,11 @@ pub fn inspector(world: &mut World) -> Result<()> {
                         }
 
                         if fns.is_empty() && selected_id.is_some() {
-                            ui.label(egui::RichText::new("No inspectable components").italics().weak());
+                            ui.label(
+                                egui::RichText::new("No inspectable components")
+                                    .italics()
+                                    .weak(),
+                            );
                         }
                     } else {
                         ui.label(egui::RichText::new("No entity selected").italics().weak());
@@ -393,7 +498,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                             }
 
                                             let short = name.split("::").last().unwrap_or(name);
-                                            let already_present = existing_component_names.contains(&short);
+                                            let already_present =
+                                                existing_component_names.contains(&short);
 
                                             ui.add_enabled_ui(!already_present, |ui| {
                                                 let resp = ui.selectable_label(false, short);
@@ -402,7 +508,9 @@ pub fn inspector(world: &mut World) -> Result<()> {
                                                     new_picker_open = false;
                                                 }
                                                 if already_present {
-                                                    resp.on_disabled_hover_text("Already on this entity");
+                                                    resp.on_disabled_hover_text(
+                                                        "Already on this entity",
+                                                    );
                                                 }
                                             });
 
@@ -480,6 +588,23 @@ pub fn inspector(world: &mut World) -> Result<()> {
         world.set_name(id, &name);
     }
 
+    // Apply pending parent change
+    if let Some(new_parent) = pending_parent
+        && let Some(id) = selected_id
+    {
+        let old_parent = world.get_parent_id(id);
+        let mut cmd = Box::new(SetParentCmd {
+            id,
+            old_parent,
+            new_parent,
+        });
+        if cmd.execute(world).is_ok()
+            && let Ok(history) = world.get_resource_mut::<History>()
+        {
+            history.push(cmd);
+        }
+    }
+
     // Remove component
     if let Some(type_id) = component_to_remove
         && let Some(id) = selected_id
@@ -541,7 +666,8 @@ pub fn inspector(world: &mut World) -> Result<()> {
                 .find(|r| r.type_name.eq_ignore_ascii_case(type_name))
                 .map(|r| (r.type_id)());
             if let Some(ttid) = tag_type_id {
-                let ids_to_clear: Vec<_> = world.get_all_ids()
+                let ids_to_clear: Vec<_> = world
+                    .get_all_ids()
                     .into_iter()
                     .filter(|&oid| oid != id && world.get_entity_tag_type_ids(oid).contains(&ttid))
                     .collect();

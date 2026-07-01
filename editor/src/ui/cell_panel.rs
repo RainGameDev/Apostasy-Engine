@@ -18,9 +18,11 @@ use apostasy_core::worldspaces::cell_streaming::CellMigrations;
 use apostasy_core::{egui, update};
 use apostasy_macros::Resource;
 
+use std::collections::{HashMap, HashSet};
+
 use super::EditorStyle;
 use super::shared::WindowLayout;
-use crate::systems::history::{EditorCommand, History, RemoveEntityCmd};
+use crate::systems::history::{EditorCommand, History, RemoveEntityCmd, SetParentCmd};
 use crate::ui::assets_panel::paint_clipped;
 use crate::ui::inspector_panel::InspectorPanelState;
 use crate::ui::preferences_panel::EditorPreferences;
@@ -57,6 +59,10 @@ pub struct CellSearchState {
     pub create_ws_open: bool,
     pub create_ws_name: String,
     pub create_ws_interior: bool,
+    // entity ids currently collapsed in the hierarchy tree
+    pub collapsed_entities: HashSet<EntityId>,
+    // entity currently being drag-dropped to reparent
+    pub dragging_entity: Option<EntityId>,
 }
 
 impl Default for CellSearchState {
@@ -80,6 +86,8 @@ impl Default for CellSearchState {
             create_ws_open: false,
             create_ws_name: String::new(),
             create_ws_interior: false,
+            collapsed_entities: HashSet::new(),
+            dragging_entity: None,
         }
     }
 }
@@ -108,7 +116,9 @@ pub fn remap_selection_after_migration(world: &mut World) -> Result<()> {
 }
 
 #[allow(deprecated)]
-#[update(mode = "editor")]
+// Runs (along with `inspector`) before `clear_drag_state`, so both drag-and-drop
+// consumers see `dragging_entity` before it's reset for the next drag.
+#[update(mode = "editor", priority = 1)]
 pub fn cell_search(world: &mut World) -> Result<()> {
     let ctx = world.get_resource::<EguiContext>()?.0.clone();
     let to_delete = !ctx.egui_wants_keyboard_input()
@@ -182,6 +192,13 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         .get_resource::<CellSearchState>()?
         .rename_request_focus;
     let mut pending_rename: Option<(EntityId, String)> = None;
+    let mut pending_reparent: Option<(EntityId, Option<EntityId>)> = None;
+    let mut collapsed_entities: HashSet<EntityId> = world
+        .get_resource::<CellSearchState>()?
+        .collapsed_entities
+        .clone();
+    let mut dragging_entity: Option<EntityId> =
+        world.get_resource::<CellSearchState>()?.dragging_entity;
 
     let mut selected_cell: Option<Vector3<i32>> =
         world.get_resource::<CellSearchState>()?.selected_cell;
@@ -906,6 +923,84 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 rename_request_focus = true;
                             }
 
+                            // Build the display order: a parent/child tree when there's no
+                            // active search filter (so hierarchy is visible), otherwise a
+                            // flat filtered list.
+                            struct DisplayRow<'a> {
+                                entry: &'a EntityRefEntry,
+                                depth: usize,
+                                has_children: bool,
+                            }
+
+                            let tree_active =
+                                !show_worldspaces && filter_value.trim().is_empty();
+
+                            let rows: Vec<DisplayRow> = if tree_active {
+                                let cell =
+                                    selected_cell.unwrap_or_else(|| Vector3::new(0, 0, 0));
+                                let id_set: HashSet<EntityId> = entity_entries
+                                    .iter()
+                                    .filter(|e| e.entity_id.cell == cell)
+                                    .map(|e| e.entity_id)
+                                    .collect();
+                                let entry_by_id: HashMap<EntityId, &EntityRefEntry> =
+                                    entity_entries
+                                        .iter()
+                                        .filter(|e| id_set.contains(&e.entity_id))
+                                        .map(|e| (e.entity_id, e))
+                                        .collect();
+
+                                let mut children_of: HashMap<EntityId, Vec<EntityId>> =
+                                    HashMap::new();
+                                let mut roots: Vec<EntityId> = Vec::new();
+                                for &id in &id_set {
+                                    match world.get_parent_id(id).filter(|p| id_set.contains(p)) {
+                                        Some(parent) => {
+                                            children_of.entry(parent).or_default().push(id)
+                                        }
+                                        None => roots.push(id),
+                                    }
+                                }
+                                let name_of = |id: &EntityId| -> String {
+                                    entry_by_id
+                                        .get(id)
+                                        .map(|e| e.entity_name.to_lowercase())
+                                        .unwrap_or_default()
+                                };
+                                roots.sort_by_key(&name_of);
+                                for kids in children_of.values_mut() {
+                                    kids.sort_by_key(&name_of);
+                                }
+
+                                let mut out = Vec::new();
+                                let mut stack: Vec<(EntityId, usize)> =
+                                    roots.into_iter().rev().map(|id| (id, 0)).collect();
+                                while let Some((id, depth)) = stack.pop() {
+                                    let has_children = children_of
+                                        .get(&id)
+                                        .map(|c| !c.is_empty())
+                                        .unwrap_or(false);
+                                    if let Some(&entry) = entry_by_id.get(&id) {
+                                        out.push(DisplayRow { entry, depth, has_children });
+                                    }
+                                    if has_children && !collapsed_entities.contains(&id) {
+                                        for &child in children_of[&id].iter().rev() {
+                                            stack.push((child, depth + 1));
+                                        }
+                                    }
+                                }
+                                out
+                            } else {
+                                filtered
+                                    .iter()
+                                    .map(|&entry| DisplayRow {
+                                        entry,
+                                        depth: 0,
+                                        has_children: false,
+                                    })
+                                    .collect()
+                            };
+
                             let table_h = ui.available_height();
                             ScrollArea::vertical()
                                 .id_salt("entity_scroll")
@@ -913,14 +1008,17 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                 .max_height(table_h)
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
-                                    for (idx, entry) in filtered.iter().enumerate() {
+                                    for (idx, row) in rows.iter().enumerate() {
+                                        let entry = row.entry;
+                                        let indent = row.depth as f32 * 14.0;
+                                        let arrow_w = 12.0;
                                         let is_sel =
                                             pending_selected_entity == Some(entry.entity_id);
                                         let is_clicked =
                                             pending_clicked_entity == Some(entry.entity_id);
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
                                             Vec2::new(avail_w, row_h),
-                                            Sense::click(),
+                                            Sense::click_and_drag(),
                                         );
                                         if row_resp.double_clicked() {
                                             renaming_id = Some(entry.entity_id);
@@ -931,6 +1029,20 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             pending_selected_entity = Some(entry.entity_id);
                                             pending_clicked_entity = Some(entry.entity_id);
                                         }
+                                        if row_resp.drag_started() {
+                                            dragging_entity = Some(entry.entity_id);
+                                        }
+                                        let is_drop_target = tree_active
+                                            && dragging_entity.is_some()
+                                            && dragging_entity != Some(entry.entity_id)
+                                            && row_resp.contains_pointer();
+                                        if is_drop_target
+                                            && ui.input(|i| i.pointer.any_released())
+                                            && let Some(dragging_id) = dragging_entity
+                                        {
+                                            pending_reparent =
+                                                Some((dragging_id, Some(entry.entity_id)));
+                                        }
 
                                         row_resp.context_menu(|ui| {
                                             if ui.button("Rename").clicked() {
@@ -940,6 +1052,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                                 ui.close();
                                             }
                                             if ui.button("Teleport to Entity").clicked() {
+                                                ui.close();
+                                            }
+                                            if world.get_parent_id(entry.entity_id).is_some()
+                                                && ui.button("Unparent").clicked()
+                                            {
+                                                pending_reparent = Some((entry.entity_id, None));
                                                 ui.close();
                                             }
                                             if ui.button("Delete Entity").clicked() {
@@ -987,7 +1105,9 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             }
                                         });
 
-                                        let bg = if is_sel {
+                                        let bg = if is_drop_target {
+                                            style.hover_bg
+                                        } else if is_sel {
                                             style.sel_bg
                                         } else if row_resp.hovered() {
                                             style.hover_bg
@@ -999,13 +1119,57 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                             style.row_alt
                                         };
                                         ui.painter().rect_filled(row_rect, 0.0, bg);
+                                        if dragging_entity == Some(entry.entity_id) {
+                                            ui.painter().rect_stroke(
+                                                row_rect,
+                                                0.0,
+                                                Stroke::new(1.0, style.text_col),
+                                                egui::StrokeKind::Inside,
+                                            );
+                                        }
 
                                         let rl = row_rect.left();
                                         let cy = row_rect.center().y;
+
+                                        if row.has_children {
+                                            let arrow_rect = Rect::from_min_size(
+                                                Pos2::new(rl + indent, row_rect.top()),
+                                                Vec2::new(arrow_w, row_h),
+                                            );
+                                            let arrow_resp = ui.interact(
+                                                arrow_rect,
+                                                ui.id().with(("tree_arrow", entry.entity_id)),
+                                                Sense::click(),
+                                            );
+                                            let symbol = if collapsed_entities
+                                                .contains(&entry.entity_id)
+                                            {
+                                                "\u{25B6}"
+                                            } else {
+                                                "\u{25BC}"
+                                            };
+                                            ui.painter().text(
+                                                arrow_rect.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                symbol,
+                                                font_row.clone(),
+                                                style.dim_col,
+                                            );
+                                            if arrow_resp.clicked() {
+                                                if collapsed_entities.contains(&entry.entity_id) {
+                                                    collapsed_entities.remove(&entry.entity_id);
+                                                } else {
+                                                    collapsed_entities.insert(entry.entity_id);
+                                                }
+                                            }
+                                        }
+
+                                        let name_x = rl + 6.0 + indent + arrow_w;
+                                        let name_avail_w = (name_w - 10.0 - indent - arrow_w).max(10.0);
                                         if renaming_id == Some(entry.entity_id) {
                                             let name_rect = Rect::from_min_size(
-                                                Pos2::new(rl + 2.0, row_rect.top() + 1.0),
-                                                Vec2::new(name_w - 4.0, row_h - 2.0),
+                                                Pos2::new(name_x - 4.0, row_rect.top() + 1.0),
+                                                Vec2::new(name_avail_w, row_h - 2.0),
                                             );
                                             let te = egui::TextEdit::singleline(&mut rename_buf)
                                                 .font(font_row.clone());
@@ -1028,8 +1192,8 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         } else {
                                             paint_clipped(
                                                 ui,
-                                                Pos2::new(rl + 6.0, cy),
-                                                name_w - 10.0,
+                                                Pos2::new(name_x, cy),
+                                                name_avail_w,
                                                 &entry.entity_name,
                                                 font_row.clone(),
                                                 style.dim_col,
@@ -1057,8 +1221,12 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                                         );
                                     }
 
+                                    // Drag release is consumed by whichever drop target it
+                                    // landed on; `clear_drag_state` clears the shared
+                                    // dragging_entity resource once every consumer has run.
+
                                     // filler rows
-                                    let rows_drawn = filtered.len();
+                                    let rows_drawn = rows.len();
                                     let remaining_rows =
                                         (ui.available_height() / row_h).ceil() as usize;
                                     for i in 0..remaining_rows {
@@ -1124,6 +1292,20 @@ pub fn cell_search(world: &mut World) -> Result<()> {
         s.cell_rename_focus = cell_rename_focus;
         s.show_worldspaces = show_worldspaces;
         s.selected_worldspace = selected_worldspace;
+        s.collapsed_entities = collapsed_entities;
+        s.dragging_entity = dragging_entity;
+    }
+
+    if let Some((id, new_parent)) = pending_reparent {
+        let old_parent = world.get_parent_id(id);
+        let mut cmd = Box::new(SetParentCmd {
+            id,
+            old_parent,
+            new_parent,
+        });
+        if cmd.execute(world).is_ok() {
+            world.get_resource_mut::<History>()?.push(cmd);
+        }
     }
 
     if let Some(response) = window {
@@ -1326,4 +1508,19 @@ fn goto_cell(world: &mut World, coord: Vector3<i32>) {
         transform.local_position.x = coord.x as f32 * size + size / 2.0;
         transform.local_position.z = coord.z as f32 * size + size / 2.0;
     }
+}
+
+/// Resets the shared entity drag-and-drop state once the pointer is released.
+/// Runs after `cell_search` and `inspector` (both `priority = 1`) so every
+/// drop-target panel gets a chance to see `dragging_entity` before it's cleared.
+#[update(mode = "editor")]
+pub fn clear_drag_state(world: &mut World) -> Result<()> {
+    let ctx = world.get_resource::<EguiContext>()?.0.clone();
+    if ctx.input(|i| i.pointer.any_released())
+        && let Ok(state) = world.get_resource_mut::<CellSearchState>()
+        && state.dragging_entity.is_some()
+    {
+        state.dragging_entity = None;
+    }
+    Ok(())
 }

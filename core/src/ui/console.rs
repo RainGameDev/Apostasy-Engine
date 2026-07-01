@@ -12,7 +12,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::ecs::resources::input_manager::{InputManager, KeyAction, KeyBind};
 use crate::ecs::world::World;
-use crate::physics::{ColliderRenderDebug, Noclip};
+use crate::physics::{ColliderRenderDebug, Noclip, PlayerColliderRenderDebug};
 use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::ui::ui_context::EguiContext;
 
@@ -475,6 +475,18 @@ fn toggle_collision(world: &mut World, _args: &[String]) -> CommandOutcome {
     world.insert_resource(Noclip(true));
     CommandOutcome::Success("Noclip on".to_string())
 }
+fn toggle_player_collider_render(world: &mut World, _args: &[String]) -> CommandOutcome {
+    if let Ok(debug) = world.get_resource_mut::<PlayerColliderRenderDebug>() {
+        debug.0 = !debug.0;
+        let on = debug.0;
+        return CommandOutcome::Success(format!(
+            "Collider render {}",
+            if on { "on" } else { "off" }
+        ));
+    }
+    world.insert_resource(PlayerColliderRenderDebug(true));
+    CommandOutcome::Success("Collider render on".to_string())
+}
 
 /// Toggles the `ColliderRenderDebug` resource.
 /// Shows a wireframe debug visual over every entity's collider.
@@ -594,6 +606,16 @@ pub fn console_start(world: &mut World) -> Result<()> {
             .description("Toggles collision: disables colliders and non-player velocities so the player free-floats through the world")
             .args(0, Some(0))
             .handler(toggle_collision),
+    );
+
+    console.register(
+        CommandBuilder::new("tprc")
+            .usage("tprc")
+            .description(
+                "Toggles wireframe debug visuals showing the player entity's collider shape",
+            )
+            .args(0, Some(0))
+            .handler(toggle_player_collider_render),
     );
 
     console.register(

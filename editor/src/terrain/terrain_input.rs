@@ -362,7 +362,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
         return;
     }
 
-    let id = world.spawn().id();
+    let id = world.spawn_in_cell(cell).id();
     world.set_name(id, &format!("Terrain ({},{})", cell.x, cell.z));
     world.add_component(id, TerrainChunk::new(cell, resolution));
     world.add_tag::<NeedsTerrainRebuild>(id);

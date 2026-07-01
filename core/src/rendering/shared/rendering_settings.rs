@@ -56,6 +56,25 @@ impl RenderingSettings {
         settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
         settings
     }
+
+    /// Wireframe overlay used for collider debug visuals: no depth test (so it always
+    /// draws on top of the mesh underneath) and standard alpha blending — the fragment
+    /// shader outputs a fixed translucent white, so every collider reads as a consistent,
+    /// slightly see-through overlay regardless of what material is underneath.
+    pub fn collider_debug() -> Self {
+        let mut settings = Self::wireframe();
+        settings.depth_settings.depth_test_enabled = false;
+        settings.color_blend_settings.blend_attachment = PipelineColorBlendAttachmentState::default()
+            .color_write_mask(ColorComponentFlags::RGBA)
+            .blend_enable(true)
+            .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(BlendOp::ADD)
+            .src_alpha_blend_factor(BlendFactor::ONE)
+            .dst_alpha_blend_factor(BlendFactor::ZERO)
+            .alpha_blend_op(BlendOp::ADD);
+        settings
+    }
 }
 
 /// The settings for the primitive topology

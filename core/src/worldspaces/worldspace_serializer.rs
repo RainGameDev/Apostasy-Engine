@@ -9,17 +9,16 @@ use crate::{
         cell::{CellCoord, EntityId},
         components::get_component_registration,
         tag::get_tag_registration,
+        tags::{Player, skips_serilization::SkipsSerilization},
         world::World,
         worldspace_streaming::WorldspaceStreaming,
     },
+    rendering::components::camera::{ActiveCamera, EditorCamera},
 };
-
 
 fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
     // Skip editor/internal entities
-    if world.has_tag::<crate::rendering::components::camera::EditorCamera>(id)
-        || world.has_tag::<crate::ecs::tags::skips_serilization::SkipsSerilization>(id)
-    {
+    if world.has_tag::<EditorCamera>(id) || world.has_tag::<SkipsSerilization>(id) {
         return None;
     }
 
@@ -38,11 +37,16 @@ fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
 
     // Serialize known persistent tag types (excluding editor/transient tags)
     let mut tags_data: serde_yaml::Sequence = Vec::new();
-    if world.has_tag::<crate::ecs::tags::Player>(id) {
+    if world.has_tag::<Player>(id) {
         tags_data.push(serde_yaml::Value::String("Player".to_string()));
     }
 
-    let (name, children_ids, components_data, tags_data) = (name, children_ids, components_data, tags_data);
+    if world.has_tag::<ActiveCamera>(id) {
+        tags_data.push(serde_yaml::Value::String("ActiveCamera".to_string()));
+    }
+
+    let (name, children_ids, components_data, tags_data) =
+        (name, children_ids, components_data, tags_data);
 
     let children: serde_yaml::Sequence = children_ids
         .iter()
@@ -349,4 +353,3 @@ fn load_legacy_entity(
 
     Ok(())
 }
-

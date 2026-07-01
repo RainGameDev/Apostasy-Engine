@@ -86,6 +86,14 @@ pub trait RenderingAPI {
         albedo_descriptor_set: Option<vk::DescriptorSet>,
         shader_override: Option<&str>,
     ) -> Result<()>;
+    /// Draws a collider debug wireframe: depth test disabled (always renders above the
+    /// mesh) and blended so the outline color is the inverse of whatever is underneath.
+    fn collider_debug_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        push_constants: PushConstants,
+        model_push_constants: &ModelPushConstants,
+    ) -> Result<()>;
 
     /// Draws a voxel mesh using the provided texture atlas. `wireframe` selects
     /// the line-rasterized voxel pipeline instead of the filled one.
