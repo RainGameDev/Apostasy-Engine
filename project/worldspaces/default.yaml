@@ -3,10 +3,10 @@ namespace: game
 class: worldspace
 is_interior: false
 cells:
-  0,0,0:
+  0,0,-1:
     name: ''
     entities:
-    - name: Sphere
+    - name: Cube
       components:
       - type: Velocity
         mass: 1.0
@@ -16,14 +16,17 @@ cells:
         - 0.0
         - 0.0
         is_grounded: false
-        mu_static: 1.0
-        mu_kinetic: 1.0
-        restitution: 0.0
-        linear_damping: 1.0
-        angular_damping: 1.0
+        mu_static: 0.8999999761581421
+        mu_kinetic: 0.800000011920929
+        restitution: 0.10000000149011612
+        linear_damping: 0.9990000128746033
+        angular_damping: 0.9980000257492065
       - type: Collider
-        shape: Sphere
-        radius: 1.0
+        shape: Cuboid
+        size:
+        - 1.0
+        - 1.0
+        - 1.0
         offset:
         - 0.0
         - 0.0
@@ -32,9 +35,9 @@ cells:
         is_area: false
       - type: Transform
         local_position:
-        - 1.0
-        - 8.0
-        - 0.0
+        - 4.0
+        - 10.0
+        - -3.600694179534912
         local_euler_angles:
         - 0.0
         - 0.0
@@ -44,9 +47,9 @@ cells:
         - 1.0
         - 1.0
         global_position:
-        - 1.0
-        - 8.0
-        - 0.0
+        - 4.0
+        - 10.0
+        - -3.600694179534912
         global_euler_angles:
         - 0.0
         - 0.0
@@ -63,7 +66,7 @@ cells:
       - type: Gravity
         strength: 9.8100004196167
       - type: ModelRenderer
-        model_path: m_default_sphere
+        model_path: m_default_cube
         material_override: ''
         is_wireframe: false
       tags: []
@@ -71,6 +74,53 @@ cells:
   -1,0,0:
     name: ''
     entities:
+    - name: Sun
+      components:
+      - type: Light
+        light_type: Directional
+        color:
+          r: 1.0
+          g: 1.0
+          b: 1.0
+        intensity: 1.0
+        is_emitting: true
+        is_flickering: false
+        intensity_min: 1.0
+        intensity_max: 2.0
+        radius_min: 1.0
+        radius_max: 21.0
+      - type: Transform
+        local_position:
+        - -17.517473220825195
+        - 37.5
+        - 35.79999923706055
+        local_euler_angles:
+        - -16.167266845703125
+        - -43.60584259033203
+        - -63.713157653808594
+        local_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_position:
+        - -17.517473220825195
+        - 37.5
+        - 35.79999923706055
+        global_euler_angles:
+        - -16.167266845703125
+        - -43.60584259033203
+        - -63.713157653808594
+        global_scale:
+        - 1.0
+        - 1.0
+        - 1.0
+        global_rotation:
+        - 0.08318958431482315
+        - -0.3812437057495117
+        - -0.529531717300415
+        - 0.7532123327255249
+      tags: []
+      children: []
     - name: Player
       components:
       - type: Velocity
@@ -175,53 +225,6 @@ cells:
         tags:
         - ActiveCamera
         children: []
-    - name: Sun
-      components:
-      - type: Light
-        light_type: Directional
-        color:
-          r: 1.0
-          g: 1.0
-          b: 1.0
-        intensity: 1.0
-        is_emitting: true
-        is_flickering: false
-        intensity_min: 1.0
-        intensity_max: 2.0
-        radius_min: 1.0
-        radius_max: 21.0
-      - type: Transform
-        local_position:
-        - -17.517473220825195
-        - 37.5
-        - 31.172624588012695
-        local_euler_angles:
-        - -60.20000076293945
-        - 1.0
-        - 0.0
-        local_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-        global_position:
-        - -17.517473220825195
-        - 37.5
-        - 31.172624588012695
-        global_euler_angles:
-        - -60.20000076293945
-        - 1.0
-        - 0.0
-        global_scale:
-        - 1.0
-        - 1.0
-        - 1.0
-        global_rotation:
-        - -0.5014916658401489
-        - 0.007549774367362261
-        - 0.004376451019197702
-        - 0.8651184439659119
-      tags: []
-      children: []
     - name: Sphere
       components:
       - type: Velocity
@@ -284,10 +287,10 @@ cells:
         is_wireframe: false
       tags: []
       children: []
-  0,0,-1:
+  0,0,0:
     name: ''
     entities:
-    - name: Cube
+    - name: Sphere
       components:
       - type: Velocity
         mass: 1.0
@@ -297,17 +300,14 @@ cells:
         - 0.0
         - 0.0
         is_grounded: false
-        mu_static: 0.8999999761581421
-        mu_kinetic: 0.800000011920929
-        restitution: 0.10000000149011612
-        linear_damping: 0.9990000128746033
-        angular_damping: 0.9980000257492065
+        mu_static: 1.0
+        mu_kinetic: 1.0
+        restitution: 0.0
+        linear_damping: 1.0
+        angular_damping: 1.0
       - type: Collider
-        shape: Cuboid
-        size:
-        - 1.0
-        - 1.0
-        - 1.0
+        shape: Sphere
+        radius: 1.0
         offset:
         - 0.0
         - 0.0
@@ -316,9 +316,9 @@ cells:
         is_area: false
       - type: Transform
         local_position:
-        - 4.0
-        - 10.0
-        - -3.600694179534912
+        - 1.0
+        - 8.0
+        - 0.0
         local_euler_angles:
         - 0.0
         - 0.0
@@ -328,9 +328,9 @@ cells:
         - 1.0
         - 1.0
         global_position:
-        - 4.0
-        - 10.0
-        - -3.600694179534912
+        - 1.0
+        - 8.0
+        - 0.0
         global_euler_angles:
         - 0.0
         - 0.0
@@ -347,7 +347,7 @@ cells:
       - type: Gravity
         strength: 9.8100004196167
       - type: ModelRenderer
-        model_path: m_default_cube
+        model_path: m_default_sphere
         material_override: ''
         is_wireframe: false
       tags: []

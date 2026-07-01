@@ -1,11 +1,11 @@
 use anyhow::Result;
 use apostasy_core::{
     cgmath::Vector3,
-    egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
     ecs::{
         cell::EntityId, components::transform::Transform, resources::input_manager::InputManager,
         world::World,
     },
+    egui::{self, Color32, ComboBox, DragValue, Image, Label, RichText, Sense, Slider, Window},
     physics::collider::Collider,
     rendering::{
         components::{
@@ -108,6 +108,20 @@ impl EditorGraphics {
     }
 }
 
+/// Fetches the editor fly camera's `Transform`/`Camera` .
+fn editor_camera(world: &mut World) -> Option<(Transform, Camera)> {
+    let mut result = None;
+    world
+        .query::<(&Transform, &Camera)>()
+        .with_tag::<EditorCamera>()
+        .for_each(|_, (t, c)| {
+            if result.is_none() {
+                result = Some((t.clone(), c.clone()));
+            }
+        });
+    result
+}
+
 // Runs before `editor_raycasting` (priority 0) so the gizmo's `consuming` flag is
 // computed for the current frame before the selection raycast reads it. This gives
 // gizmo handles click priority over the colliders behind them.
@@ -203,10 +217,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         sel_id.and_then(|id| {
             let obj_t = world.get_component::<Transform>(id)?.clone();
             let collider = world.get_component::<Collider>(id).cloned();
-            let cam_ids = world.get_entities_with_component::<Camera>();
-            let first_cam = *cam_ids.first()?;
-            let cam_t = world.get_component::<Transform>(first_cam)?.clone();
-            let cam_c = world.get_component::<Camera>(first_cam)?.clone();
+            let (cam_t, cam_c) = editor_camera(world)?;
             let aspect = world
                 .get_resource::<ViewportSize>()
                 .map(|v| v.logical_width / v.logical_height)
@@ -231,10 +242,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
             .ok()?
             .hit_pos?;
         let radius = world.get_resource::<TerrainToolState>().ok()?.brush_radius;
-        let cam_ids = world.get_entities_with_component::<Camera>();
-        let first_cam = *cam_ids.first()?;
-        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
-        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
+        let (cam_t, cam_c) = editor_camera(world)?;
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -249,10 +257,7 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .ok()
         .and_then(|s| s.selected_entity);
     let light_view_proj: Option<apostasy_core::cgmath::Matrix4<f32>> = (|| {
-        let cam_ids = world.get_entities_with_component::<Camera>();
-        let first_cam = *cam_ids.first()?;
-        let cam_t = world.get_component::<Transform>(first_cam)?.clone();
-        let cam_c = world.get_component::<Camera>(first_cam)?.clone();
+        let (cam_t, cam_c) = editor_camera(world)?;
         let aspect = world
             .get_resource::<ViewportSize>()
             .map(|v| v.logical_width / v.logical_height)
@@ -266,12 +271,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
         Vector3<f32>,
     )> = {
         let light_ids = world.get_entities_with_component::<Light>();
-        light_ids.into_iter().filter_map(|id| {
-            let t = world.get_component::<Transform>(id)?.clone();
-            let light_type = world.get_component::<Light>(id)?.light_type;
-            let color = world.get_component::<Light>(id)?.color;
-            Some((id, t, light_type, color))
-        }).collect()
+        light_ids
+            .into_iter()
+            .filter_map(|id| {
+                let t = world.get_component::<Transform>(id)?.clone();
+                let light_type = world.get_component::<Light>(id)?.light_type;
+                let color = world.get_component::<Light>(id)?.color;
+                Some((id, t, light_type, color))
+            })
+            .collect()
     };
     let mut light_clicked: Option<EntityId> = None;
 
@@ -612,14 +620,15 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
     if pending_focus {
         if let Some(id) = ctx_obj_id {
-            let selected_pos = world.get_component::<Transform>(id)
+            let selected_pos = world
+                .get_component::<Transform>(id)
                 .map(|t| t.global_position);
             if let Some(sel_pos) = selected_pos {
                 world.insert_resource(IsEntityFocused);
                 if let Ok(cam_id) = world.get_entity_with_tag::<EditorCamera>() {
                     if let Some(transform) = world.get_component_mut::<Transform>(cam_id) {
-                        transform.local_position = sel_pos
-                            - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
+                        transform.local_position =
+                            sel_pos - (transform.global_rotation * Vector3::new(0.0, 0.0, -10.0));
                         transform.global_position = transform.local_position;
                         transform.look_at(sel_pos);
                     }

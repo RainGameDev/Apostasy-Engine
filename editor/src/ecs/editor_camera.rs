@@ -62,7 +62,8 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
     };
 
     {
-        let cam_transform = world.get_component_mut::<Transform>(cam_id)
+        let cam_transform = world
+            .get_component_mut::<Transform>(cam_id)
             .ok_or_else(|| anyhow::anyhow!("EditorCamera has no Transform"))?;
 
         if is_middle_mouse {
@@ -74,8 +75,8 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
             }
 
             let current_transform = cam_transform.clone();
-            let wish_dir =
-                current_transform.global_rotation * Vector3::new(scroll_delta.0, 0.0, scroll_delta.1);
+            let wish_dir = current_transform.global_rotation
+                * Vector3::new(scroll_delta.0, 0.0, scroll_delta.1);
             cam_transform.local_position -= wish_dir * 3000.0 * delta;
         }
 
@@ -88,13 +89,14 @@ pub fn editor_camera_move(world: &mut World) -> Result<()> {
         cam_transform.local_euler_angles.y -= mouse_delta.0 as f32;
 
         let current_transform = cam_transform.clone();
-        let wish_dir = current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
+        let wish_dir =
+            current_transform.global_rotation * Vector3::new(direction.x, 0.0, direction.y);
         cam_transform.local_position += wish_dir * editor_camera_settings.move_speed * delta;
     }
 
     world.remove_resource::<IsEntityFocused>();
 
-    if is_looking && scroll_delta.1 != 0.0 {
+    if is_looking && !is_middle_mouse && scroll_delta.1 != 0.0 {
         let new_speed = clamp(
             world.get_resource::<EditorCameraSettings>()?.move_speed + scroll_delta.1 * 5.0,
             1.0,

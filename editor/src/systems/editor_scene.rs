@@ -291,14 +291,16 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
     let right_click = inputs.is_mousebind_active("RightMousePress");
 
     if left_click {
-        let cam_ids = world.get_entities_with_component::<Camera>();
-        let first_cam = cam_ids.first().copied();
-        let camera_transform = first_cam
-            .and_then(|id| world.get_component::<Transform>(id).cloned())
-            .unwrap();
-        let camera_view = first_cam
-            .and_then(|id| world.get_component::<Camera>(id).cloned())
-            .unwrap();
+        let mut editor_cam: Option<(Transform, Camera)> = None;
+        world
+            .query::<(&Transform, &Camera)>()
+            .with_tag::<EditorCamera>()
+            .for_each(|_, (t, c)| {
+                if editor_cam.is_none() {
+                    editor_cam = Some((t.clone(), c.clone()));
+                }
+            });
+        let (camera_transform, camera_view) = editor_cam.unwrap();
         let viewport_size = world.get_resource::<ViewportSize>().unwrap();
 
         let aspect = viewport_size.logical_width / viewport_size.logical_height;
@@ -361,14 +363,16 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             world.insert_resource(ViewportContextMenu::default());
         }
 
-        let cam_ids2 = world.get_entities_with_component::<Camera>();
-        let first_cam2 = cam_ids2.first().copied();
-        let camera_transform = first_cam2
-            .and_then(|id| world.get_component::<Transform>(id).cloned())
-            .unwrap();
-        let camera_view = first_cam2
-            .and_then(|id| world.get_component::<Camera>(id).cloned())
-            .unwrap();
+        let mut editor_cam: Option<(Transform, Camera)> = None;
+        world
+            .query::<(&Transform, &Camera)>()
+            .with_tag::<EditorCamera>()
+            .for_each(|_, (t, c)| {
+                if editor_cam.is_none() {
+                    editor_cam = Some((t.clone(), c.clone()));
+                }
+            });
+        let (camera_transform, camera_view) = editor_cam.unwrap();
 
         let (vp_x, vp_y, vp_w, vp_h) = {
             let vp = world.get_resource::<ViewportSize>().unwrap();

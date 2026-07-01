@@ -56,9 +56,13 @@ pub fn rebuild_dirty_terrain(
         world.add_component(id, terrain_collider);
 
         if !world.has_component::<Transform>(id) {
+            let (origin_x, origin_z) = chunk.world_origin();
+            let position = Vector3::new(origin_x, 0.0, origin_z);
             world.add_component(
                 id,
                 Transform {
+                    local_position: position,
+                    global_position: position,
                     ..Default::default()
                 },
             );

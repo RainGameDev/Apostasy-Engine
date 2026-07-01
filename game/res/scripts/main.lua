@@ -1,27 +1,3 @@
--- Player stats, seeded once and persisted across frames as a Lua resource.
-register_resource("player", {
-	health = 87,
-	max_health = 100,
-	stamina = 63,
-	max_stamina = 100,
-	gold = 42,
-})
----@param world World
-function start(world)
-	world:load_worldspace("default")
-
-	-- camera
-	local camera = world:spawn()
-	world:add_component(
-		camera,
-		"Transform",
-		{ local_position = { 0.0, 1.6, 0.0 }, local_euler_angles = { 0.0, 180.0, 0.0 } }
-	)
-	world:add_component(camera, "Camera", { fov_y = 90.0, is_main = true })
-	world:add_tag(camera, "ActiveCamera")
-	world:set_parent(camera, player)
-end
-
 -- Rotates a 3-vector `v` (sequence {x,y,z}) by quaternion `q` (sequence {x,y,z,w}).
 local function rotate_vector_by_quaternion(q, v)
 	local qx, qy, qz, qw = q[1], q[2], q[3], q[4]
