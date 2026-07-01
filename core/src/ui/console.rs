@@ -10,6 +10,7 @@ use tracing_subscriber::layer::{Context as LayerContext, Layer};
 use tracing_subscriber::registry::LookupSpan;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
+use crate::ecs::cell::BorderRenderingDebug;
 use crate::ecs::resources::input_manager::{InputManager, KeyAction, KeyBind};
 use crate::ecs::world::World;
 use crate::physics::{ColliderRenderDebug, Noclip, PlayerColliderRenderDebug};
@@ -488,6 +489,21 @@ fn toggle_player_collider_render(world: &mut World, _args: &[String]) -> Command
     CommandOutcome::Success("Collider render on".to_string())
 }
 
+/// Toggles the `ToggleBorderRendering` resource.
+/// Shows a wireframe debug visual over every entity's collider.
+fn toggle_border_render(world: &mut World, _args: &[String]) -> CommandOutcome {
+    if let Ok(debug) = world.get_resource_mut::<BorderRenderingDebug>() {
+        debug.0 = !debug.0;
+        let on = debug.0;
+        return CommandOutcome::Success(format!(
+            "Collider render {}",
+            if on { "on" } else { "off" }
+        ));
+    }
+    world.insert_resource(BorderRenderingDebug(true));
+    CommandOutcome::Success("Collider render on".to_string())
+}
+
 /// Toggles the `ColliderRenderDebug` resource.
 /// Shows a wireframe debug visual over every entity's collider.
 fn toggle_collider_render(world: &mut World, _args: &[String]) -> CommandOutcome {
@@ -598,6 +614,16 @@ pub fn console_start(world: &mut World) -> Result<()> {
             .description("Toggles wireframe rendering for everything (models, terrain, voxels)")
             .args(0, Some(0))
             .handler(toggle_wireframe),
+    );
+
+    console.register(
+        CommandBuilder::new("tbr")
+            .usage("tbr")
+            .description(
+                "Toggle Border Render: enables/disables the rendering of the borders between cells",
+            )
+            .args(0, Some(0))
+            .handler(toggle_border_render),
     );
 
     console.register(

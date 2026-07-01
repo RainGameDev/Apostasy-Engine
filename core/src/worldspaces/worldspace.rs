@@ -4,8 +4,14 @@ use anyhow::{Result, anyhow};
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
-use crate::ecs::{Entity, components::Component, tags::{Tag, TagRegistration}};
-use crate::worldspaces::cell::{Cell, CellCoord, EntityBlob, EntitySnapshot, EntityId, no_tag_error, world_to_cell};
+use crate::ecs::{
+    Entity,
+    components::Component,
+    tags::{Tag, TagRegistration},
+};
+use crate::worldspaces::cell::{
+    Cell, CellCoord, EntityBlob, EntityId, EntitySnapshot, no_tag_error, world_to_cell,
+};
 
 /// An effectively infinite grid of [`Cell`]s.
 /// Cells are created lazily when first needed and dropped when empty and unnamed.
@@ -18,7 +24,11 @@ pub struct Worldspace {
 
 impl Worldspace {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), is_interior: false, cells: HashMap::new() }
+        Self {
+            name: name.into(),
+            is_interior: false,
+            cells: HashMap::new(),
+        }
     }
 
     pub fn clear(&mut self) {
@@ -68,7 +78,8 @@ impl Worldspace {
     }
 
     fn drop_if_empty(&mut self, coord: CellCoord) {
-        let droppable = self.cells
+        let droppable = self
+            .cells
             .get(&coord)
             .map(|c| c.is_empty() && c.name.is_empty())
             .unwrap_or(false);
@@ -103,7 +114,10 @@ impl Worldspace {
     }
 
     pub fn is_alive(&self, id: EntityId) -> bool {
-        self.cells.get(&id.cell).map(|c| c.is_alive(id)).unwrap_or(false)
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.is_alive(id))
+            .unwrap_or(false)
     }
 
     // ========== Names ==========
@@ -145,12 +159,16 @@ impl Worldspace {
     }
 
     pub fn has_component<T: Component + 'static>(&self, id: EntityId) -> bool {
-        self.cells.get(&id.cell).map(|c| c.has_component::<T>(id)).unwrap_or(false)
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.has_component::<T>(id))
+            .unwrap_or(false)
     }
 
     /// Returns all entity IDs across all cells that have component T.
     pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<EntityId> {
-        self.cells.values()
+        self.cells
+            .values()
             .flat_map(|c| c.get_entities_with_component::<T>())
             .collect()
     }
@@ -170,19 +188,24 @@ impl Worldspace {
     }
 
     pub fn has_tag<T: Tag + 'static>(&self, id: EntityId) -> bool {
-        self.cells.get(&id.cell).map(|c| c.has_tag::<T>(id)).unwrap_or(false)
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.has_tag::<T>(id))
+            .unwrap_or(false)
     }
 
     /// Returns the first entity across all cells with tag T.
     pub fn get_entity_with_tag<T: Tag + 'static>(&self) -> Result<EntityId> {
-        self.cells.values()
+        self.cells
+            .values()
             .find_map(|c| c.get_first_entity_with_tag::<T>())
             .ok_or_else(no_tag_error::<T>)
     }
 
     /// Returns all entities across all cells with tag T.
     pub fn get_entities_with_tag<T: Tag + 'static>(&self) -> Vec<EntityId> {
-        self.cells.values()
+        self.cells
+            .values()
             .flat_map(|c| c.get_entities_with_tag::<T>())
             .collect()
     }
@@ -202,11 +225,17 @@ impl Worldspace {
     // ========== Inspector / Editor helpers ==========
 
     pub fn get_entity_component_type_ids(&self, id: EntityId) -> Vec<TypeId> {
-        self.cells.get(&id.cell).map(|c| c.get_entity_component_type_ids(id)).unwrap_or_default()
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_entity_component_type_ids(id))
+            .unwrap_or_default()
     }
 
     pub fn get_entity_tag_type_ids(&self, id: EntityId) -> Vec<TypeId> {
-        self.cells.get(&id.cell).map(|c| c.get_entity_tag_type_ids(id)).unwrap_or_default()
+        self.cells
+            .get(&id.cell)
+            .map(|c| c.get_entity_tag_type_ids(id))
+            .unwrap_or_default()
     }
 
     pub fn remove_component_by_type_id(&mut self, id: EntityId, type_id: TypeId) {
@@ -216,7 +245,9 @@ impl Worldspace {
     }
 
     pub fn get_component_type_name(&self, id: EntityId, type_id: TypeId) -> Option<&'static str> {
-        self.cells.get(&id.cell)?.get_component_type_name(id, type_id)
+        self.cells
+            .get(&id.cell)?
+            .get_component_type_name(id, type_id)
     }
 
     pub fn with_component_any_mut(
@@ -225,7 +256,8 @@ impl Worldspace {
         type_id: TypeId,
         f: impl FnOnce(&mut dyn std::any::Any),
     ) -> bool {
-        self.cells.get_mut(&id.cell)
+        self.cells
+            .get_mut(&id.cell)
             .map(|c| c.with_component_any_mut(id, type_id, f))
             .unwrap_or(false)
     }
@@ -245,7 +277,11 @@ impl Worldspace {
 
     /// Parents `child_id` under `parent_id`.
     /// If they live in different cells, the child's subtree is migrated into the parent's cell first.
-    pub fn set_parent(&mut self, child_id: EntityId, new_parent_id: Option<EntityId>) -> Result<()> {
+    pub fn set_parent(
+        &mut self,
+        child_id: EntityId,
+        new_parent_id: Option<EntityId>,
+    ) -> Result<()> {
         match new_parent_id {
             None => {
                 self.cells
@@ -277,7 +313,8 @@ impl Worldspace {
         if ancestor_id.cell != descendant_id.cell {
             return false; // hierarchies never span cells
         }
-        self.cells.get(&ancestor_id.cell)
+        self.cells
+            .get(&ancestor_id.cell)
             .map(|c| c.is_ancestor_of(ancestor_id, descendant_id))
             .unwrap_or(false)
     }
@@ -287,19 +324,22 @@ impl Worldspace {
     }
 
     pub fn get_children_ids(&self, id: EntityId) -> Vec<EntityId> {
-        self.cells.get(&id.cell)
+        self.cells
+            .get(&id.cell)
             .map(|c| c.get_children_ids(id))
             .unwrap_or_default()
     }
 
     pub fn get_ancestors(&self, id: EntityId) -> Vec<EntityId> {
-        self.cells.get(&id.cell)
+        self.cells
+            .get(&id.cell)
             .map(|c| c.get_ancestors(id))
             .unwrap_or_default()
     }
 
     pub fn get_descendants(&self, id: EntityId) -> Vec<EntityId> {
-        self.cells.get(&id.cell)
+        self.cells
+            .get(&id.cell)
             .map(|c| c.get_descendants(id))
             .unwrap_or_default()
     }
@@ -333,7 +373,11 @@ impl Worldspace {
 
     /// Moves the subtree rooted at `root_id` into `target`, remapping all IDs.
     /// Returns the root's new ID.
-    pub fn move_subtree_to_cell(&mut self, root_id: EntityId, target: CellCoord) -> Option<EntityId> {
+    pub fn move_subtree_to_cell(
+        &mut self,
+        root_id: EntityId,
+        target: CellCoord,
+    ) -> Option<EntityId> {
         if root_id.cell == target {
             return Some(root_id);
         }

@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::collections::HashSet;
 
 use anyhow::{Result, anyhow};
+use apostasy_macros::Resource;
 use cgmath::Vector3;
 use hashbrown::HashMap;
 
@@ -11,6 +12,9 @@ use crate::ecs::{
     sets::SparseSet,
     tags::Tag,
 };
+
+#[derive(Resource, Clone, Copy)]
+pub struct BorderRenderingDebug(pub bool);
 
 /// Side length of a cell along the X and Z axes, in world units.
 /// Cells are infinite along Y.
@@ -546,7 +550,10 @@ impl Cell {
                     type_id,
                     EntityId {
                         cell: self.coord,
-                        entity: Entity { index: idx, generation },
+                        entity: Entity {
+                            index: idx,
+                            generation,
+                        },
                     },
                 ))
             })

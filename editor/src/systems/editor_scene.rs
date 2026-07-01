@@ -100,8 +100,6 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
         .add_tag::<ActiveCamera>()
         .add_tag::<EditorCamera>();
 
-    // Seed cell streaming with the saved render distance so far cells unload/reload
-    // around the camera. load_worldspace preserves this setting when it runs.
     let prefs = EditorPreferences::load();
     let mut streaming = WorldspaceStreaming::default();
     streaming.set_render_distance(prefs.render_distance);
@@ -329,7 +327,8 @@ pub fn editor_raycasting(world: &mut World) -> Result<()> {
             let ray = Ray::new(camera_transform.global_position, direction);
 
             let snapshots = build_collider_snapshot(world);
-            let hit = raycast_colliders_raw(&ray, 1000.0, &snapshots, None);
+            let terrains = world.get_entities_with_component::<TerrainChunk>();
+            let hit = raycast_colliders_raw(&ray, 1000.0, &snapshots, terrains.into());
 
             let gizmo_consuming = world
                 .get_resource::<crate::ui::gizmo::GizmoState>()

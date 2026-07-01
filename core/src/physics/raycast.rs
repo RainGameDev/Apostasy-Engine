@@ -297,14 +297,16 @@ pub fn raycast_colliders_raw(
     ray: &Ray,
     max_distance: f32,
     snapshots: &[ColliderSnapshot],
-    ignore_id: Option<EntityId>,
+    ignore_ids: Option<Vec<EntityId>>,
 ) -> Option<ColliderHit> {
     let mut nearest: Option<ColliderHit> = None;
     let mut nearest_dist = max_distance;
 
     for snap in snapshots {
-        if Some(snap.id) == ignore_id {
-            continue;
+        if let Some(ref ids) = ignore_ids {
+            if ids.contains(&snap.id) {
+                continue;
+            }
         }
         if snap.collider.is_area {
             continue;
@@ -331,7 +333,7 @@ pub fn collider_raycast(
     transform: &Transform,
     distance: f32,
     direction: Direction,
-    ignore_id: Option<EntityId>,
+    ignore_id: Option<Vec<EntityId>>,
 ) -> Option<ColliderHit> {
     let ray = get_camera_ray(transform, direction);
     let snapshots = build_collider_snapshot(world);
@@ -346,7 +348,7 @@ pub fn collider_raycast_camera(world: &mut World, range: f32) -> Option<Collider
     let ray = get_camera_ray(&transform, Direction::Forward);
     let snapshots = build_collider_snapshot(world);
     // Ignore the camera entity itself so it can't hit its own collider
-    raycast_colliders_raw(&ray, range, &snapshots, Some(camera_id))
+    raycast_colliders_raw(&ray, range, &snapshots, Some(vec![camera_id]))
 }
 
 /// Raycast from an arbitrary transform with a pre-built snapshot (avoids rebuilding
@@ -356,7 +358,7 @@ pub fn collider_raycast_with_snapshot(
     distance: f32,
     direction: Direction,
     snapshots: &[ColliderSnapshot],
-    ignore_id: Option<EntityId>,
+    ignore_id: Option<Vec<EntityId>>,
 ) -> Option<ColliderHit> {
     let ray = get_camera_ray(transform, direction);
     raycast_colliders_raw(&ray, distance, snapshots, ignore_id)
@@ -413,7 +415,9 @@ fn ray_vs_mesh(
 
         if node.left == 0 {
             for i in node.tri_start..node.tri_start + node.tri_count {
-                if let Some((t, local_normal)) = ray_vs_triangle(&local_ray, &bvh.triangles[i as usize]) {
+                if let Some((t, local_normal)) =
+                    ray_vs_triangle(&local_ray, &bvh.triangles[i as usize])
+                {
                     if t < nearest_t {
                         nearest_t = t;
                         nearest_normal = Some(mesh_rot * local_normal);

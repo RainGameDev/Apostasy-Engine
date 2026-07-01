@@ -482,13 +482,18 @@ impl UserData for WorldHandle {
                 mlua::Table,
                 mlua::Table,
                 f32,
-                Option<UserDataRef<EntityHandle>>,
+                Option<Vec<UserDataRef<EntityHandle>>>,
             )| {
                 let ray = Ray::new(table_to_vec3(&origin), table_to_vec3(&direction));
                 let world = this.world();
                 let snapshots = build_collider_snapshot(world);
-                let hit =
-                    raycast_colliders_raw(&ray, max_distance, &snapshots, ignore.map(|i| i.0));
+                let ignores: Vec<_> = ignore
+                    .unwrap_or_default()
+                    .chunks(1)
+                    .filter_map(|c| c.first())
+                    .map(|i| i.0)
+                    .collect();
+                let hit = raycast_colliders_raw(&ray, max_distance, &snapshots, Some(ignores));
                 match hit {
                     Some(h) => {
                         let t = lua.create_table()?;
