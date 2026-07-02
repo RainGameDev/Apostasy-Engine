@@ -5,7 +5,10 @@ use cgmath::{InnerSpace, Quaternion, Rotation3, Vector3, Zero};
 use crate::{
     log,
     ecs::{
-        component::Inspect, components::transform::Transform, systems::DeltaTime, tags::Player,
+        component::Inspect,
+        components::{serde_support::vec3_seq, transform::Transform},
+        systems::DeltaTime,
+        tags::Player,
         world::World,
     },
     ui::{DRAG_SIZE, LABEL_WIDTH},
@@ -13,9 +16,13 @@ use crate::{
 
 /// Rigid body physics state for an entity.
 /// Set `mass` to `0.0` or `process` to `false` to make the entity immovable.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[component(serde)]
+#[serde(default)]
 pub struct Velocity {
+    #[serde(with = "vec3_seq")]
     pub angular_velocity: Vector3<f32>,
+    #[serde(with = "vec3_seq")]
     pub linear_velocity: Vector3<f32>,
     pub mass: f32,
     /// Set by the collision system each frame, `true` if resting on a surface.
@@ -23,6 +30,7 @@ pub struct Velocity {
     /// Whether physics simulation is applied to this entity each frame.
     pub process: bool,
 
+    #[serde(with = "vec3_seq")]
     pub inertia_tensor: Vector3<f32>,
     /// Static friction coefficient.
     pub mu_static: f32,
@@ -134,62 +142,6 @@ impl Velocity {
             angular_damping: 1.0,
         }
     }
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        use crate::ecs::components::vec3_to_yaml;
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "Velocity".into());
-        map.insert("mass".into(), (self.mass as f64).into());
-        map.insert("process".into(), self.process.into());
-        map.insert(
-            "linear_velocity".into(),
-            vec3_to_yaml(self.linear_velocity),
-        );
-        map.insert("is_grounded".into(), self.is_grounded.into());
-        map.insert("mu_static".into(), (self.mu_static as f64).into());
-        map.insert("mu_kinetic".into(), (self.mu_kinetic as f64).into());
-        map.insert("restitution".into(), (self.restitution as f64).into());
-        map.insert("linear_damping".into(), (self.linear_damping as f64).into());
-        map.insert("angular_damping".into(), (self.angular_damping as f64).into());
-        Some(serde_yaml::Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        if let Some(v) = value.get("mass").and_then(|v| v.as_f64()) {
-            self.mass = v as f32;
-        }
-        if let Some(v) = value.get("process").and_then(|v| v.as_bool()) {
-            self.process = v;
-        }
-        if let Some(seq) = value.get("linear_velocity").and_then(|v| v.as_sequence())
-            && seq.len() >= 3
-        {
-            self.linear_velocity = Vector3::new(
-                seq[0].as_f64().unwrap_or(0.0) as f32,
-                seq[1].as_f64().unwrap_or(0.0) as f32,
-                seq[2].as_f64().unwrap_or(0.0) as f32,
-            );
-        }
-        if let Some(v) = value.get("is_grounded").and_then(|v| v.as_bool()) {
-            self.is_grounded = v;
-        }
-        if let Some(v) = value.get("mu_static").and_then(|v| v.as_f64()) {
-            self.mu_static = v as f32;
-        }
-        if let Some(v) = value.get("mu_kinetic").and_then(|v| v.as_f64()) {
-            self.mu_kinetic = v as f32;
-        }
-        if let Some(v) = value.get("restitution").and_then(|v| v.as_f64()) {
-            self.restitution = v as f32;
-        }
-        if let Some(v) = value.get("linear_damping").and_then(|v| v.as_f64()) {
-            self.linear_damping = v as f32;
-        }
-        if let Some(v) = value.get("angular_damping").and_then(|v| v.as_f64()) {
-            self.angular_damping = v as f32;
-        }
-        Ok(())
-    }
-
     /// Recomputes angular_velocity from the tangential component of linear_velocity
     /// given a contact normal and sphere radius.
     pub fn sync_angular_from_linear(&mut self, radius: f32, normal: Vector3<f32>) {

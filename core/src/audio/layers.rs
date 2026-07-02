@@ -1,8 +1,9 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AudioLayer {
     #[default]
+    #[serde(rename = "Effect", alias = "SoundEffect")]
     SoundEffect,
     Music,
     FootStep,

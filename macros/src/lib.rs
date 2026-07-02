@@ -4,7 +4,39 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{DeriveInput, ItemFn, LitInt, LitStr, Token, parse_macro_input, parse_quote};
 
-#[proc_macro_derive(Component, attributes(component_deserialize))]
+/// Options parsed from `#[component(...)]`: `serde` opts in to registry-driven
+/// serialization; `skip_if = "method"` suppresses reads when the predicate is
+/// true; `post_deserialize = "method"` runs after every deserialize/apply.
+#[derive(Default)]
+struct ComponentOpts {
+    serde: bool,
+    skip_if: Option<syn::Ident>,
+    post_deserialize: Option<syn::Ident>,
+}
+
+fn parse_component_opts(attrs: &[syn::Attribute]) -> ComponentOpts {
+    let mut opts = ComponentOpts::default();
+    for attr in attrs {
+        if !attr.path().is_ident("component") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("serde") {
+                opts.serde = true;
+            } else if meta.path.is_ident("skip_if") {
+                let s: LitStr = meta.value()?.parse()?;
+                opts.skip_if = Some(syn::Ident::new(&s.value(), s.span()));
+            } else if meta.path.is_ident("post_deserialize") {
+                let s: LitStr = meta.value()?.parse()?;
+                opts.post_deserialize = Some(syn::Ident::new(&s.value(), s.span()));
+            }
+            Ok(())
+        });
+    }
+    opts
+}
+
+#[proc_macro_derive(Component, attributes(component))]
 pub fn component_derive(input: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(input as DeriveInput);
     ast.generics
@@ -15,6 +47,65 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
     let struct_name = &ast.ident;
     let struct_name_str = struct_name.to_string();
     let (impl_generics, type_generics, where_clause) = &ast.generics.split_for_impl();
+    let opts = parse_component_opts(&ast.attrs);
+
+    let post_deserialize = match &opts.post_deserialize {
+        Some(method) => quote! { c.#method(); },
+        None => quote! {},
+    };
+    let read_body = if opts.serde {
+        let skip = match &opts.skip_if {
+            Some(method) => quote! {
+                if c.#method() {
+                    return None;
+                }
+            },
+            None => quote! {},
+        };
+        quote! {
+            world.get_component::<#struct_name>(id).and_then(|c| {
+                #skip
+                apostasy_core::ecs::components::serde_support::serialize_component(c, #struct_name_str)
+            })
+        }
+    } else {
+        quote! {{
+            let _ = (&world, &id);
+            None
+        }}
+    };
+    let deserialize_body = if opts.serde {
+        quote! {
+            if let Some(c) = component.as_any_mut().downcast_mut::<#struct_name>() {
+                apostasy_core::ecs::components::serde_support::apply_patch(c, value)?;
+                #post_deserialize
+            }
+            Ok(())
+        }
+    } else {
+        quote! {{
+            let _ = (&component, &value);
+            Ok(())
+        }}
+    };
+    let apply_body = if opts.serde {
+        quote! {
+            if !world.has_component::<#struct_name>(id) {
+                world.add_component(id, <#struct_name as ::core::default::Default>::default());
+            }
+            if let Some(c) = world.get_component_mut::<#struct_name>(id) {
+                let _ = apostasy_core::ecs::components::serde_support::apply_patch(c, value);
+                #post_deserialize
+            }
+        }
+    } else {
+        quote! {
+            let _ = &value;
+            if !world.has_component::<#struct_name>(id) {
+                world.add_component(id, <#struct_name as ::core::default::Default>::default());
+            }
+        }
+    };
 
     let output = quote! {
         impl #impl_generics apostasy_core::ecs::components::Component for #struct_name #type_generics
@@ -34,11 +125,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                 type_name: #struct_name_str,
                 create: || Box::new(#struct_name::default()),
                 deserialize: |component, value| {
-                    if let Some(c) = component.as_any_mut().downcast_mut::<#struct_name>() {
-                        c.deserialize(value)
-                    } else {
-                        Ok(())
-                    }
+                    #deserialize_body
                 },
                 add_to_world: |world, id, component| {
                     if let Some(c) = component.as_any().downcast_ref::<#struct_name>() {
@@ -46,19 +133,10 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                     }
                 },
                 read: |world, id| {
-                    // Bring the trait into scope so the call resolves for components
-                    // without an inherent `serialize` (falling back to the default
-                    // `None`); an inherent method still takes precedence.
-                    use apostasy_core::ecs::components::Component as _;
-                    world.get_component::<#struct_name>(id).and_then(|c| c.serialize())
+                    #read_body
                 },
                 apply: |world, id, value| {
-                    if !world.has_component::<#struct_name>(id) {
-                        world.add_component(id, <#struct_name as ::core::default::Default>::default());
-                    }
-                    if let Some(c) = world.get_component_mut::<#struct_name>(id) {
-                        let _ = c.deserialize(value);
-                    }
+                    #apply_body
                 },
                 remove: |world, id| {
                     world.remove_component::<#struct_name>(id);

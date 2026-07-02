@@ -67,8 +67,10 @@ fn is_active(h: &SoundHandle) -> bool {
     )
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Sound {
+    #[serde(skip)]
     pub data: Option<StaticSoundData>,
     pub path: String,
     pub layer: AudioLayer,
@@ -78,10 +80,12 @@ pub struct Sound {
     pub fade_out: f32,
     pub looping: bool,
     pub auto_play: bool,
+    #[serde(skip)]
     pub auto_played: bool,
     pub spatial: bool,
     pub max_distance: f32,
     /// All currently active (playing or paused) instances.
+    #[serde(skip)]
     pub handle: Arc<Mutex<Vec<SoundHandle>>>,
 }
 

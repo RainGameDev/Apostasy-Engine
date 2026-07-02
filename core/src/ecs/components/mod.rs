@@ -1,4 +1,5 @@
 pub mod inspect_values;
+pub mod serde_support;
 pub mod transform;
 
 use std::any::{Any, TypeId};
@@ -11,6 +12,8 @@ use crate::ecs::{Entity, sets::SparseSet};
 pub type BoxedComponent = Box<dyn Component + Send + Sync>;
 
 /// A trait that defines a component that can be attached to an entity.
+/// Serialization is opt-in via `#[component(serde)]` on the derive, which
+/// generates registry read/apply from the component's serde impls.
 pub trait Component: Send + Sync + 'static + ComponentContainer + std::fmt::Debug {
     fn name() -> &'static str
     where
@@ -18,26 +21,6 @@ pub trait Component: Send + Sync + 'static + ComponentContainer + std::fmt::Debu
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn type_name(&self) -> &'static str;
-
-    /// Serializes this component to a yaml value, for scene persistence and Lua
-    /// scripting. The default `None` means "not serializable"; a component opts
-    /// in by defining an **inherent** `serialize(&self) -> Option<Value>` method,
-    /// which takes precedence over this trait default when called on the concrete
-    /// type (no specialization required). The shape should mirror what the
-    /// component's `deserialize` accepts, so values round-trip.
-    fn serialize(&self) -> Option<serde_yaml::Value> {
-        None
-    }
-}
-
-/// Encodes a vector as a `[x, y, z]` yaml sequence — the shared representation
-/// used by component `serialize`/`deserialize` and the worldspace serializer.
-pub fn vec3_to_yaml(v: cgmath::Vector3<f32>) -> serde_yaml::Value {
-    serde_yaml::Value::Sequence(vec![
-        serde_yaml::Value::from(v.x as f64),
-        serde_yaml::Value::from(v.y as f64),
-        serde_yaml::Value::from(v.z as f64),
-    ])
 }
 
 /// Workaround for object safety — allows cloning a boxed component.

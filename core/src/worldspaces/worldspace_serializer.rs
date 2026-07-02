@@ -26,9 +26,6 @@ fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
     let name = world.get_name(id).unwrap_or("Entity").to_string();
     let children_ids = world.get_children_ids(id);
 
-    // Serialize every registered component that the entity has and that opts in
-    // to serialization (its `read` returns `Some`). New serializable components
-    // are persisted automatically — no per-type wiring here.
     let mut components_data: serde_yaml::Sequence = Vec::new();
     for reg in inventory::iter::<crate::ecs::components::ComponentRegistration>() {
         if let Some(v) = (reg.read)(world, id) {
@@ -221,11 +218,6 @@ fn populate_entity(world: &mut World, id: EntityId, value: &serde_yaml::Value) {
         }
     }
 
-    // Terrain chunks carry a mesh Collider and GPU mesh buffers that can't
-    // round-trip through generic component YAML (see Collider::serialize's
-    // "Mesh" branch — no triangle/BVH data survives). Force a rebuild so
-    // reloaded chunks regain real collision geometry instead of the empty
-    // stub mesh collider left by deserialize.
     if world.has_component::<TerrainChunk>(id) {
         world.add_tag::<NeedsTerrainRebuild>(id);
     }

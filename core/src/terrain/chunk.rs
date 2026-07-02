@@ -95,9 +95,6 @@ impl TerrainChunk {
         )
     }
 
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 /// GPU mesh buffers for a terrain chunk.
@@ -111,11 +108,6 @@ pub struct TerrainMesh {
     pub host_visible: bool,
 }
 
-impl TerrainMesh {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
 
 impl GpuMesh for TerrainMesh {
     fn get_vertex_buffer(&self) -> vk::Buffer {

@@ -3,7 +3,11 @@ use apostasy_macros::{Component, update};
 use cgmath::{Deg, Euler, InnerSpace, Matrix3, Quaternion, Rotation, Rotation3, Vector3};
 
 use crate::{
-    ecs::{component::Inspect, world::World},
+    ecs::{
+        component::Inspect,
+        components::serde_support::{quat_xyzw, vec3_seq},
+        world::World,
+    },
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -15,16 +19,27 @@ pub const FORWARD: Vector3<f32> = Vector3::new(0.0, 0.0, -1.0);
 ///
 /// Local fields are set directly; global fields are derived from local values
 /// (plus any parent transform) each frame by `transform_update`.
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[component(serde)]
+#[serde(default)]
 pub struct Transform {
+    #[serde(with = "vec3_seq")]
     pub local_position: Vector3<f32>,
     /// Euler angles in degrees, applied as Ry * Rx * Rz.
+    #[serde(with = "vec3_seq")]
     pub local_euler_angles: Vector3<f32>,
+    /// Derived from `local_euler_angles` each frame; not persisted.
+    #[serde(skip)]
     pub local_rotation: Quaternion<f32>,
+    #[serde(with = "vec3_seq")]
     pub local_scale: Vector3<f32>,
+    #[serde(with = "vec3_seq")]
     pub global_position: Vector3<f32>,
+    #[serde(with = "quat_xyzw")]
     pub global_rotation: Quaternion<f32>,
+    #[serde(with = "vec3_seq")]
     pub global_euler_angles: Vector3<f32>,
+    #[serde(with = "vec3_seq")]
     pub global_scale: Vector3<f32>,
 }
 
@@ -44,73 +59,6 @@ impl Default for Transform {
 }
 
 impl Transform {
-    /// Serializes the transform. Global fields are derived each frame by
-    /// `transform_update`, so they're included for reading (e.g. from Lua)
-    /// but ignored on `deserialize` — writing them back has no effect.
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        use crate::ecs::components::vec3_to_yaml;
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "Transform".into());
-        map.insert("local_position".into(), vec3_to_yaml(self.local_position));
-        map.insert(
-            "local_euler_angles".into(),
-            vec3_to_yaml(self.local_euler_angles),
-        );
-        map.insert("local_scale".into(), vec3_to_yaml(self.local_scale));
-        map.insert(
-            "global_position".into(),
-            vec3_to_yaml(self.global_position),
-        );
-        map.insert(
-            "global_euler_angles".into(),
-            vec3_to_yaml(self.global_euler_angles),
-        );
-        map.insert("global_scale".into(), vec3_to_yaml(self.global_scale));
-        map.insert(
-            "global_rotation".into(),
-            serde_yaml::Value::Sequence(vec![
-                (self.global_rotation.v.x as f64).into(),
-                (self.global_rotation.v.y as f64).into(),
-                (self.global_rotation.v.z as f64).into(),
-                (self.global_rotation.s as f64).into(),
-            ]),
-        );
-        Some(serde_yaml::Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        if let Some(seq) = value.get("local_position").and_then(|v| v.as_sequence())
-            && seq.len() >= 3
-        {
-            self.local_position = Vector3::new(
-                seq[0].as_f64().unwrap_or(0.0) as f32,
-                seq[1].as_f64().unwrap_or(0.0) as f32,
-                seq[2].as_f64().unwrap_or(0.0) as f32,
-            );
-        }
-        if let Some(seq) = value
-            .get("local_euler_angles")
-            .and_then(|v| v.as_sequence())
-            && seq.len() >= 3
-        {
-            self.local_euler_angles = Vector3::new(
-                seq[0].as_f64().unwrap_or(0.0) as f32,
-                seq[1].as_f64().unwrap_or(0.0) as f32,
-                seq[2].as_f64().unwrap_or(0.0) as f32,
-            );
-        }
-        if let Some(seq) = value.get("local_scale").and_then(|v| v.as_sequence())
-            && seq.len() >= 3
-        {
-            self.local_scale = Vector3::new(
-                seq[0].as_f64().unwrap_or(1.0) as f32,
-                seq[1].as_f64().unwrap_or(1.0) as f32,
-                seq[2].as_f64().unwrap_or(1.0) as f32,
-            );
-        }
-
-        Ok(())
-    }
     /// Up direction in local space.
     pub fn calculate_up(&self) -> Vector3<f32> {
         self.local_rotation.rotate_vector(UP)

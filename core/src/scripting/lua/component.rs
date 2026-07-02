@@ -8,9 +8,40 @@ use crate::ui::{DRAG_SIZE, LABEL_WIDTH};
 /// All of an entity's lua defined componentes, keyed by name.
 /// Stored as `serde_yaml::Value` so it can bridge lua tables and the engine's existing component
 /// seraliation
-#[derive(Component, Clone, Debug, Default)]
+#[derive(Component, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[component(serde, skip_if = "is_empty")]
+#[serde(default)]
 pub struct ScriptComponents {
+    #[serde(rename = "components", with = "sorted_map")]
     pub map: HashMap<String, Value>,
+}
+
+/// Serde for the script component map; keys are sorted on write so saved
+/// scenes diff cleanly (HashMap order isn't stable).
+mod sorted_map {
+    use super::*;
+    use serde::ser::SerializeMap;
+
+    pub fn serialize<S: serde::Serializer>(
+        map: &HashMap<String, Value>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut names: Vec<&String> = map.keys().collect();
+        names.sort();
+        let mut out = serializer.serialize_map(Some(names.len()))?;
+        for name in names {
+            out.serialize_entry(name, &map[name])?;
+        }
+        out.end()
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<HashMap<String, Value>, D::Error> {
+        use serde::Deserialize as _;
+        let entries = std::collections::BTreeMap::<String, Value>::deserialize(deserializer)?;
+        Ok(entries.into_iter().collect())
+    }
 }
 
 impl Inspect for ScriptComponents {
@@ -108,34 +139,9 @@ impl ScriptComponents {
         self.map.contains_key(name)
     }
 
-    /// Serializes all script components nested under a single `ScriptComponents`
-    /// scene entry: `{ type: "ScriptComponents", components: { name: value, .. } }`.
-    /// Keys are sorted so saved scenes diff cleanly (HashMap order isn't stable).
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        if self.map.is_empty() {
-            return None;
-        }
-        let mut names: Vec<&String> = self.map.keys().collect();
-        names.sort();
-        let mut components = serde_yaml::Mapping::new();
-        for name in names {
-            components.insert(name.clone().into(), self.map[name].clone());
-        }
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "ScriptComponents".into());
-        map.insert("components".into(), Value::Mapping(components));
-        Some(Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        if let Some(components) = value.get("components").and_then(|v| v.as_mapping()) {
-            for (k, v) in components {
-                if let Some(name) = k.as_str() {
-                    self.map.insert(name.to_string(), v.clone());
-                }
-            }
-        }
-        Ok(())
+    /// True when no script components are attached; such entities skip scene persistence.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 }
 

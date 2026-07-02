@@ -21,9 +21,6 @@ impl Default for Container {
 }
 
 impl Container {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
 
     pub fn add_item(&mut self, item: ContainerItem) -> &mut Self {
         if self.items.len() < (self.size.x * self.size.y) as usize {

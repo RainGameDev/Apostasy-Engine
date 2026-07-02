@@ -16,17 +16,37 @@ use crate::rendering::components::camera::{ActiveCamera, EditorCamera};
 use crate::ui::{DRAG_SIZE, LABEL_WIDTH};
 use apostasy_macros::update;
 
-#[derive(Clone, Component, Debug, Default)]
+#[derive(Clone, Component, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[component(serde, post_deserialize = "reload_all")]
+#[serde(default)]
 pub struct AudioPlayer {
+    #[serde(rename = "sounds")]
     pub audio: Vec<Sound>,
     #[doc(hidden)]
+    #[serde(skip)]
     pub pending_play: Option<usize>,
     #[doc(hidden)]
+    #[serde(skip)]
     pub pending_stop: Option<usize>,
     #[doc(hidden)]
+    #[serde(skip)]
     pub pending_pause: Option<usize>,
     #[doc(hidden)]
+    #[serde(skip)]
     pub pending_resume: Option<usize>,
+}
+
+impl AudioPlayer {
+    /// Reloads sound data from each sound's `path` after deserialization.
+    pub fn reload_all(&mut self) {
+        for sound in &mut self.audio {
+            if !sound.path.is_empty()
+                && let Err(e) = sound.reload()
+            {
+                crate::log_warn!("AudioPlayer: failed to load '{}': {}", sound.path, e);
+            }
+        }
+    }
 }
 
 impl Inspect for AudioPlayer {
@@ -448,85 +468,6 @@ pub fn audio_player_pending(world: &mut World) -> Result<()> {
 }
 
 impl AudioPlayer {
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        let sounds: Vec<serde_yaml::Value> = self
-            .audio
-            .iter()
-            .map(|s| {
-                let mut map = serde_yaml::Mapping::new();
-                map.insert("path".into(), s.path.clone().into());
-                map.insert("layer".into(), s.layer.as_str().into());
-                map.insert("volume".into(), (s.volume as f64).into());
-                map.insert("pitch".into(), (s.pitch as f64).into());
-                map.insert("fade_in".into(), (s.fade_in as f64).into());
-                map.insert("fade_out".into(), (s.fade_out as f64).into());
-                map.insert("looping".into(), s.looping.into());
-                map.insert("auto_play".into(), s.auto_play.into());
-                map.insert("spatial".into(), s.spatial.into());
-                map.insert("max_distance".into(), (s.max_distance as f64).into());
-                serde_yaml::Value::Mapping(map)
-            })
-            .collect();
-
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "AudioPlayer".into());
-        map.insert("sounds".into(), serde_yaml::Value::Sequence(sounds));
-        Some(serde_yaml::Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> Result<()> {
-        let Some(seq) = value.get("sounds").and_then(|v| v.as_sequence()) else {
-            return Ok(());
-        };
-
-        self.audio.clear();
-        for entry in seq {
-            let mut sound = crate::audio::sound::Sound::default();
-
-            if let Some(p) = entry.get("path").and_then(|v| v.as_str()) {
-                sound.path = p.to_string();
-            }
-            if let Some(l) = entry.get("layer").and_then(|v| v.as_str())
-                && let Some(layer) = AudioLayer::from_str(l)
-            {
-                sound.layer = layer;
-            }
-            if let Some(v) = entry.get("volume").and_then(|v| v.as_f64()) {
-                sound.volume = v as f32;
-            }
-            if let Some(v) = entry.get("pitch").and_then(|v| v.as_f64()) {
-                sound.pitch = v as f32;
-            }
-            if let Some(v) = entry.get("fade_in").and_then(|v| v.as_f64()) {
-                sound.fade_in = v as f32;
-            }
-            if let Some(v) = entry.get("fade_out").and_then(|v| v.as_f64()) {
-                sound.fade_out = v as f32;
-            }
-            if let Some(v) = entry.get("looping").and_then(|v| v.as_bool()) {
-                sound.looping = v;
-            }
-            if let Some(v) = entry.get("auto_play").and_then(|v| v.as_bool()) {
-                sound.auto_play = v;
-            }
-
-            if let Some(v) = entry.get("spatial").and_then(|v| v.as_bool()) {
-                sound.spatial = v;
-            }
-            if let Some(v) = entry.get("max_distance").and_then(|v| v.as_f64()) {
-                sound.max_distance = v as f32;
-            }
-
-            if !sound.path.is_empty()
-                && let Err(e) = sound.reload()
-            {
-                crate::log_warn!("AudioPlayer: failed to load '{}': {}", sound.path, e);
-            }
-
-            self.audio.push(sound);
-        }
-        Ok(())
-    }
 
     /// Plays a sound by index, returning a `SoundHandle`.
     /// Music-layer sounds stream from disk; all others use the preloaded buffer.

@@ -34,7 +34,9 @@ pub struct PlayerColliderRenderDebug(pub bool);
 #[derive(Resource, Clone, Default)]
 pub struct ColliderRenderDebug(pub bool);
 
-#[derive(Component, Inspect, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[component(serde)]
+#[serde(default)]
 pub struct Gravity {
     pub strength: f32,
 }
@@ -45,21 +47,6 @@ impl Default for Gravity {
     }
 }
 
-impl Gravity {
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "Gravity".into());
-        map.insert("strength".into(), (self.strength as f64).into());
-        Some(serde_yaml::Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        if let Some(v) = value.get("strength").and_then(|v| v.as_f64()) {
-            self.strength = v as f32;
-        }
-        Ok(())
-    }
-}
 #[update(priority = 1, mode = "all")]
 pub fn resolve_mesh_colliders(world: &mut World) -> Result<()> {
     if !world.has_resource::<AssetManager>() {

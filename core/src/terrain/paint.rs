@@ -26,9 +26,6 @@ impl Default for TerrainPaintData {
 }
 
 impl TerrainPaintData {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
 
     pub fn new(resolution: u32) -> Self {
         let side = (resolution + 1) as usize;

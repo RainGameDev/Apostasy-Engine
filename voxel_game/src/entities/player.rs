@@ -18,7 +18,7 @@ use apostasy_core::{
         camera::{ActiveCamera, Camera, GameCamera},
         model_renderer::ModelRenderer,
     },
-    serde_yaml, start,
+    start,
     ui::ui_context::EguiContext,
     update,
     voxels::{
@@ -39,11 +39,6 @@ pub struct PlayerData {
     pub current_build_ticks: u32,
 }
 
-impl PlayerData {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> Result<()> {
-        Ok(())
-    }
-}
 
 impl Default for PlayerData {
     fn default() -> Self {

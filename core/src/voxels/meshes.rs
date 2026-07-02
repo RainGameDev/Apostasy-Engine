@@ -124,15 +124,7 @@ pub struct WaterMesh {
     pub index_count: u32,
 }
 
-impl VoxelChunkMesh {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
 impl WaterMesh {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 #[derive(Debug, Tag, Clone, Default)]

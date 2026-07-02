@@ -5,7 +5,6 @@ use apostasy_core::{
     ecs::{components::{transform::Transform, Inspect}, world::World},
     physics::{Gravity, collider::Collider, raycast::Direction, velocity::Velocity},
     rand::{RngExt, rng},
-    serde_yaml::Value,
     start, update,
     voxels::voxel_raycast::voxel_raycast,
 };
@@ -33,11 +32,6 @@ impl Default for PassiveAI {
 
 impl Inspect for PassiveAI {}
 
-impl PassiveAI {
-    pub fn deserialize(&mut self, _value: &Value) -> Result<()> {
-        Ok(())
-    }
-}
 
 #[update]
 pub fn entity_process(world: &mut World) -> Result<()> {

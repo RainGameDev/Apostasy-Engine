@@ -9,7 +9,7 @@ use crate::{
     ecs::{
         cell::EntityId,
         component::Inspect,
-        components::transform::Transform,
+        components::{serde_support::vec3_seq, transform::Transform},
         tags::{ColliderDebugVisual, Player},
         world::World,
     },
@@ -19,27 +19,55 @@ use crate::{
 };
 
 /// The geometric shape used for collision detection.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "shape")]
 pub enum ColliderShape {
     Cuboid {
+        #[serde(with = "vec3_seq", default = "default_cuboid_size")]
         size: Vector3<f32>,
     },
     Sphere {
+        #[serde(default = "default_radius")]
         radius: f32,
     },
     Capsule {
+        #[serde(default = "default_capsule_radius")]
         radius: f32,
+        #[serde(default = "default_height")]
         height: f32,
     },
     Cylinder {
+        #[serde(default = "default_capsule_radius")]
         radius: f32,
+        #[serde(default = "default_height")]
         height: f32,
     },
     Mesh {
+        #[serde(skip)]
         triangles: Arc<Vec<[Vector3<f32>; 3]>>,
+        #[serde(skip, default = "empty_bvh")]
         bvh: Arc<Bvh>,
         model_path: String,
     },
+}
+
+fn default_cuboid_size() -> Vector3<f32> {
+    Vector3::new(1.0, 1.0, 1.0)
+}
+fn default_radius() -> f32 {
+    1.0
+}
+fn default_capsule_radius() -> f32 {
+    0.5
+}
+fn default_height() -> f32 {
+    2.0
+}
+fn empty_bvh() -> Arc<Bvh> {
+    Arc::new(Bvh::empty())
+}
+fn zero_vec3() -> Vector3<f32> {
+    Vector3::zero()
 }
 
 impl ColliderShape {
@@ -81,12 +109,17 @@ impl ColliderShape {
 
 /// Collision volume attached to an entity.
 /// `is_static` entities are immovable, `is_area` entities detect overlaps but do not resolve them.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[component(serde)]
 pub struct Collider {
+    #[serde(flatten)]
     pub shape: ColliderShape,
     /// Local-space offset from the entity's origin to the collider center.
+    #[serde(with = "vec3_seq", default = "zero_vec3")]
     pub offset: Vector3<f32>,
+    #[serde(default)]
     pub is_static: bool,
+    #[serde(default)]
     pub is_area: bool,
 }
 
@@ -261,102 +294,6 @@ impl Default for Collider {
 }
 
 impl Collider {
-    pub fn serialize(&self) -> Option<serde_yaml::Value> {
-        use crate::ecs::components::vec3_to_yaml;
-        let mut map = serde_yaml::Mapping::new();
-        map.insert("type".into(), "Collider".into());
-        match &self.shape {
-            ColliderShape::Cuboid { size } => {
-                map.insert("shape".into(), "Cuboid".into());
-                map.insert("size".into(), vec3_to_yaml(*size));
-            }
-            ColliderShape::Sphere { radius } => {
-                map.insert("shape".into(), "Sphere".into());
-                map.insert("radius".into(), (*radius as f64).into());
-            }
-            ColliderShape::Capsule { radius, height } => {
-                map.insert("shape".into(), "Capsule".into());
-                map.insert("radius".into(), (*radius as f64).into());
-                map.insert("height".into(), (*height as f64).into());
-            }
-            ColliderShape::Cylinder { radius, height } => {
-                map.insert("shape".into(), "Cylinder".into());
-                map.insert("radius".into(), (*radius as f64).into());
-                map.insert("height".into(), (*height as f64).into());
-            }
-            ColliderShape::Mesh { model_path, .. } => {
-                map.insert("shape".into(), "Mesh".into());
-                map.insert("model_path".into(), model_path.clone().into());
-            }
-        }
-        map.insert("offset".into(), vec3_to_yaml(self.offset));
-        map.insert("is_static".into(), self.is_static.into());
-        map.insert("is_area".into(), self.is_area.into());
-        Some(serde_yaml::Value::Mapping(map))
-    }
-
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        let shape_str = value
-            .get("shape")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Cuboid");
-        self.shape = match shape_str {
-            "Sphere" => ColliderShape::Sphere {
-                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
-            },
-            "Capsule" => ColliderShape::Capsule {
-                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32,
-                height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
-            },
-            "Cylinder" => ColliderShape::Cylinder {
-                radius: value.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32,
-                height: value.get("height").and_then(|v| v.as_f64()).unwrap_or(2.0) as f32,
-            },
-            "Mesh" => ColliderShape::Mesh {
-                model_path: value
-                    .get("model_path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                triangles: Arc::new(Vec::new()),
-                bvh: Arc::new(Bvh::empty()),
-            },
-            _ => {
-                let size = value
-                    .get("size")
-                    .and_then(|v| v.as_sequence())
-                    .map(|seq| {
-                        if seq.len() >= 3 {
-                            Vector3::new(
-                                seq[0].as_f64().unwrap_or(1.0) as f32,
-                                seq[1].as_f64().unwrap_or(1.0) as f32,
-                                seq[2].as_f64().unwrap_or(1.0) as f32,
-                            )
-                        } else {
-                            Vector3::new(1.0, 1.0, 1.0)
-                        }
-                    })
-                    .unwrap_or(Vector3::new(1.0, 1.0, 1.0));
-                ColliderShape::Cuboid { size }
-            }
-        };
-        if let Some(seq) = value.get("offset").and_then(|v| v.as_sequence()) {
-            if seq.len() >= 3 {
-                self.offset = Vector3::new(
-                    seq[0].as_f64().unwrap_or(0.0) as f32,
-                    seq[1].as_f64().unwrap_or(0.0) as f32,
-                    seq[2].as_f64().unwrap_or(0.0) as f32,
-                );
-            }
-        }
-        if let Some(v) = value.get("is_static").and_then(|v| v.as_bool()) {
-            self.is_static = v;
-        }
-        if let Some(v) = value.get("is_area").and_then(|v| v.as_bool()) {
-            self.is_area = v;
-        }
-        Ok(())
-    }
 
     /// Creates a dynamic collider.
     pub fn new(shape: ColliderShape, offset: Vector3<f32>) -> Self {
@@ -685,9 +622,6 @@ impl CollisionEvents {
         Self::default()
     }
 
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 /// A snapshot of a collider and it's needed data.
@@ -1050,11 +984,6 @@ pub struct MeshColliderDebugSource {
     pub triangles: Vec<[Vector3<f32>; 3]>,
 }
 
-impl MeshColliderDebugSource {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
 
 /// Spawns/updates wireframe debug visuals for every `Collider` while `ColliderRenderDebug` is enabled.
 #[update(mode = "all")]

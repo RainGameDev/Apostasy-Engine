@@ -1,6 +1,8 @@
 use apostasy_macros::{Component, Inspect};
 
-#[derive(Component, Inspect, Clone, Debug)]
+#[derive(Component, Inspect, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[component(serde)]
+#[serde(transparent)]
 pub struct Voxel {
     pub name: String,
 }
@@ -10,15 +12,5 @@ impl Default for Voxel {
         Self {
             name: "Apostasy:Voxel:Air".to_string(),
         }
-    }
-}
-
-impl Voxel {
-    pub fn deserialize(&mut self, value: &serde_yaml::Value) -> anyhow::Result<()> {
-        self.name = value
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("name expects a string"))?
-            .to_string();
-        Ok(())
     }
 }

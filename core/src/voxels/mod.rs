@@ -16,11 +16,6 @@ pub mod voxel_raycast;
 pub struct VoxelTransform {
     pub position: Vector3<i32>,
 }
-impl VoxelTransform {
-    pub fn deserialize(&mut self, _value: &serde_yaml::Value) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
 
 impl Default for VoxelTransform {
     fn default() -> Self {
