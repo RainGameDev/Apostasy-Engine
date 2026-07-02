@@ -14,6 +14,7 @@ use crate::{
         worldspace_streaming::WorldspaceStreaming,
     },
     rendering::components::camera::{ActiveCamera, EditorCamera},
+    terrain::chunk::{NeedsTerrainRebuild, TerrainChunk},
 };
 
 fn serialize_entity(world: &World, id: EntityId) -> Option<serde_yaml::Value> {
@@ -218,6 +219,15 @@ fn populate_entity(world: &mut World, id: EntityId, value: &serde_yaml::Value) {
                 }
             }
         }
+    }
+
+    // Terrain chunks carry a mesh Collider and GPU mesh buffers that can't
+    // round-trip through generic component YAML (see Collider::serialize's
+    // "Mesh" branch — no triangle/BVH data survives). Force a rebuild so
+    // reloaded chunks regain real collision geometry instead of the empty
+    // stub mesh collider left by deserialize.
+    if world.has_component::<TerrainChunk>(id) {
+        world.add_tag::<NeedsTerrainRebuild>(id);
     }
 }
 

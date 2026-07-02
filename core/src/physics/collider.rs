@@ -745,6 +745,11 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
         .collect()
 }
 
+/// Allowed resting penetration before positional correction kicks in. Prevents
+/// resting contacts from being pushed to exactly zero overlap every frame, which
+/// gravity would immediately re-penetrate, causing visible micro bouncing.
+const COLLISION_SLOP: f32 = 0.01;
+
 /// Detects collisions between all entities using OBB vs OBB
 #[update(priority = 10)]
 pub fn collision_detection_system(world: &mut World) -> Result<()> {
@@ -800,6 +805,14 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                 };
                 let upness = normal.y.abs();
 
+                // Only push out penetration beyond a small slop margin. Correcting
+                // the full depth every frame snaps resting contacts to exactly zero
+                // overlap, which gravity immediately re-penetrates on the next frame —
+                // visible as micro bouncing/jitter. Leaving a tiny allowed overlap
+                // breaks that resolve/re-penetrate cycle.
+                let correction_depth = (depth - COLLISION_SLOP).max(0.0);
+                let correction_vector = normal * correction_depth;
+
                 let (r_a, r_b) = match (&a.collider.shape, &b.collider.shape) {
                     (ColliderShape::Sphere { radius }, _) => {
                         let contact_point = center_a - normal * *radius;
@@ -827,8 +840,8 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     // Positional correction
                     match (a.is_static, b.is_static) {
                         (false, false) => {
-                            apply_position_correction(world, a.id, translation_vector * 0.5);
-                            apply_position_correction(world, b.id, -translation_vector * 0.5);
+                            apply_position_correction(world, a.id, correction_vector * 0.5);
+                            apply_position_correction(world, b.id, -correction_vector * 0.5);
                             // Cancel velocity along normal for both
                             if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
                                 let vn = v.linear_velocity.dot(normal);
@@ -844,7 +857,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                             }
                         }
                         (true, false) => {
-                            apply_position_correction(world, b.id, -translation_vector);
+                            apply_position_correction(world, b.id, -correction_vector);
                             if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
                                 let vn = v.linear_velocity.dot(normal);
                                 if vn > 0.0 {
@@ -853,7 +866,7 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                             }
                         }
                         (false, true) => {
-                            apply_position_correction(world, a.id, translation_vector);
+                            apply_position_correction(world, a.id, correction_vector);
                             if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
                                 let vn = v.linear_velocity.dot(normal);
                                 if vn < 0.0 {

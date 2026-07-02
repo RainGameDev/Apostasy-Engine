@@ -14,7 +14,6 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 winit = "0.30.5"
 parking_lot = "0.12.5"
-gl = "0.14.0"
 gltf = "1.4.1"
 serde = { version = "1.0.228", features = ["derive"]}
 serde_yaml = "0.9.34"
@@ -25,12 +24,13 @@ rand = "0.10.0"
 image = "0.25.10"
 noise = "0.9.0"
 slotmap = "1.1.1"
+# egui must stay on branch = "main": egui-ash-renderer's fork depends on egui
+# with branch = "main", and cargo only unifies git deps with identical sources.
 egui         = { git = "https://github.com/emilk/egui", branch = "main" }
-eframe       = { git = "https://github.com/emilk/egui", branch = "main" }
 egui_extras  = { git = "https://github.com/emilk/egui", branch = "main" }
 egui-winit   = { git = "https://github.com/emilk/egui", branch = "main" }
 epaint       = { git = "https://github.com/emilk/egui", branch = "main" }
-egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer", branch = "main", features = ["dynamic-rendering"]}
+egui-ash-renderer = {git = "https://github.com/RainGameDev/egui-ash-renderer", rev = "ec16f29aeec99ea17c90ce933d7e9a74fc3e7027", features = ["dynamic-rendering"]}
 rayon = "1.10"
 crossbeam-channel = "0.5"
 num_cpus = "1.16"
@@ -39,6 +39,9 @@ thiserror = "2.0.18"
 walkdir = "2.5.0"
 mlua ={version = "0.10", features = ["lua54", "vendored", "serialize"]}
 kira = { version = "0.12.1", features = ["symphonia", "mp3", "ogg", "flac", "wav", "aac", "aiff", "alac"] }
+hail = {git = "https://github.com/djgaven588/hail.git", rev = "8b7552f323373c8e5cbee9568fb2c65a736fae04"}
+hail_std   = { git = "https://github.com/djgaven588/hail.git", rev = "8b7552f323373c8e5cbee9568fb2c65a736fae04" }
+hail_macro = { git = "https://github.com/djgaven588/hail.git", rev = "8b7552f323373c8e5cbee9568fb2c65a736fae04" }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2" 

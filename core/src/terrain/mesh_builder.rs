@@ -186,15 +186,11 @@ fn compute_normal(
     }
 }
 
-/// Makes the terrain colider from its mesh.
 pub fn build_terrain_collider(chunk: &TerrainChunk) -> Vec<[Vector3<f32>; 3]> {
     let r = chunk.resolution as usize;
     let side = r + 1;
     let cell_size = CELL_SIZE as f32;
     let step = cell_size / r as f32;
-
-    let origin_x = chunk.cell_coord.x as f32 * cell_size;
-    let origin_z = chunk.cell_coord.z as f32 * cell_size;
 
     // Positions of the mesh
     let mut grid_positions: Vec<Vector3<f32>> = Vec::with_capacity(side * side);
@@ -203,10 +199,10 @@ pub fn build_terrain_collider(chunk: &TerrainChunk) -> Vec<[Vector3<f32>; 3]> {
     for z in 0..side {
         for x in 0..side {
             let h = chunk.height_at(x, z);
-            let wx = origin_x + x as f32 * step;
-            let wz = origin_z + z as f32 * step;
+            let lx = x as f32 * step;
+            let lz = z as f32 * step;
 
-            grid_positions.push(Vector3::new(wx, h, wz));
+            grid_positions.push(Vector3::new(lx, h, lz));
         }
     }
 

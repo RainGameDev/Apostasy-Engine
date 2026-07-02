@@ -12,7 +12,9 @@ Apostasy is a Rust game engine for a Morrowind/Vintage Story inspired voxel RPG.
 | `game` | Game binary — launches core in `EngineMode::Game` |
 | `voxel_game` | Standalone voxel-only demo binary |
 
-Each binary crate has its own `Cargo.lock` and `res/` directory.
+The workspace shares a single root `Cargo.lock`; each binary crate has its own `res/` directory.
+
+Git dependencies are pinned to a `rev` where possible. The egui crates are the exception — they must stay on `branch = "main"` to unify with the `egui-ash-renderer` fork's own egui dependency (see the comment in `core/Cargo.toml`).
 
 ## Core modules (`core/src/`)
 
