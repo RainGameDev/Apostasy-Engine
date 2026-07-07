@@ -2,9 +2,7 @@ use anyhow::Result;
 use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
-    ecs::{
-        components::transform::Transform, cell::EntityId, systems::DeltaTime, world::World,
-    },
+    ecs::{cell::EntityId, components::transform::Transform, systems::DeltaTime, world::World},
     physics::{collider::Collider, velocity::Velocity},
     voxels::{voxel::VoxelRegistry, voxel_components::is_solid::IsSolid},
 };

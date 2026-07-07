@@ -24,7 +24,11 @@ use apostasy_macros::Resource;
 pub struct Paused;
 
 fn main() {
-    init_core(RenderingBackend::Vulkan, vec![Packages::Project, Packages::Terrain]).unwrap();
+    init_core(
+        RenderingBackend::Vulkan,
+        vec![Packages::Project, Packages::Terrain],
+    )
+    .unwrap();
 }
 
 // Player movement, mouse-look, and jumping are driven from Lua (game/res/scripts/main.lua),

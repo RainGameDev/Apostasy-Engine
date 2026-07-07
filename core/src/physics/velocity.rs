@@ -3,7 +3,6 @@ use apostasy_macros::{Component, update};
 use cgmath::{InnerSpace, Quaternion, Rotation3, Vector3, Zero};
 
 use crate::{
-    log,
     ecs::{
         component::Inspect,
         components::{serde_support::vec3_seq, transform::Transform},
@@ -11,6 +10,7 @@ use crate::{
         tags::Player,
         world::World,
     },
+    log,
     ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
@@ -97,9 +97,9 @@ impl Default for Velocity {
             process: true,
 
             inertia_tensor: compute_inertia_cuboid(1.0, half),
-            restitution: 0.1,
-            mu_static: 0.9,
-            mu_kinetic: 0.8,
+            restitution: 0.0,
+            mu_static: 1.0,
+            mu_kinetic: 1.0,
             linear_damping: 0.999,
             angular_damping: 0.998,
         }
@@ -161,7 +161,10 @@ impl Velocity {
 #[update(priority = 20)]
 fn velocity_process(world: &mut World) -> Result<()> {
     let delta = world.get_resource::<DeltaTime>()?.0;
-    let noclip = world.get_resource::<crate::physics::Noclip>().map(|n| n.0).unwrap_or(false);
+    let noclip = world
+        .get_resource::<crate::physics::Noclip>()
+        .map(|n| n.0)
+        .unwrap_or(false);
 
     let ids = world.get_entities_with_component::<Velocity>();
     for id in ids {
@@ -220,8 +223,12 @@ fn velocity_process(world: &mut World) -> Result<()> {
 // #[fixed_update]
 pub fn physics_debug(world: &mut World, _: f32) -> Result<()> {
     let player_id = world.get_entity_with_tag::<Player>()?;
-    let transform = world.get_component::<Transform>(player_id).ok_or_else(|| anyhow::anyhow!("no transform"))?;
-    let velocity = world.get_component::<Velocity>(player_id).ok_or_else(|| anyhow::anyhow!("no velocity"))?;
+    let transform = world
+        .get_component::<Transform>(player_id)
+        .ok_or_else(|| anyhow::anyhow!("no transform"))?;
+    let velocity = world
+        .get_component::<Velocity>(player_id)
+        .ok_or_else(|| anyhow::anyhow!("no velocity"))?;
 
     log!(
         "local={:.2},{:.2},{:.2} global={:.2},{:.2},{:.2} vel={:.2},{:.2},{:.2} grounded={}",

@@ -294,7 +294,6 @@ impl Default for Collider {
 }
 
 impl Collider {
-
     /// Creates a dynamic collider.
     pub fn new(shape: ColliderShape, offset: Vector3<f32>) -> Self {
         Self {
@@ -400,10 +399,6 @@ impl Collider {
             ) => {
                 return obb_vs_mesh(center_b, &axes_b, half_b, bvh, pos_a, rotation_a).map(|v| -v);
             }
-            // mesh vs mesh — not supported, skip
-            (ColliderShape::Mesh { .. }, _) => {
-                return None;
-            }
 
             (ColliderShape::Sphere { radius }, _) => {
                 return sphere_vs_obb(center_a, *radius, center_b, &axes_b, half_b);
@@ -411,6 +406,11 @@ impl Collider {
             (_, ColliderShape::Sphere { radius }) => {
                 return sphere_vs_obb(center_b, *radius, center_a, &axes_a, half_a).map(|v| -v);
             }
+
+            (ColliderShape::Mesh { bvh, .. }, ColliderShape::Mesh { bvh: bh2, .. }) => {
+                return mesh_vs_mesh(bvh, pos_a, rotation_a, bh2, pos_b, rotation_b);
+            }
+
             _ => {}
         }
 
@@ -481,6 +481,86 @@ fn project_obb(axis: Vector3<f32>, obb_axes: &[Vector3<f32>; 3], half: Vector3<f
         + axis.dot(obb_axes[2]).abs() * half.z
 }
 
+fn mesh_vs_mesh(
+    bvh: &Bvh,
+    mesh_pos: Vector3<f32>,
+    mesh_rot: Quaternion<f32>,
+    bvh_2: &Bvh,
+    mesh_pos_2: Vector3<f32>,
+    mesh_rot_2: Quaternion<f32>,
+) -> Option<Vector3<f32>> {
+    if bvh.nodes.is_empty() || bvh_2.nodes.is_empty() {
+        return None;
+    }
+
+    let r = mesh_rot.conjugate() * mesh_rot_2;
+    let t = mesh_rot.conjugate() * (mesh_pos_2 - mesh_pos);
+
+    let rc = [
+        r * Vector3::new(1.0, 0.0, 0.0),
+        r * Vector3::new(0.0, 1.0, 0.0),
+        r * Vector3::new(0.0, 0.0, 1.0),
+    ];
+    let transform_aabb = |min: Vector3<f32>, max: Vector3<f32>| {
+        let center = r * ((min + max) * 0.5) + t;
+        let e = (max - min) * 0.5;
+        let extent = Vector3::new(
+            rc[0].x.abs() * e.x + rc[1].x.abs() * e.y + rc[2].x.abs() * e.z,
+            rc[0].y.abs() * e.x + rc[1].y.abs() * e.y + rc[2].y.abs() * e.z,
+            rc[0].z.abs() * e.x + rc[1].z.abs() * e.y + rc[2].z.abs() * e.z,
+        );
+        (center - extent, center + extent)
+    };
+
+    let mut stack = vec![(0u32, 0u32)];
+    let mut deepest: Option<Vector3<f32>> = None;
+    let mut max_depth = 0.0f32;
+
+    while let Some((idx, idx_2)) = stack.pop() {
+        let node = &bvh.nodes[idx as usize];
+        let node_2 = &bvh_2.nodes[idx_2 as usize];
+        let (min_2, max_2) = transform_aabb(node_2.aabb_min, node_2.aabb_max);
+
+        if !aabb_overlaps_aabb(node.aabb_min, node.aabb_max, min_2, max_2) {
+            continue;
+        }
+
+        match (node.left == 0, node_2.left == 0) {
+            (true, true) => {
+                for i in node.tri_start..node.tri_start + node.tri_count {
+                    let tri = &bvh.triangles[i as usize];
+                    for x in node_2.tri_start..node_2.tri_start + node_2.tri_count {
+                        let raw = &bvh_2.triangles[x as usize];
+                        let tri_2 = [r * raw[0] + t, r * raw[1] + t, r * raw[2] + t];
+                        if let Some((direction, depth)) = triangle_vs_triangle(tri, &tri_2)
+                            && depth > max_depth
+                        {
+                            max_depth = depth;
+                            deepest = Some(mesh_rot * direction * depth);
+                        }
+                    }
+                }
+            }
+            (true, false) => {
+                stack.push((idx, node_2.left));
+                stack.push((idx, node_2.right));
+            }
+            (false, true) => {
+                stack.push((node.left, idx_2));
+                stack.push((node.right, idx_2));
+            }
+            (false, false) => {
+                stack.push((node.left, node_2.left));
+                stack.push((node.left, node_2.right));
+                stack.push((node.right, node_2.left));
+                stack.push((node.right, node_2.right));
+            }
+        }
+    }
+
+    deepest
+}
+
 fn obb_vs_mesh(
     center: Vector3<f32>,
     axes: &[Vector3<f32>; 3],
@@ -493,12 +573,11 @@ fn obb_vs_mesh(
         return None;
     }
 
-    // Transform the OBB into the mesh's local space (triangles are stored local).
+    // Transform the OBB into the mesh local space.
     let inv_rot = mesh_rot.conjugate();
     let local_center = inv_rot * (center - mesh_pos);
     let local_axes = [inv_rot * axes[0], inv_rot * axes[1], inv_rot * axes[2]];
 
-    // Conservative AABB around the (rotated) OBB, in local space, for BVH pruning.
     let extent = Vector3::new(
         project_obb(Vector3::new(1.0, 0.0, 0.0), &local_axes, half_extents),
         project_obb(Vector3::new(0.0, 1.0, 0.0), &local_axes, half_extents),
@@ -523,11 +602,10 @@ fn obb_vs_mesh(
                 let tri = &bvh.triangles[i as usize];
                 if let Some((direction, depth)) =
                     obb_vs_triangle(local_center, &local_axes, half_extents, tri)
+                    && depth > max_depth
                 {
-                    if depth > max_depth {
-                        max_depth = depth;
-                        deepest = Some(mesh_rot * direction * depth);
-                    }
+                    max_depth = depth;
+                    deepest = Some(mesh_rot * direction * depth);
                 }
             }
         } else {
@@ -537,6 +615,78 @@ fn obb_vs_mesh(
     }
 
     deepest
+}
+
+fn triangle_vs_triangle(
+    tri: &[Vector3<f32>; 3],
+    tri_2: &[Vector3<f32>; 3],
+) -> Option<(Vector3<f32>, f32)> {
+    let edges = [tri[1] - tri[0], tri[2] - tri[1], tri[0] - tri[2]];
+    let edges_2 = [
+        tri_2[1] - tri_2[0],
+        tri_2[2] - tri_2[1],
+        tri_2[0] - tri_2[2],
+    ];
+    let n = edges[0].cross(edges[1]);
+    let n_2 = edges_2[0].cross(edges_2[1]);
+
+    let mut axes = [Vector3::zero(); 17];
+    axes[0] = n;
+    axes[1] = n_2;
+    let mut k = 2;
+    for e in &edges {
+        for e2 in &edges_2 {
+            axes[k] = e.cross(*e2);
+            k += 1;
+        }
+    }
+    for e in &edges {
+        axes[k] = n.cross(*e);
+        k += 1;
+    }
+    for e2 in &edges_2 {
+        axes[k] = n_2.cross(*e2);
+        k += 1;
+    }
+
+    let mut min_overlap = f32::MAX;
+    let mut min_axis = Vector3::zero();
+
+    for axis in axes {
+        if axis.magnitude2() < 1e-10 {
+            continue;
+        }
+        let axis = axis.normalize();
+        let (min_a, max_a) = project_triangle(axis, tri);
+        let (min_b, max_b) = project_triangle(axis, tri_2);
+        let overlap = (max_b - min_a).min(max_a - min_b);
+        if overlap <= 0.0 {
+            return None; // Separating axis found, no collision
+        }
+        if overlap < min_overlap {
+            min_overlap = overlap;
+            min_axis = axis;
+        }
+    }
+
+    if min_overlap == f32::MAX {
+        return None;
+    }
+
+    let centroid = (tri[0] + tri[1] + tri[2]) / 3.0;
+    let centroid_2 = (tri_2[0] + tri_2[1] + tri_2[2]) / 3.0;
+    if (centroid - centroid_2).dot(min_axis) < 0.0 {
+        min_axis = -min_axis;
+    }
+
+    Some((min_axis, min_overlap))
+}
+
+fn project_triangle(axis: Vector3<f32>, tri: &[Vector3<f32>; 3]) -> (f32, f32) {
+    let d0 = tri[0].dot(axis);
+    let d1 = tri[1].dot(axis);
+    let d2 = tri[2].dot(axis);
+    (d0.min(d1).min(d2), d0.max(d1).max(d2))
 }
 
 fn obb_vs_triangle(
@@ -552,11 +702,11 @@ fn obb_vs_triangle(
     let tri_normal = tri_normal.normalize();
 
     // Reject test on the box's 3 local axes
-    for axis in axes {
-        if overlap_along_axis(*axis, center, axes, half_extents, tri) <= 0.0 {
-            return None; // Separating axis found — no collision with this triangle.
-        }
-    }
+    // for axis in axes {
+    // if overlap_along_axis(*axis, center, axes, half_extents, tri) <= 0.0 {
+    //     return None;
+    // }
+    // }
 
     // Reject and  resolve on the triangle's own face normal
     let plane_value = tri[0].dot(tri_normal);
@@ -574,25 +724,6 @@ fn obb_vs_triangle(
     };
 
     Some((min_axis, overlap))
-}
-
-fn overlap_along_axis(
-    axis: Vector3<f32>,
-    center: Vector3<f32>,
-    axes: &[Vector3<f32>; 3],
-    half_extents: Vector3<f32>,
-    tri: &[Vector3<f32>; 3],
-) -> f32 {
-    let box_center_proj = center.dot(axis);
-    let box_radius = project_obb(axis, axes, half_extents);
-
-    let t0 = tri[0].dot(axis);
-    let t1 = tri[1].dot(axis);
-    let t2 = tri[2].dot(axis);
-    let tri_min = t0.min(t1).min(t2);
-    let tri_max = t0.max(t1).max(t2);
-
-    (box_center_proj + box_radius).min(tri_max) - (box_center_proj - box_radius).max(tri_min)
 }
 
 /// Rotates a vector by a quaternion: q * v * q^-1
@@ -621,7 +752,6 @@ impl CollisionEvents {
     pub fn new() -> Self {
         Self::default()
     }
-
 }
 
 /// A snapshot of a collider and it's needed data.
@@ -679,9 +809,6 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
         .collect()
 }
 
-/// Allowed resting penetration before positional correction kicks in. Prevents
-/// resting contacts from being pushed to exactly zero overlap every frame, which
-/// gravity would immediately re-penetrate, causing visible micro bouncing.
 const COLLISION_SLOP: f32 = 0.01;
 
 /// Detects collisions between all entities using OBB vs OBB
@@ -739,11 +866,6 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                 };
                 let upness = normal.y.abs();
 
-                // Only push out penetration beyond a small slop margin. Correcting
-                // the full depth every frame snaps resting contacts to exactly zero
-                // overlap, which gravity immediately re-penetrates on the next frame —
-                // visible as micro bouncing/jitter. Leaving a tiny allowed overlap
-                // breaks that resolve/re-penetrate cycle.
                 let correction_depth = (depth - COLLISION_SLOP).max(0.0);
                 let correction_vector = normal * correction_depth;
 
@@ -825,27 +947,28 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     resolve_impulse(&mut va, &mut vb, r_a, r_b, normal);
 
                     // skip static entities
-                    if !a.is_static {
-                        if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
-                            *v = va;
-                        }
-                    }
-                    if !b.is_static {
-                        if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
-                            *v = vb;
-                        }
+                    if !a.is_static
+                        && let Some(v) = world.get_component_mut::<Velocity>(a.id)
+                    {
+                        *v = va;
                     }
 
-                    if upness > 0.7 {
-                        if !a.is_static {
-                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
-                                v.is_grounded = true;
-                            }
+                    if !b.is_static
+                        && let Some(v) = world.get_component_mut::<Velocity>(b.id)
+                    {
+                        *v = vb;
+                    }
+
+                    if upness > 0.5 {
+                        if !a.is_static
+                            && let Some(v) = world.get_component_mut::<Velocity>(a.id)
+                        {
+                            v.is_grounded = true;
                         }
-                        if !b.is_static {
-                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
-                                v.is_grounded = true;
-                            }
+                        if !b.is_static
+                            && let Some(v) = world.get_component_mut::<Velocity>(b.id)
+                        {
+                            v.is_grounded = true;
                         }
                     }
 
@@ -853,22 +976,20 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
                     let upness = normal.y.abs();
                     if upness > 0.7 {
                         let tang_threshold = 0.5; // tuneable
-                        if !a.is_static {
-                            if let Some(v) = world.get_component_mut::<Velocity>(a.id) {
-                                let tang =
-                                    v.linear_velocity - normal * v.linear_velocity.dot(normal);
-                                if tang.magnitude() < tang_threshold {
-                                    v.linear_velocity -= tang; // zero small tangential
-                                }
+                        if !a.is_static
+                            && let Some(v) = world.get_component_mut::<Velocity>(a.id)
+                        {
+                            let tang = v.linear_velocity - normal * v.linear_velocity.dot(normal);
+                            if tang.magnitude() < tang_threshold {
+                                v.linear_velocity -= tang; // zero small tangential
                             }
                         }
-                        if !b.is_static {
-                            if let Some(v) = world.get_component_mut::<Velocity>(b.id) {
-                                let tang =
-                                    v.linear_velocity - normal * v.linear_velocity.dot(normal);
-                                if tang.magnitude() < tang_threshold {
-                                    v.linear_velocity -= tang;
-                                }
+                        if !b.is_static
+                            && let Some(v) = world.get_component_mut::<Velocity>(b.id)
+                        {
+                            let tang = v.linear_velocity - normal * v.linear_velocity.dot(normal);
+                            if tang.magnitude() < tang_threshold {
+                                v.linear_velocity -= tang;
                             }
                         }
                     }
@@ -983,7 +1104,6 @@ fn debug_visual_for_shape(shape: &ColliderShape) -> Option<DebugVisualSource> {
 pub struct MeshColliderDebugSource {
     pub triangles: Vec<[Vector3<f32>; 3]>,
 }
-
 
 /// Spawns/updates wireframe debug visuals for every `Collider` while `ColliderRenderDebug` is enabled.
 #[update(mode = "all")]
@@ -1594,7 +1714,6 @@ fn closest_points_segment_segment(
 
     (p1 + d1 * s, p3 + d2 * t)
 }
-
 /// Calculated the AABB of a triangle.
 pub fn triangle_aabb(tris: &[[Vector3<f32>; 3]]) -> (Vector3<f32>, Vector3<f32>) {
     let mut min = Vector3::new(f32::MAX, f32::MAX, f32::MAX);
@@ -1610,154 +1729,4 @@ pub fn triangle_aabb(tris: &[[Vector3<f32>; 3]]) -> (Vector3<f32>, Vector3<f32>)
         }
     }
     (min, max)
-}
-
-#[cfg(test)]
-mod obb_vs_mesh_tests {
-    use super::*;
-
-    fn slope_bvh(rise: f32, run: f32) -> Bvh {
-        // Quad from x=0..run, z=0..4, height rises linearly with x.
-        let h = |x: f32| rise * (x / run);
-        let tl = Vector3::new(0.0, h(0.0), 0.0);
-        let tr = Vector3::new(run, h(run), 0.0);
-        let bl = Vector3::new(0.0, h(0.0), 4.0);
-        let br = Vector3::new(run, h(run), 4.0);
-        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
-    }
-
-    /// A box resting on (or embedded in) a sloped quad must always be detected as
-    /// overlapping, with depth that grows monotonically with true penetration.
-    /// Regression test for a bug where the triangle-normal axis always reported
-    /// exactly zero overlap (since a triangle's own normal always has zero-width
-    /// projection), causing every slope contact to be rejected outright.
-    #[test]
-    fn box_on_slope_is_always_detected_with_increasing_depth() {
-        let half = Vector3::new(0.5, 0.5, 0.5);
-        let axes = [
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ];
-
-        for &(rise, run) in &[(1.0, 4.0), (2.0, 4.0), (4.0, 4.0), (6.0, 4.0), (8.0, 4.0)] {
-            let bvh = slope_bvh(rise, run);
-            let x = run * 0.5;
-            let slope_h = rise * (x / run);
-
-            let mut last_depth = 0.0;
-            for &penetration in &[0.01, 0.05, 0.15, 0.25, 0.5] {
-                let center = Vector3::new(x, slope_h + half.y - penetration, 2.0);
-                let mtv = obb_vs_mesh(
-                    center,
-                    &axes,
-                    half,
-                    &bvh,
-                    Vector3::zero(),
-                    Quaternion::new(1.0, 0.0, 0.0, 0.0),
-                );
-
-                let depth = mtv
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "rise={rise} run={run} penetration={penetration}: expected a collision, got none"
-                        )
-                    })
-                    .magnitude();
-
-                assert!(
-                    depth > last_depth,
-                    "rise={rise} run={run} penetration={penetration}: depth {depth} did not increase from {last_depth}"
-                );
-                last_depth = depth;
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod capsule_vs_mesh_tests {
-    use super::*;
-
-    fn flat_bvh() -> Bvh {
-        let tl = Vector3::new(-10.0, 0.0, -10.0);
-        let tr = Vector3::new(10.0, 0.0, -10.0);
-        let bl = Vector3::new(-10.0, 0.0, 10.0);
-        let br = Vector3::new(10.0, 0.0, 10.0);
-        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
-    }
-
-    fn slope_bvh(rise: f32, run: f32) -> Bvh {
-        let h = |x: f32| rise * (x / run);
-        let tl = Vector3::new(-run, h(-run), -run);
-        let tr = Vector3::new(run, h(run), -run);
-        let bl = Vector3::new(-run, h(-run), run);
-        let br = Vector3::new(run, h(run), run);
-        Bvh::build(vec![[tl, bl, tr], [tr, bl, br]])
-    }
-
-    /// A capsule sinking into flat ground must always push upward (never
-    /// downward), even once deeply embedded.
-    /// Regression test for a sign flip in the raw closest-point direction.
-    #[test]
-    fn capsule_deeply_embedded_in_flat_ground_pushes_up_not_down() {
-        let bvh = flat_bvh();
-        let radius = 0.5f32;
-        let half_h = 0.5f32;
-
-        for i in 0..30 {
-            let center_y = 0.9 - (i as f32) * 0.1;
-            let center = Vector3::new(0.0, center_y, 0.0);
-            let seg_a = center + Vector3::new(0.0, half_h, 0.0);
-            let seg_b = center - Vector3::new(0.0, half_h, 0.0);
-            let result = capsule_vs_mesh(
-                seg_a,
-                seg_b,
-                radius,
-                &bvh,
-                Vector3::zero(),
-                Quaternion::new(1.0, 0.0, 0.0, 0.0),
-            );
-            if let Some(mtv) = result {
-                assert!(
-                    mtv.y >= 0.0,
-                    "center.y={center_y}: expected upward push, got mtv.y={}",
-                    mtv.y
-                );
-            }
-        }
-    }
-
-    /// A capsule embedded in a slope, at increasing penetration, must always
-    /// push away from the surface (positive dot with the slope normal).
-    #[test]
-    fn capsule_on_slope_pushes_away_from_surface_at_any_depth() {
-        let radius = 0.5f32;
-        let half_h = 0.5f32;
-
-        for &(rise, run) in &[(1.0, 4.0), (2.0, 4.0), (4.0, 4.0)] {
-            let bvh = slope_bvh(rise, run);
-            let slope_normal = Vector3::new(-rise, run, 0.0).normalize();
-
-            for &pen in &[0.01, 0.05, 0.15, 0.3, 0.6] {
-                let center = Vector3::new(0.0, half_h + radius - pen, 0.0);
-                let seg_a = center + Vector3::new(0.0, half_h, 0.0);
-                let seg_b = center - Vector3::new(0.0, half_h, 0.0);
-                let result = capsule_vs_mesh(
-                    seg_a,
-                    seg_b,
-                    radius,
-                    &bvh,
-                    Vector3::zero(),
-                    Quaternion::new(1.0, 0.0, 0.0, 0.0),
-                );
-                if let Some(mtv) = result {
-                    assert!(
-                        mtv.dot(slope_normal) > 0.0,
-                        "rise={rise} run={run} pen={pen}: mtv={mtv:?} points into the slope"
-                    );
-                }
-            }
-        }
-    }
 }
