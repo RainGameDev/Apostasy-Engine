@@ -6,6 +6,13 @@ fn update(world: World) {
     let should_jump = world.is_keybind_active("Jump");
     let delta = world.mouse_delta();
 
+    if world.is_keybind_active("Delete") {
+        let hit = world.raycast_camera(100.0);
+        if hit.is_some() {
+            world.despawn(hit.unwrap().entity);
+        }
+    }
+
     for row in world.query.with("Transform").with_tag("Player").fetch() {
         let mut t = row.transform;
         t.euler_angles = vec3(t.euler_angles.x, t.euler_angles.y - delta.x, t.euler_angles.z);

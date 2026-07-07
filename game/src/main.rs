@@ -62,6 +62,10 @@ pub fn setup_input(world: &mut World) -> Result<()> {
         "Pause",
         KeyBind::new(PhysicalKey::Code(KeyCode::Escape), KeyAction::Press),
     );
+    inputs.register_default_keybind(
+        "Delete",
+        KeyBind::new(PhysicalKey::Code(KeyCode::KeyF), KeyAction::Press),
+    );
 
     Ok(())
 }

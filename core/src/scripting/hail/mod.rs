@@ -3,6 +3,7 @@ use apostasy_macros::{start, update};
 
 pub mod components;
 pub mod logging;
+pub mod physics;
 pub mod query;
 pub mod resources;
 pub mod world;

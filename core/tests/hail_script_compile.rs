@@ -101,6 +101,38 @@ fn update(world: World) {
     }
 }
 
+/// Exercises the raycast API: both cast variants and every `RaycastHit` field.
+#[test]
+fn raycast_api_compiles() {
+    let source = r#"
+fn update(world: World) {
+    let origin = vec3(0.0, 1.0, 0.0);
+    let dir = vec3(0.0, 0.0, 1.0);
+
+    let hit = world.raycast(origin, dir, 100.0);
+    if hit.is_some() {
+        let h = hit.unwrap();
+        let e = h.entity;
+        let p = h.point;
+        let n = h.normal;
+        let d = h.distance;
+        let f = h.face;
+        world.set_transform(e, world.get_transform(e).unwrap());
+    }
+
+    for e in world.query.with_tag("Player").run() {
+        let self_hit = world.raycast_ignore(origin, dir, 100.0, e);
+        if self_hit.is_none() {
+            world.despawn(e);
+        }
+    }
+}
+"#;
+    if let Err(diag) = compile(source, "raycast_api.hail") {
+        panic!("{diag}");
+    }
+}
+
 #[test]
 fn game_scripts_compile() {
     let scripts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../game/res/scripts");

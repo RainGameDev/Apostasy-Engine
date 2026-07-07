@@ -53,7 +53,7 @@ pub struct Vec3Value {
 impl MemoryUsage for Vec3Value {}
 
 impl Vec3Value {
-    fn from_f32(v: Vector3<f32>) -> Self {
+    pub(crate) fn from_f32(v: Vector3<f32>) -> Self {
         Self {
             x: v.x as f64,
             y: v.y as f64,
@@ -61,7 +61,7 @@ impl Vec3Value {
         }
     }
 
-    fn to_f32(self) -> Vector3<f32> {
+    pub(crate) fn to_f32(self) -> Vector3<f32> {
         Vector3::new(self.x as f32, self.y as f32, self.z as f32)
     }
 }

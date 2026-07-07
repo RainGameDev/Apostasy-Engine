@@ -170,7 +170,7 @@ pub fn discover_hail_scripts() -> Vec<PathBuf> {
 }
 
 pub fn build_engine_module() -> Result<hail::Module, hail::ModuleError> {
-    use super::{components, logging, query, resources, world};
+    use super::{components, logging, physics, query, resources, world};
 
     let mut module = hail_std::std()?;
 
@@ -183,6 +183,7 @@ pub fn build_engine_module() -> Result<hail::Module, hail::ModuleError> {
     module.register_type_named::<components::HailVelocity>("Velocity")?;
     module.register_type_named::<query::QueryBuilder>("Query")?;
     module.register_type_named::<query::QueryRow>("Row")?;
+    module.register_type_named::<physics::HailRaycastHit>("RaycastHit")?;
 
     logging::hail_register_log(&mut module)?;
 
@@ -258,6 +259,16 @@ pub fn build_engine_module() -> Result<hail::Module, hail::ModuleError> {
     components::hail_register_remove_component(&mut module)?;
     components::hail_register_has_component(&mut module)?;
     components::hail_register_entities_with(&mut module)?;
+
+    // Raycasting.
+    physics::hail_register_raycast(&mut module)?;
+    physics::hail_register_raycast_ignore(&mut module)?;
+    physics::hail_register_raycast_camera(&mut module)?;
+    physics::hail_register_raycast_entity(&mut module)?;
+    physics::hail_register_raycast_point(&mut module)?;
+    physics::hail_register_raycast_normal(&mut module)?;
+    physics::hail_register_raycast_distance(&mut module)?;
+    physics::hail_register_raycast_face(&mut module)?;
 
     Ok(module)
 }
