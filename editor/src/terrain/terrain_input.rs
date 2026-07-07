@@ -5,7 +5,6 @@ use apostasy_core::{
         cell::{CELL_SIZE, CellCoord, EntityId, world_to_cell},
         components::transform::Transform,
         resources::input_manager::{InputManager, KeyAction, KeyBind},
-        tags::skips_serilization::SkipsSerilization,
         world::World,
     },
     rendering::components::camera::{
@@ -357,6 +356,7 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
         .get_resource::<TerrainChunkMap>()
         .ok()
         .and_then(|m| m.0.get(&cell).copied())
+        .filter(|&id| world.is_alive(id))
         .is_some();
     if exists {
         return;
@@ -366,7 +366,6 @@ fn ensure_terrain_chunk(world: &mut World, cell: CellCoord, resolution: u32) {
     world.set_name(id, &format!("Terrain ({},{})", cell.x, cell.z));
     world.add_component(id, TerrainChunk::new(cell, resolution));
     world.add_tag::<NeedsTerrainRebuild>(id);
-    world.add_tag::<SkipsSerilization>(id);
     if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
         map.0.insert(cell, id);
     }

@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 use crate::ecs::cell::{CellCoord, EntityId};
 
 pub mod chunk;
+pub mod loader;
 pub mod mesh_builder;
 pub mod persistence;
 pub mod rebuild;

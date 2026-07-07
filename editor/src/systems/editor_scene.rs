@@ -28,7 +28,7 @@ use apostasy_core::{
         model_renderer::ModelRenderer,
     },
     start,
-    terrain::{chunk::TerrainChunk, persistence::load_terrain_cells},
+    terrain::chunk::TerrainChunk,
     ui::ui_context::ViewportSize,
     update,
     voxels::{
@@ -123,11 +123,8 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
                 .map(|v| ("default".to_string(), v.clone()))
         });
 
-    let terrain_dir = apostasy_core::project_dir().join("terrain");
-
     if let Some((scene_name, scene_value)) = startup_scene {
         load_worldspace(world, &scene_value, &["EditorCamera"])?;
-        let _ = load_terrain_cells(world, &terrain_dir);
         EditorPreferences::save_last_scene(&scene_name);
     } else {
         let floor_id = world.spawn().id();
@@ -214,8 +211,6 @@ pub fn editor_scene_setup(world: &mut World) -> Result<()> {
             Collider::new(ColliderShape::Sphere { radius: 1.0 }, Vector3::zero()),
         );
         world.add_tag::<Player>(sphere2_id);
-
-        let _ = load_terrain_cells(world, &terrain_dir);
     }
 
     let inputs = world.get_resource_mut::<InputManager>().unwrap();

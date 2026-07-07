@@ -77,6 +77,25 @@ pub mod vec3_seq {
     }
 }
 
+/// Serde for `Vector3<i32>` as a `[x, y, z]` yaml sequence (cell coords).
+pub mod vec3i_seq {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(
+        v: &Vector3<i32>,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        [v.x, v.y, v.z].serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Vector3<i32>, D::Error> {
+        let [x, y, z] = <[i32; 3]>::deserialize(deserializer)?;
+        Ok(Vector3::new(x, y, z))
+    }
+}
+
 /// Serde for `Quaternion<f32>` as a `[x, y, z, w]` yaml sequence.
 pub mod quat_xyzw {
     use super::*;

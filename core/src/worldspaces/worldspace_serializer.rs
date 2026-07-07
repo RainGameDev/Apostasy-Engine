@@ -273,6 +273,13 @@ pub fn load_worldspace(
         }
     }
 
+    let ws_name = value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("default");
+    world.insert_resource(crate::worldspaces::CurrentWorldspace(ws_name.to_string()));
+
     if let Some(v) = value.get("is_interior").and_then(|v| v.as_bool()) {
         world.worldspace_mut().is_interior = v;
     }

@@ -3,32 +3,44 @@ use ash::vk;
 use cgmath::Vector3;
 
 use crate::{
-    ecs::cell::{CELL_SIZE, CellCoord},
+    ecs::{
+        cell::{CELL_SIZE, CellCoord},
+        components::serde_support::vec3i_seq,
+    },
     rendering::shared::model::GpuMesh,
 };
 
 pub const MAX_ACTIVE_LAYERS: u8 = 32;
 
-/// Heightmap data for a single terrain cell.
-#[derive(Debug, Inspect, Component, Clone)]
+#[derive(Debug, Inspect, Component, Clone, serde::Serialize, serde::Deserialize)]
+#[component(serde, post_deserialize = "mark_data_unloaded")]
 pub struct TerrainChunk {
     /// Cell coordinate this terrain piece occupies.
+    #[serde(with = "vec3i_seq")]
     pub cell_coord: CellCoord,
     /// Vertices per side. Vertex count is (resolution+1)^2.
     pub resolution: u32,
     /// Flattened (resolution+1)^2 heightmap.
+    #[serde(skip)]
     pub heights: Vec<f32>,
     /// Active texture layer global IDs for this chunk (indices into TerrainSettings.texture_layers).
     /// 0 = unused slot. Sorted so slot 0 is always the base layer.
+    #[serde(skip)]
     pub active_layer_ids: [u32; MAX_ACTIVE_LAYERS as usize],
     /// How many of the 32 slots are active.
+    #[serde(skip)]
     pub active_layer_count: u8,
     /// Per-vertex weights for each active layer. Always sums to 1.0 per vertex.
     /// Length is (resolution+1)^2, each entry is [f32; 32].
+    #[serde(skip)]
     pub vertex_weights: Vec<[f32; MAX_ACTIVE_LAYERS as usize]>,
     /// Per-vertex RGB tint color. Multiplied over the splat texture in the shader.
     /// Default is white [1,1,1] (no tint). Length is (resolution+1)^2.
+    #[serde(skip)]
     pub vertex_colors: Vec<[f32; 3]>,
+    /// False until the heightmap data has been loaded from disk (or freshly created).
+    #[serde(skip)]
+    pub data_loaded: bool,
 }
 
 impl Default for TerrainChunk {
@@ -52,7 +64,15 @@ impl TerrainChunk {
             active_layer_count: 1,
             vertex_weights: weights,
             vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+            data_loaded: true,
         }
+    }
+
+    /// Post-deserialize hook: reset the heavy buffers to a flat chunk and flag
+    /// the data as unloaded so the terrain data system reloads it from disk.
+    pub fn mark_data_unloaded(&mut self) {
+        *self = Self::new(self.cell_coord, self.resolution.max(2));
+        self.data_loaded = false;
     }
 
     /// Find the slot index for a given global layer ID, or allocate a new slot if available.
@@ -94,7 +114,6 @@ impl TerrainChunk {
             self.cell_coord.z as f32 * CELL_SIZE as f32,
         )
     }
-
 }
 
 /// GPU mesh buffers for a terrain chunk.
@@ -107,7 +126,6 @@ pub struct TerrainMesh {
     pub index_count: u32,
     pub host_visible: bool,
 }
-
 
 impl GpuMesh for TerrainMesh {
     fn get_vertex_buffer(&self) -> vk::Buffer {

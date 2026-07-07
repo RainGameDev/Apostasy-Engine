@@ -6,10 +6,10 @@ use cgmath::Vector3;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ecs::{cell::CellCoord, tags::skips_serilization::SkipsSerilization, world::World},
+    ecs::{cell::CellCoord, world::World},
     terrain::{
-        TerrainAtlasNeedsRebuild, TerrainChunkMap, TerrainSettings,
-        chunk::{NeedsTerrainRebuild, TerrainChunk, MAX_ACTIVE_LAYERS},
+        TerrainSettings,
+        chunk::{MAX_ACTIVE_LAYERS, TerrainChunk},
     },
 };
 
@@ -59,8 +59,9 @@ pub fn load_terrain_settings(dir: &Path) -> Vec<String> {
     }
 }
 
-/// Saves all terrain chunks to binary files under `dir`.
-/// Each cell is written as `{cx}_{cz}.terrain`.
+/// Saves all terrain chunks to binary files under `dir` (the worldspace's
+/// terrain directory). Each cell is written as `{cx}_{cz}.terrain`; stale
+/// `.terrain` files for cells that no longer exist are deleted.
 pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dir)?;
 
@@ -72,126 +73,36 @@ pub fn save_terrain_cells(world: &World, dir: &Path) -> Result<()> {
 
     let terrain_ids = world.get_entities_with_component::<TerrainChunk>();
 
+    let mut live_files: std::collections::HashSet<String> = std::collections::HashSet::new();
     for id in terrain_ids {
         if let Some(chunk) = world.get_component::<TerrainChunk>(id) {
             let filename = cell_filename(chunk.cell_coord);
             write_terrain_cell(chunk, &texture_layers, &dir.join(&filename))?;
+            live_files.insert(filename);
+        }
+    }
+
+    // Remove files for cells that no longer have a terrain entity.
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("terrain") {
+                continue;
+            }
+            let stale = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| !live_files.contains(n))
+                .unwrap_or(false);
+            if stale {
+                let _ = std::fs::remove_file(&path);
+            }
         }
     }
 
     // Also persist the texture list as a sidecar file so it survives
     // even when no terrain chunks exist yet.
     save_terrain_settings(world, dir)?;
-
-    Ok(())
-}
-
-/// Loads all `.terrain` files from `dir`, creating or updating terrain entities in `world`.
-pub fn load_terrain_cells(world: &mut World, dir: &Path) -> Result<()> {
-    if !dir.exists() {
-        // Still try to load standalone texture list even without terrain dir.
-        let saved = load_terrain_settings(dir);
-        if !saved.is_empty()
-            && let Ok(settings) = world.get_resource_mut::<TerrainSettings>()
-        {
-            settings.texture_layers = saved;
-            world.insert_resource(TerrainAtlasNeedsRebuild);
-        }
-        return Ok(());
-    }
-
-    let mut loaded: Vec<(TerrainChunk, Vec<String>)> = Vec::new();
-
-    let entries: Vec<_> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("terrain"))
-        .collect();
-
-    for entry in &entries {
-        let path = entry.path();
-        let coord = match parse_cell_filename(&path) {
-            Some(c) => c,
-            None => continue,
-        };
-        match read_terrain_cell(&path, coord) {
-            Ok((chunk, tex_table)) => loaded.push((chunk, tex_table)),
-            Err(e) => {
-                eprintln!("[terrain] Failed to load {}: {}", path.display(), e);
-            }
-        }
-    }
-
-    if loaded.is_empty() {
-        return Ok(());
-    }
-
-    // Start with the standalone texture list, then merge in any paths from chunks.
-    let mut all_paths = load_terrain_settings(dir);
-    let mut seen: std::collections::HashSet<String> = all_paths.iter().cloned().collect();
-    for (_, table) in &loaded {
-        for p in table {
-            if seen.insert(p.clone()) {
-                all_paths.push(p.clone());
-            }
-        }
-    }
-    all_paths.sort();
-
-    // Build mapping from texture path -> new sorted index.
-    let mapping: HashMap<&str, usize> = all_paths
-        .iter()
-        .enumerate()
-        .map(|(i, p)| (p.as_str(), i))
-        .collect();
-
-    // Remap each chunk's active_layer_ids from local table -> global sorted order.
-    for (chunk, table) in &mut loaded {
-        if table.is_empty() {
-            continue;
-        }
-        for id in &mut chunk.active_layer_ids {
-            if *id < table.len() as u32 {
-                let old_path = &table[*id as usize];
-                if let Some(&new_id) = mapping.get(old_path.as_str()) {
-                    *id = new_id as u32;
-                }
-            }
-        }
-    }
-
-    // Update TerrainSettings with the sorted texture list.
-    if let Ok(settings) = world.get_resource_mut::<TerrainSettings>() {
-        settings.texture_layers = all_paths;
-    }
-    world.insert_resource(TerrainAtlasNeedsRebuild);
-
-    // Place chunks in the world.
-    for (chunk, _) in &loaded {
-        let coord = chunk.cell_coord;
-
-        let existing_id = world
-            .get_resource::<TerrainChunkMap>()
-            .ok()
-            .and_then(|m| m.0.get(&coord).copied())
-            .filter(|&id| world.is_alive(id));
-
-        if let Some(entity_id) = existing_id {
-            if let Some(existing) = world.get_component_mut::<TerrainChunk>(entity_id) {
-                *existing = chunk.clone();
-            }
-            world.add_tag::<NeedsTerrainRebuild>(entity_id);
-        } else {
-            let entity_id = world.spawn_in_cell(coord).id();
-            world.set_name(entity_id, &format!("Terrain ({},{})", coord.x, coord.z));
-            world.add_component(entity_id, chunk.clone());
-            world.add_tag::<NeedsTerrainRebuild>(entity_id);
-            world.add_tag::<SkipsSerilization>(entity_id);
-
-            if let Ok(map) = world.get_resource_mut::<TerrainChunkMap>() {
-                map.0.insert(coord, entity_id);
-            }
-        }
-    }
 
     Ok(())
 }
@@ -263,7 +174,7 @@ fn write_terrain_cell(chunk: &TerrainChunk, texture_layers: &[String], path: &Pa
     Ok(())
 }
 
-fn read_terrain_cell(path: &Path, coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
+pub(crate) fn read_terrain_cell(path: &Path, coord: CellCoord) -> Result<(TerrainChunk, Vec<String>)> {
     let bytes = std::fs::read(path)?;
     if bytes.len() < 4 {
         anyhow::bail!("terrain file too small");
@@ -368,6 +279,7 @@ fn read_v2_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_count: active_layer_count as u8,
             vertex_weights,
             vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+            data_loaded: true,
         },
         texture_layers,
     ))
@@ -457,6 +369,7 @@ fn read_v3_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_count: active_layer_count as u8,
             vertex_weights,
             vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+            data_loaded: true,
         },
         texture_layers,
     ))
@@ -559,6 +472,7 @@ fn read_v4_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_count: active_layer_count as u8,
             vertex_weights,
             vertex_colors,
+            data_loaded: true,
         },
         texture_layers,
     ))
@@ -649,6 +563,7 @@ fn read_v1_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<S
             active_layer_count: active_count as u8,
             vertex_weights,
             vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+            data_loaded: true,
         },
         texture_layers,
     ))
@@ -708,12 +623,13 @@ fn read_old_format(bytes: &[u8], coord: CellCoord) -> Result<(TerrainChunk, Vec<
             active_layer_count: 1,
             vertex_weights,
             vertex_colors: vec![[1.0, 1.0, 1.0]; count],
+            data_loaded: true,
         },
         Vec::new(),
     ))
 }
 
-fn cell_filename(coord: CellCoord) -> String {
+pub(crate) fn cell_filename(coord: CellCoord) -> String {
     let cx = if coord.x < 0 {
         format!("n{}", -coord.x)
     } else {
@@ -727,7 +643,7 @@ fn cell_filename(coord: CellCoord) -> String {
     format!("{}_{}.terrain", cx, cz)
 }
 
-fn parse_cell_filename(path: &Path) -> Option<CellCoord> {
+pub(crate) fn parse_cell_filename(path: &Path) -> Option<CellCoord> {
     let stem = path.file_stem()?.to_str()?;
     let (lhs, rhs) = stem.split_once('_')?;
 

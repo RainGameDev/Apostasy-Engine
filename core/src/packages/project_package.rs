@@ -15,7 +15,6 @@ use crate::{
     },
     ecs::world::World,
     log, log_warn, project_dir,
-    terrain::persistence::load_terrain_cells,
     worldspaces::worldspace_serializer::load_worldspace,
 };
 
@@ -82,11 +81,6 @@ pub fn load_startup_worldspace(
             "No startup worldspace '{}' found in project",
             worldspace_name
         );
-    }
-
-    let terrain_dir = project_dir().join("terrain");
-    if terrain_dir.is_dir() {
-        let _ = load_terrain_cells(world, &terrain_dir);
     }
 
     Ok(())
