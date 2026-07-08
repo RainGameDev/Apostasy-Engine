@@ -124,7 +124,6 @@ pub struct TerrainMesh {
     pub index_buffer: vk::Buffer,
     pub index_buffer_memory: vk::DeviceMemory,
     pub index_count: u32,
-    pub host_visible: bool,
 }
 
 impl GpuMesh for TerrainMesh {

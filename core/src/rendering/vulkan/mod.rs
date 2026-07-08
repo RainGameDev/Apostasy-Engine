@@ -137,9 +137,6 @@ pub struct VulkanRenderer {
 
     pub aa_amount: AntiAliasingAmount,
     pub ui_cached_primitives: Vec<ClippedPrimitive>,
-    /// egui textures whose `free` was reported last frame. Freed at the start of the
-    /// next `end_ui`, after `begin_frame` has waited on the previous frame's fence, so
-    /// we never destroy a descriptor set/image still referenced by in-flight GPU work.
     pub ui_pending_texture_frees: Vec<TextureId>,
 }
 
@@ -162,8 +159,7 @@ impl VulkanRenderer {
         unsafe { self.context.device.device_wait_idle()? };
         let vertex_shader = self.load_shader_module(&self.default_vertex_shader)?;
         let fragment_shader = self.load_shader_module(&self.default_fragment_shader)?;
-        let collider_debug_fragment_shader =
-            self.load_shader_module("sdr_collider_debug.frag")?;
+        let collider_debug_fragment_shader = self.load_shader_module("sdr_collider_debug.frag")?;
         let voxel_vertex_shader = self.load_shader_module(&self.voxel_vertex_shader)?;
         let voxel_fragment_shader = self.load_shader_module(&self.voxel_fragment_shader)?;
         let water_vertex_shader = self.load_shader_module(&self.water_vertex_shader)?;
@@ -255,6 +251,29 @@ impl VulkanRenderer {
                 voxel_pipeline_layout,
                 aa_amount,
             )?;
+
+            let skybox_vertex_shader = self.load_shader_module("sdr_skybox.vert")?;
+            let skybox_fragment_shader = self.load_shader_module("sdr_skybox.frag")?;
+            let skybox_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: Some(swapchain.format),
+                    image_extent: swapchain.extent,
+                    depth_format: Some(swapchain.depth_format),
+                    vertex_shader: skybox_vertex_shader,
+                    fragment_shader: skybox_fragment_shader,
+                    vertex_bindings: vec![Vertex::get_binding_description()],
+                    vertex_attributes: Vertex::get_attribute_descriptions(),
+                },
+                RenderingSettings::skybox(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+            self.context
+                .device
+                .destroy_shader_module(skybox_vertex_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(skybox_fragment_shader, None);
 
             self.context
                 .device
@@ -411,6 +430,9 @@ impl VulkanRenderer {
             self.pipeline_manager
                 .pipeline_cache
                 .insert("water".to_string(), water_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("skybox".to_string(), skybox_pipeline);
             self.pipeline_manager
                 .pipeline_cache
                 .insert("shadow_model".to_string(), shadow_model_pipeline);
@@ -736,8 +758,6 @@ impl RenderingAPI for VulkanRenderer {
                 .offset(0)
                 .range(light_ssbo_size);
 
-            // Shared layout for any combined-image-sampler binding (material textures, voxel atlas,
-            // viewport preview). Created first so it can be referenced by pipeline_layout.
             let sampler_binding = vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -749,8 +769,6 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
 
-            // Pool for all sampler descriptor sets: voxel atlas, material textures, viewport.
-            // Up to 200 sets / 500 individual descriptors.
             let descriptor_pool = context.device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
                     .max_sets(500)
@@ -859,6 +877,31 @@ impl RenderingAPI for VulkanRenderer {
                 voxel_pipeline_layout,
                 aa_amount,
             )?;
+
+            let skybox_vert_module = pipeline_manager
+                .create_shader_module(&rendering_info.context.clone().into(), "sdr_skybox.vert")?;
+            let skybox_frag_module = pipeline_manager
+                .create_shader_module(&rendering_info.context.clone().into(), "sdr_skybox.frag")?;
+            let skybox_pipeline = context.create_graphics_pipeline(
+                PipelineOptions {
+                    image_format: Some(swapchain.format),
+                    image_extent: swapchain.extent,
+                    depth_format: Some(swapchain.depth_format),
+                    vertex_shader: skybox_vert_module,
+                    fragment_shader: skybox_frag_module,
+                    vertex_bindings: vec![Vertex::get_binding_description()],
+                    vertex_attributes: Vertex::get_attribute_descriptions(),
+                },
+                RenderingSettings::skybox(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+            context
+                .device
+                .destroy_shader_module(skybox_vert_module, None);
+            context
+                .device
+                .destroy_shader_module(skybox_frag_module, None);
 
             context.device.destroy_shader_module(vertex_shader, None);
             context
@@ -1613,6 +1656,9 @@ impl RenderingAPI for VulkanRenderer {
                 .insert("water".to_string(), water_pipeline);
             pipeline_manager
                 .pipeline_cache
+                .insert("skybox".to_string(), skybox_pipeline);
+            pipeline_manager
+                .pipeline_cache
                 .insert("shadow_model".to_string(), shadow_model_pipeline);
             pipeline_manager
                 .pipeline_cache
@@ -2077,9 +2123,11 @@ impl RenderingAPI for VulkanRenderer {
             );
 
         let pipeline = match shader_override {
-            Some(name) => self
-                .pipeline_manager
-                .get_or_create_model_pipeline(name, &self.context.clone(), false)?,
+            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(
+                name,
+                &self.context.clone(),
+                false,
+            )?,
             None => self.get_pipeline("model"),
         };
 
@@ -2153,9 +2201,11 @@ impl RenderingAPI for VulkanRenderer {
             );
 
         let pipeline = match shader_override {
-            Some(name) => self
-                .pipeline_manager
-                .get_or_create_model_pipeline(name, &self.context.clone(), true)?,
+            Some(name) => self.pipeline_manager.get_or_create_model_pipeline(
+                name,
+                &self.context.clone(),
+                true,
+            )?,
             None => self.get_pipeline("model::wireframe"),
         };
 
@@ -2273,6 +2323,66 @@ impl RenderingAPI for VulkanRenderer {
         Ok(())
     }
 
+    fn skybox_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        push_constants: PushConstants,
+        model_push_constants: &ModelPushConstants,
+        sky_descriptor_set: vk::DescriptorSet,
+    ) -> anyhow::Result<()> {
+        let frame = &self.frames[self.current_frame];
+        let pipeline = self.get_pipeline("skybox");
+
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline,
+            );
+            self.context.device.cmd_bind_descriptor_sets(
+                frame.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.light_descriptor_set, sky_descriptor_set],
+                &[],
+            );
+
+            let mut data = push_constants.return_renderable();
+            data.extend(model_push_constants.return_renderable());
+            self.context.device.cmd_push_constants(
+                frame.command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                &data,
+            );
+
+            self.context.device.cmd_bind_vertex_buffers(
+                frame.command_buffer,
+                0,
+                &[mesh.get_vertex_buffer()],
+                &[0],
+            );
+            self.context.device.cmd_bind_index_buffer(
+                frame.command_buffer,
+                mesh.get_index_buffer(),
+                0,
+                vk::IndexType::UINT32,
+            );
+            self.context.device.cmd_draw_indexed(
+                frame.command_buffer,
+                mesh.get_index_count(),
+                1,
+                0,
+                0,
+                0,
+            );
+        }
+
+        Ok(())
+    }
+
     fn voxel_render(
         &mut self,
         mesh: Box<dyn GpuMesh>,
@@ -2288,7 +2398,11 @@ impl RenderingAPI for VulkanRenderer {
             self.context.device.cmd_bind_pipeline(
                 frame.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.get_pipeline(if wireframe { "voxel::wireframe" } else { "voxel" }),
+                self.get_pipeline(if wireframe {
+                    "voxel::wireframe"
+                } else {
+                    "voxel"
+                }),
             );
             self.context.device.cmd_push_constants(
                 frame.command_buffer,
@@ -2413,9 +2527,6 @@ impl RenderingAPI for VulkanRenderer {
 
         state.handle_platform_output(&self.ui_renderer.window, full_output.platform_output);
 
-        // Free textures egui retired last frame. `begin_frame` already waited on the
-        // previous frame's fence, so the GPU is done with them. Deferring one frame
-        // avoids destroying a texture still referenced by an in-flight command buffer.
         if !self.ui_pending_texture_frees.is_empty() {
             let to_free = std::mem::take(&mut self.ui_pending_texture_frees);
             renderer.free_textures(&to_free)?;

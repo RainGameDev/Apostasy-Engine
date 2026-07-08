@@ -44,6 +44,9 @@ use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::lighting::{Light, LightType};
 use crate::rendering::components::model_renderer::ModelRenderer;
+use crate::rendering::components::skybox::{
+    Skybox, build_skybox_sphere_mesh, upload_skybox_textures,
+};
 use crate::rendering::lighting::gpu_light::{
     GpuLight, PointShadowData, ShadowData, compute_csm_matrices, compute_light_space_matrix,
     compute_point_shadow_matrices,
@@ -804,6 +807,68 @@ impl Core {
                     let viewport_render_start = std::time::Instant::now();
                     if let Err(e) = renderer.begin_viewport_render() {
                         log_error!("Failed to begin viewport render: {}", e);
+                    }
+
+                    // Skybox — drawn first with depth disabled so the scene renders over it.
+                    let skybox_ids = world.get_entities_with_component::<Skybox>();
+                    if let Some(&sky_id) = skybox_ids.first() {
+                        let needs_upload = world
+                            .get_component::<Skybox>(sky_id)
+                            .map(|s| s.textures.is_none() && !s.load_failed)
+                            .unwrap_or(false);
+                        if needs_upload
+                            && let Some((day, night)) = world
+                                .get_component::<Skybox>(sky_id)
+                                .map(|s| (s.day.clone(), s.night.clone()))
+                            && let Ok(command_pool) = renderer.get_command_pool()
+                        {
+                            let dp = renderer.get_descriptor_pool();
+                            let dsl = renderer.get_voxel_descriptor_set_layout();
+                            let uploaded = upload_skybox_textures(
+                                &context,
+                                command_pool,
+                                dp,
+                                dsl,
+                                &day,
+                                &night,
+                            )
+                            .and_then(|textures| {
+                                let mesh = build_skybox_sphere_mesh(&context, command_pool)?;
+                                Ok((textures, mesh))
+                            });
+                            if let Some(sb) = world.get_component_mut::<Skybox>(sky_id) {
+                                match uploaded {
+                                    Ok((textures, mesh)) => {
+                                        sb.textures = Some(textures);
+                                        sb.sky_mesh = Some(mesh);
+                                    }
+                                    Err(e) => {
+                                        sb.load_failed = true;
+                                        log_error!("Failed to load skybox: {}", e);
+                                    }
+                                }
+                            }
+                        }
+
+                        let sky_rotation = world
+                            .get_component::<Transform>(sky_id)
+                            .map(|t| t.global_rotation)
+                            .unwrap_or(cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0));
+                        if let Some(sb) = world.get_component::<Skybox>(sky_id)
+                            && let (Some(textures), Some(mesh)) = (&sb.textures, &sb.sky_mesh)
+                        {
+                            let mut sky_push = model_push_constants.clone();
+                            sky_push.world_rotation = sky_rotation;
+                            sky_push.color_modifier = [1.0, 1.0, 1.0, sb.blend];
+                            if let Err(e) = renderer.skybox_render(
+                                Box::new(mesh.clone()),
+                                push_constants.clone(),
+                                &sky_push,
+                                textures.descriptor_set,
+                            ) {
+                                log_error!("Failed to render skybox: {}", e);
+                            }
+                        }
                     }
 
                     // Rebuild the material lookup maps only when the model or material

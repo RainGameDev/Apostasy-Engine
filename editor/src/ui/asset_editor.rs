@@ -346,13 +346,22 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
     let mut pending_copy_comp: Option<(String, serde_yaml::Value)> = None;
     let mut pending_paste_comp = false;
 
-    Window::new("Asset Editor")
+    let ae_pos = layout.asset_editor.to_pos();
+    let ae_size = layout.asset_editor.to_size();
+    let mut asset_window = Window::new("Asset Editor")
         .id(egui::Id::new("asset_editor_window"))
         .open(&mut window_open)
-        .default_pos(layout.asset_editor.to_pos())
-        .default_size(layout.asset_editor.to_size())
+        .default_pos(ae_pos)
+        .default_size(ae_size)
         .resizable(true)
-        .movable(true)
+        .movable(true);
+    if layout.restore > 0 {
+        asset_window = asset_window
+            .fixed_pos(ae_pos)
+            .fixed_size(ae_size)
+            .constrain(false);
+    }
+    asset_window
         .frame(style.window_frame(&ctx).inner_margin(Margin {
             left: 8,
             right: 8,

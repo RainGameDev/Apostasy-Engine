@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use apostasy_core::assets::asset_manager::AssetManager;
 use apostasy_core::assets::loaders::worldspace_loader::WorldspaceLoader;
-use apostasy_core::egui::{self};
 use apostasy_core::ecs::resources::input_manager::InputManager;
 use apostasy_core::ecs::world::World;
 use apostasy_core::ecs::worldspace_serializer::{load_worldspace, save_worldspace};
+use apostasy_core::egui::{self};
 use apostasy_core::terrain::persistence::save_terrain_cells;
 use apostasy_core::ui::FontRegistry;
 use apostasy_core::ui::ui_context::EguiContext;
@@ -652,7 +652,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
         if let Ok(layouts) = world.get_resource_mut::<EditorLayouts>() {
             layouts.current = layout_name.clone();
         }
-        if let Some(layout) = new_layout {
+        if let Some(mut layout) = new_layout {
             if let Ok(viewport) = world.get_resource_mut::<ViewportInfo>() {
                 viewport.open = layout.viewport_open;
             }
@@ -668,6 +668,7 @@ pub fn top_bar(world: &mut World) -> Result<()> {
             if let Ok(ae) = world.get_resource_mut::<AssetEditorState>() {
                 ae.open = layout.asset_editor_open;
             }
+            layout.restore = 2;
             world.insert_resource(layout);
         }
         if let Ok(layouts) = world.get_resource::<EditorLayouts>() {

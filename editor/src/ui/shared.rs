@@ -1,5 +1,8 @@
 use anyhow::Result;
-use apostasy_core::{egui::{self, Pos2, Vec2}, ecs::world::World};
+use apostasy_core::{
+    ecs::world::World,
+    egui::{self, Pos2, Vec2},
+};
 use apostasy_macros::{Resource, late_update};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,11 +33,17 @@ fn default_true() -> bool {
 }
 
 fn default_scenes_panel() -> NormalizedWindow {
-    NormalizedWindow { pos: [96.0, 420.0], size: [300.0, 200.0] }
+    NormalizedWindow {
+        pos: [96.0, 420.0],
+        size: [300.0, 200.0],
+    }
 }
 
 fn default_asset_editor() -> NormalizedWindow {
-    NormalizedWindow { pos: [700.0, 54.0], size: [380.0, 560.0] }
+    NormalizedWindow {
+        pos: [700.0, 54.0],
+        size: [380.0, 560.0],
+    }
 }
 
 #[derive(Clone, Resource, Serialize, Debug, Deserialize)]
@@ -60,14 +69,25 @@ pub struct WindowLayout {
     pub asset_editor_open: bool,
     #[serde(skip)]
     pub dirty: bool,
+    #[serde(skip)]
+    pub restore: u8,
 }
 
 impl Default for WindowLayout {
     fn default() -> Self {
         Self {
-            cell_search: NormalizedWindow { pos: [96.0, 54.0], size: [768.0, 346.0] },
-            data_window: NormalizedWindow { pos: [58.0, 65.0], size: [634.0, 518.0] },
-            viewport: NormalizedWindow { pos: [960.0, 54.0], size: [960.0, 540.0] },
+            cell_search: NormalizedWindow {
+                pos: [96.0, 54.0],
+                size: [768.0, 346.0],
+            },
+            data_window: NormalizedWindow {
+                pos: [58.0, 65.0],
+                size: [634.0, 518.0],
+            },
+            viewport: NormalizedWindow {
+                pos: [960.0, 54.0],
+                size: [960.0, 540.0],
+            },
             viewport_open: true,
             data_window_open: true,
             cell_open: true,
@@ -77,6 +97,7 @@ impl Default for WindowLayout {
             asset_editor: default_asset_editor(),
             asset_editor_open: false,
             dirty: false,
+            restore: 0,
         }
     }
 }
@@ -130,6 +151,7 @@ pub fn load_layout() -> WindowLayout {
 pub fn flush_layout(world: &mut World) -> Result<()> {
     if let Ok(layout) = world.get_resource_mut::<WindowLayout>() {
         layout.dirty = false;
+        layout.restore = layout.restore.saturating_sub(1);
     }
     Ok(())
 }

@@ -809,6 +809,41 @@ fn build_snapshot(world: &World) -> Vec<Snapshot> {
         .collect()
 }
 
+/// Worldspace AABB enclosing a collider, used as a broad phase before the narrow phase.
+fn world_aabb(
+    collider: &Collider,
+    position: Vector3<f32>,
+    rotation: Quaternion<f32>,
+) -> (Vector3<f32>, Vector3<f32>) {
+    let (local_center, half) = match &collider.shape {
+        ColliderShape::Mesh { bvh, .. } => {
+            if bvh.nodes.is_empty() {
+                (collider.offset, Vector3::zero())
+            } else {
+                let root = &bvh.nodes[0];
+                (
+                    (root.aabb_min + root.aabb_max) * 0.5,
+                    (root.aabb_max - root.aabb_min) * 0.5,
+                )
+            }
+        }
+        _ => (collider.offset, collider.half_extents()),
+    };
+
+    let center = position + rotate_vector(rotation, local_center);
+    let axes = [
+        rotate_vector(rotation, Vector3::new(1.0, 0.0, 0.0)),
+        rotate_vector(rotation, Vector3::new(0.0, 1.0, 0.0)),
+        rotate_vector(rotation, Vector3::new(0.0, 0.0, 1.0)),
+    ];
+    let extent = Vector3::new(
+        axes[0].x.abs() * half.x + axes[1].x.abs() * half.y + axes[2].x.abs() * half.z,
+        axes[0].y.abs() * half.x + axes[1].y.abs() * half.y + axes[2].y.abs() * half.z,
+        axes[0].z.abs() * half.x + axes[1].z.abs() * half.y + axes[2].z.abs() * half.z,
+    );
+    (center - extent, center + extent)
+}
+
 const COLLISION_SLOP: f32 = 0.01;
 
 /// Detects collisions between all entities using OBB vs OBB
@@ -841,12 +876,28 @@ pub fn collision_detection_system(world: &mut World) -> Result<()> {
     let snapshot = build_snapshot(world);
     let n = snapshot.len();
 
+    let aabbs: Vec<(Vector3<f32>, Vector3<f32>)> = snapshot
+        .iter()
+        .map(|s| world_aabb(&s.collider, s.position, s.rotation))
+        .collect();
+
     let mut events: Vec<CollisionEvent> = Vec::new();
 
     for i in 0..n {
         for j in (i + 1)..n {
             let a = &snapshot[i];
             let b = &snapshot[j];
+
+            // Static geometry never separates; skip before the narrow phase.
+            if a.is_static && b.is_static {
+                continue;
+            }
+
+            let (min_a, max_a) = aabbs[i];
+            let (min_b, max_b) = aabbs[j];
+            if !aabb_overlaps_aabb(min_a, max_a, min_b, max_b) {
+                continue;
+            }
 
             if let Some(translation_vector) = a.collider.translation_vector_against(
                 a.position,

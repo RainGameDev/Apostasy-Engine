@@ -117,8 +117,7 @@ pub fn build_terrain_mesh(
     // Sequential indices
     let indices: Vec<u32> = (0..vertices.len() as u32).collect();
 
-    let (vb, vbm) = context.create_host_vertex_buffer::<Vertex>(vertices.len())?;
-    context.write_host_buffer(vbm, &vertices)?;
+    let (vb, vbm) = context.create_vertex_buffer(&vertices, command_pool)?;
     let (ib, ibm) = context.create_index_buffer(&indices, command_pool)?;
 
     Ok(TerrainMesh {
@@ -127,7 +126,6 @@ pub fn build_terrain_mesh(
         index_buffer: ib,
         index_buffer_memory: ibm,
         index_count: indices.len() as u32,
-        host_visible: true,
     })
 }
 

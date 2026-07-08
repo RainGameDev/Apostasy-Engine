@@ -278,7 +278,11 @@ impl DataWindowState {
             }
 
             for (subdir, files) in &subdir_map {
-                let label = if subdir.is_empty() { "audio" } else { subdir.as_str() };
+                let label = if subdir.is_empty() {
+                    "audio"
+                } else {
+                    subdir.as_str()
+                };
                 let sub_path = vec!["Audio".to_string(), label.to_string()];
                 audio_children.push(FilterNode::leaf(label, &audio_path));
                 for name in files {
@@ -320,8 +324,8 @@ pub fn data_window(world: &mut World) -> Result<()> {
         return Ok(());
     }
 
-    let state = match world.get_resource::<WindowLayout>() {
-        Ok(l) => l.data_window.clone(),
+    let (state, restore) = match world.get_resource::<WindowLayout>() {
+        Ok(l) => (l.data_window.clone(), l.restore > 0),
         Err(_) => return Ok(()),
     };
 
@@ -376,525 +380,523 @@ pub fn data_window(world: &mut World) -> Result<()> {
     let mut pending_new_asset = false;
     let mut pending_refresh = false;
 
-    let window = window
+    let mut window = window
         .open(&mut window_open)
         .resizable(true)
         .movable(true)
-        .frame(style.window_frame(&ctx))
-        .show(&ctx, |ui| {
-            ui.spacing_mut().item_spacing = Vec2::ZERO;
+        .frame(style.window_frame(&ctx));
+    if restore {
+        window = window.fixed_pos(pos).fixed_size(size).constrain(false);
+    }
+    let window = window.show(&ctx, |ui| {
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-            let filter_w = entity_window_resource.col_widths[0];
-            let hex_w = entity_window_resource.col_widths[1];
-            let type_w = entity_window_resource.col_widths[2];
-            let name_w = entity_window_resource.col_widths[3];
-            let total_w = ui.available_width();
-            let refresh_btn_w = 26.0;
-            let count_w = (total_w - filter_w - hex_w - type_w - name_w - refresh_btn_w).max(50.0);
-            let table_w = hex_w + type_w + name_w + count_w;
-            let header_h = style.header_height();
-            let row_h = style.row_height();
+        let filter_w = entity_window_resource.col_widths[0];
+        let hex_w = entity_window_resource.col_widths[1];
+        let type_w = entity_window_resource.col_widths[2];
+        let name_w = entity_window_resource.col_widths[3];
+        let total_w = ui.available_width();
+        let refresh_btn_w = 26.0;
+        let count_w = (total_w - filter_w - hex_w - type_w - name_w - refresh_btn_w).max(50.0);
+        let table_w = hex_w + type_w + name_w + count_w;
+        let header_h = style.header_height();
+        let row_h = style.row_height();
 
-            // header bar
-            let (header_rect, _) =
-                ui.allocate_exact_size(Vec2::new(total_w, header_h), Sense::hover());
-            ui.painter().rect_filled(header_rect, 0.0, style.header_bg);
+        // header bar
+        let (header_rect, _) = ui.allocate_exact_size(Vec2::new(total_w, header_h), Sense::hover());
+        ui.painter().rect_filled(header_rect, 0.0, style.header_bg);
 
-            let font_hdr = style.font_ui();
+        let font_hdr = style.font_ui();
 
-            ui.painter().text(
-                Pos2::new(header_rect.left() + 6.0, header_rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                "Filter",
-                font_hdr.clone(),
-                style.text_col,
-            );
-            ui.add_sized(
-                Vec2::new(filter_w, 18.0),
-                egui::TextEdit::singleline(&mut entity_window_resource.filter_string)
-                    .hint_text("Placeholder..."),
-            )
-            .on_hover_text(concat!(
-                "hex: / id:  - filter by hex ID\n",
-                "type:       - filter by type\n",
-                "name:       - filter by name\n",
-                "(no prefix) - filter by name",
-            ));
+        ui.painter().text(
+            Pos2::new(header_rect.left() + 6.0, header_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            "Filter",
+            font_hdr.clone(),
+            style.text_col,
+        );
+        ui.add_sized(
+            Vec2::new(filter_w, 18.0),
+            egui::TextEdit::singleline(&mut entity_window_resource.filter_string)
+                .hint_text("Placeholder..."),
+        )
+        .on_hover_text(concat!(
+            "hex: / id:  - filter by hex ID\n",
+            "type:       - filter by type\n",
+            "name:       - filter by name\n",
+            "(no prefix) - filter by name",
+        ));
 
-            let data_left = header_rect.left() + filter_w + 2.0;
-            let col_specs: [(&str, f32, SortColumn); 4] = [
-                ("Editor ID", 0.0, SortColumn::HexId),
-                ("Type", hex_w, SortColumn::Type),
-                ("Name", hex_w + type_w, SortColumn::Name),
-                ("Count", hex_w + type_w + name_w, SortColumn::Count),
-            ];
-            for (label, offset, col) in col_specs {
-                let col_w = match col {
-                    SortColumn::HexId => hex_w,
-                    SortColumn::Type => type_w,
-                    SortColumn::Name => name_w,
-                    SortColumn::Count => count_w,
-                };
-                let rect = Rect::from_min_size(
-                    Pos2::new(data_left + offset, header_rect.top()),
-                    Vec2::new(col_w, header_h),
-                );
-                let resp = ui.interact(rect, ui.id().with(label), Sense::click());
-                if resp.hovered() {
-                    ui.painter()
-                        .rect_filled(rect, 0.0, Color32::from_rgb(40, 40, 40));
-                }
-                if resp.clicked() {
-                    if entity_window_resource.sort_col == col {
-                        entity_window_resource.sort_dir =
-                            if entity_window_resource.sort_dir == SortDir::Asc {
-                                SortDir::Desc
-                            } else {
-                                SortDir::Asc
-                            };
-                    } else {
-                        entity_window_resource.sort_col = col.clone();
-                        entity_window_resource.sort_dir = SortDir::Asc;
-                    }
-                }
-                let arrow = if entity_window_resource.sort_col == col {
-                    if entity_window_resource.sort_dir == SortDir::Asc {
-                        " ▲"
-                    } else {
-                        " ▼"
-                    }
-                } else {
-                    ""
-                };
-                paint_clipped(
-                    ui,
-                    Pos2::new(data_left + offset + 6.0, header_rect.center().y),
-                    col_w - 12.0,
-                    &format!("{}{}", label, arrow),
-                    font_hdr.clone(),
-                    style.text_col,
-                );
-            }
-
-            // Refresh button at the right edge of the header
-            let refresh_rect = Rect::from_min_size(
-                Pos2::new(header_rect.right() - refresh_btn_w, header_rect.top()),
-                Vec2::new(refresh_btn_w, header_h),
-            );
-            let refresh_resp =
-                ui.interact(refresh_rect, ui.id().with("refresh_btn"), Sense::click());
-            if refresh_resp.hovered() {
-                ui.painter()
-                    .rect_filled(refresh_rect, 0.0, Color32::from_rgb(40, 40, 40));
-            }
-            ui.painter().text(
-                refresh_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "↺",
-                font_hdr.clone(),
-                style.text_col,
-            );
-            if refresh_resp.on_hover_text("Refresh asset lists").clicked() {
-                pending_refresh = true;
-            }
-
-            ui.painter().line_segment(
-                [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(1.0, style.div_col),
-            );
-
-            // body
-            let body_top = ui.cursor().min;
-            let body_h = ui.available_height();
-
-            let left_rect = Rect::from_min_size(body_top, Vec2::new(filter_w, body_h));
-            let right_rect = Rect::from_min_size(
-                body_top + Vec2::new(filter_w + 1.0, 0.0),
-                Vec2::new(table_w, body_h),
-            );
-
-            let body_rect = Rect::from_min_size(body_top, Vec2::new(total_w, body_h));
-            ui.advance_cursor_after_rect(body_rect);
-
-            // filter panel
-            let mut toggle_path: Option<Vec<String>> = None;
-            let mut select_path: Option<Option<Vec<String>>> = None;
-
-            let mut left_child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(left_rect)
-                    .layout(egui::Layout::top_down(egui::Align::LEFT)),
-            );
-            left_child.spacing_mut().item_spacing = Vec2::ZERO;
-
-            ScrollArea::vertical()
-                .id_salt("filter_scroll")
-                .auto_shrink([false; 2])
-                .show(&mut left_child, |ui| {
-                    ui.set_min_width(filter_w);
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-
-                    ui.add_space(4.0);
-
-                    let (cb_rect, _) =
-                        ui.allocate_exact_size(Vec2::new(filter_w, 22.0), Sense::hover());
-                    let mut cb_ui = ui.new_child(
-                        egui::UiBuilder::new()
-                            .max_rect(cb_rect)
-                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                    );
-
-                    cb_ui.add_space(6.0);
-
-                    cb_ui.checkbox(
-                        &mut entity_window_resource.show_used_in_cell,
-                        "Show used in cell",
-                    );
-
-                    let sep_y = ui.cursor().min.y;
-                    ui.painter().line_segment(
-                        [
-                            Pos2::new(left_rect.left(), sep_y),
-                            Pos2::new(left_rect.right(), sep_y),
-                        ],
-                        Stroke::new(1.0, style.div_col),
-                    );
-                    ui.add_space(3.0);
-
-                    draw_tree(
-                        ui,
-                        &entity_window_resource.filter_tree.clone(),
-                        0,
-                        &entity_window_resource.selected_filter,
-                        style.text_col,
-                        style.dim_col,
-                        style.sel_bg,
-                        filter_w,
-                        style.row_height(),
-                        style.font_ui(),
-                        style.font_small(),
-                        &mut toggle_path,
-                        &mut select_path,
-                    );
-                });
-
-            if let Some(ref p) = toggle_path {
-                toggle_node(&mut entity_window_resource.filter_tree, p);
-            }
-            if let Some(sel) = select_path {
-                entity_window_resource.selected_filter = sel;
-            }
-
-            ui.painter().line_segment(
-                [
-                    Pos2::new(left_rect.right(), left_rect.top()),
-                    Pos2::new(left_rect.right(), left_rect.bottom()),
-                ],
-                Stroke::new(1.0, style.div_col),
-            );
-
-            // parse filter string
-            let filter_splits = entity_window_resource
-                .filter_string
-                .split(':')
-                .collect::<Vec<&str>>();
-            let (filter_type, filter_value) = if filter_splits.len() > 1 {
-                (filter_splits[0].to_string(), filter_splits[1].to_string())
-            } else {
-                (String::new(), filter_splits[0].to_string())
+        let data_left = header_rect.left() + filter_w + 2.0;
+        let col_specs: [(&str, f32, SortColumn); 4] = [
+            ("Editor ID", 0.0, SortColumn::HexId),
+            ("Type", hex_w, SortColumn::Type),
+            ("Name", hex_w + type_w, SortColumn::Name),
+            ("Count", hex_w + type_w + name_w, SortColumn::Count),
+        ];
+        for (label, offset, col) in col_specs {
+            let col_w = match col {
+                SortColumn::HexId => hex_w,
+                SortColumn::Type => type_w,
+                SortColumn::Name => name_w,
+                SortColumn::Count => count_w,
             };
-
-            // filter + sort entries
-            let mut filtered: Vec<&DataEntry> = entity_window_resource
-                .entries
-                .iter()
-                .filter(|e| match &entity_window_resource.selected_filter {
-                    None => true,
-                    Some(sel) => {
-                        e.category_path.len() >= sel.len()
-                            && &e.category_path[..sel.len()] == sel.as_slice()
-                    }
-                })
-                .filter(|e| {
-                    if filter_value.trim().is_empty() {
-                        return true;
-                    }
-                    let val = filter_value.trim().to_lowercase();
-                    match filter_type.trim().to_lowercase().as_str() {
-                        "hex" | "id" => e.hex_id.to_lowercase().contains(&val),
-                        "type" => e.entry_type.to_lowercase().contains(&val),
-                        "name" => e.name.to_lowercase().contains(&val),
-                        _ => e.name.to_lowercase().contains(&val),
-                    }
-                })
-                .collect();
-
-            filtered.sort_by(|a, b| {
-                let ord = match entity_window_resource.sort_col {
-                    SortColumn::HexId => a.hex_id.cmp(&b.hex_id),
-                    SortColumn::Type => a.entry_type.cmp(&b.entry_type),
-                    SortColumn::Name => a.name.cmp(&b.name),
-                    SortColumn::Count => a.count.cmp(&b.count),
-                };
-                if entity_window_resource.sort_dir == SortDir::Desc {
-                    ord.reverse()
+            let rect = Rect::from_min_size(
+                Pos2::new(data_left + offset, header_rect.top()),
+                Vec2::new(col_w, header_h),
+            );
+            let resp = ui.interact(rect, ui.id().with(label), Sense::click());
+            if resp.hovered() {
+                ui.painter()
+                    .rect_filled(rect, 0.0, Color32::from_rgb(40, 40, 40));
+            }
+            if resp.clicked() {
+                if entity_window_resource.sort_col == col {
+                    entity_window_resource.sort_dir =
+                        if entity_window_resource.sort_dir == SortDir::Asc {
+                            SortDir::Desc
+                        } else {
+                            SortDir::Asc
+                        };
                 } else {
-                    ord
+                    entity_window_resource.sort_col = col.clone();
+                    entity_window_resource.sort_dir = SortDir::Asc;
+                }
+            }
+            let arrow = if entity_window_resource.sort_col == col {
+                if entity_window_resource.sort_dir == SortDir::Asc {
+                    " ▲"
+                } else {
+                    " ▼"
+                }
+            } else {
+                ""
+            };
+            paint_clipped(
+                ui,
+                Pos2::new(data_left + offset + 6.0, header_rect.center().y),
+                col_w - 12.0,
+                &format!("{}{}", label, arrow),
+                font_hdr.clone(),
+                style.text_col,
+            );
+        }
+
+        // Refresh button at the right edge of the header
+        let refresh_rect = Rect::from_min_size(
+            Pos2::new(header_rect.right() - refresh_btn_w, header_rect.top()),
+            Vec2::new(refresh_btn_w, header_h),
+        );
+        let refresh_resp = ui.interact(refresh_rect, ui.id().with("refresh_btn"), Sense::click());
+        if refresh_resp.hovered() {
+            ui.painter()
+                .rect_filled(refresh_rect, 0.0, Color32::from_rgb(40, 40, 40));
+        }
+        ui.painter().text(
+            refresh_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "↺",
+            font_hdr.clone(),
+            style.text_col,
+        );
+        if refresh_resp.on_hover_text("Refresh asset lists").clicked() {
+            pending_refresh = true;
+        }
+
+        ui.painter().line_segment(
+            [header_rect.left_bottom(), header_rect.right_bottom()],
+            Stroke::new(1.0, style.div_col),
+        );
+
+        // body
+        let body_top = ui.cursor().min;
+        let body_h = ui.available_height();
+
+        let left_rect = Rect::from_min_size(body_top, Vec2::new(filter_w, body_h));
+        let right_rect = Rect::from_min_size(
+            body_top + Vec2::new(filter_w + 1.0, 0.0),
+            Vec2::new(table_w, body_h),
+        );
+
+        let body_rect = Rect::from_min_size(body_top, Vec2::new(total_w, body_h));
+        ui.advance_cursor_after_rect(body_rect);
+
+        // filter panel
+        let mut toggle_path: Option<Vec<String>> = None;
+        let mut select_path: Option<Option<Vec<String>>> = None;
+
+        let mut left_child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(left_rect)
+                .layout(egui::Layout::top_down(egui::Align::LEFT)),
+        );
+        left_child.spacing_mut().item_spacing = Vec2::ZERO;
+
+        ScrollArea::vertical()
+            .id_salt("filter_scroll")
+            .auto_shrink([false; 2])
+            .show(&mut left_child, |ui| {
+                ui.set_min_width(filter_w);
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+
+                ui.add_space(4.0);
+
+                let (cb_rect, _) =
+                    ui.allocate_exact_size(Vec2::new(filter_w, 22.0), Sense::hover());
+                let mut cb_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(cb_rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+
+                cb_ui.add_space(6.0);
+
+                cb_ui.checkbox(
+                    &mut entity_window_resource.show_used_in_cell,
+                    "Show used in cell",
+                );
+
+                let sep_y = ui.cursor().min.y;
+                ui.painter().line_segment(
+                    [
+                        Pos2::new(left_rect.left(), sep_y),
+                        Pos2::new(left_rect.right(), sep_y),
+                    ],
+                    Stroke::new(1.0, style.div_col),
+                );
+                ui.add_space(3.0);
+
+                draw_tree(
+                    ui,
+                    &entity_window_resource.filter_tree.clone(),
+                    0,
+                    &entity_window_resource.selected_filter,
+                    style.text_col,
+                    style.dim_col,
+                    style.sel_bg,
+                    filter_w,
+                    style.row_height(),
+                    style.font_ui(),
+                    style.font_small(),
+                    &mut toggle_path,
+                    &mut select_path,
+                );
+            });
+
+        if let Some(ref p) = toggle_path {
+            toggle_node(&mut entity_window_resource.filter_tree, p);
+        }
+        if let Some(sel) = select_path {
+            entity_window_resource.selected_filter = sel;
+        }
+
+        ui.painter().line_segment(
+            [
+                Pos2::new(left_rect.right(), left_rect.top()),
+                Pos2::new(left_rect.right(), left_rect.bottom()),
+            ],
+            Stroke::new(1.0, style.div_col),
+        );
+
+        // parse filter string
+        let filter_splits = entity_window_resource
+            .filter_string
+            .split(':')
+            .collect::<Vec<&str>>();
+        let (filter_type, filter_value) = if filter_splits.len() > 1 {
+            (filter_splits[0].to_string(), filter_splits[1].to_string())
+        } else {
+            (String::new(), filter_splits[0].to_string())
+        };
+
+        // filter + sort entries
+        let mut filtered: Vec<&DataEntry> = entity_window_resource
+            .entries
+            .iter()
+            .filter(|e| match &entity_window_resource.selected_filter {
+                None => true,
+                Some(sel) => {
+                    e.category_path.len() >= sel.len()
+                        && &e.category_path[..sel.len()] == sel.as_slice()
+                }
+            })
+            .filter(|e| {
+                if filter_value.trim().is_empty() {
+                    return true;
+                }
+                let val = filter_value.trim().to_lowercase();
+                match filter_type.trim().to_lowercase().as_str() {
+                    "hex" | "id" => e.hex_id.to_lowercase().contains(&val),
+                    "type" => e.entry_type.to_lowercase().contains(&val),
+                    "name" => e.name.to_lowercase().contains(&val),
+                    _ => e.name.to_lowercase().contains(&val),
+                }
+            })
+            .collect();
+
+        filtered.sort_by(|a, b| {
+            let ord = match entity_window_resource.sort_col {
+                SortColumn::HexId => a.hex_id.cmp(&b.hex_id),
+                SortColumn::Type => a.entry_type.cmp(&b.entry_type),
+                SortColumn::Name => a.name.cmp(&b.name),
+                SortColumn::Count => a.count.cmp(&b.count),
+            };
+            if entity_window_resource.sort_dir == SortDir::Desc {
+                ord.reverse()
+            } else {
+                ord
+            }
+        });
+
+        // data table single loop inside the ScrollArea
+        let mut right_child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(right_rect)
+                .layout(egui::Layout::top_down(egui::Align::LEFT)),
+        );
+
+        right_child.spacing_mut().item_spacing = Vec2::ZERO;
+
+        ScrollArea::vertical()
+            .id_salt("data_scroll")
+            .auto_shrink([false; 2])
+            .show(&mut right_child, |ui| {
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+
+                for (idx, entry) in filtered.iter().enumerate() {
+                    let is_selected = entity_window_resource.selected_entry.as_deref()
+                        == Some(entry.editor_id.as_str());
+
+                    let is_texture = entry.editor_id.starts_with("texture:");
+                    let is_model = entry.editor_id.starts_with("model:");
+                    let is_shader = entry.editor_id.starts_with("shader:");
+                    let is_material = entry.editor_id.contains(":Material:");
+                    let is_audio = entry.editor_id.starts_with("audio:");
+                    let (row_rect, row_resp) =
+                        ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click_and_drag());
+
+                    let is_scene =
+                        entry.category_path.len() >= 2 && entry.category_path[1] == "worldspace";
+                    let is_renaming = entity_window_resource.renaming_entry.as_deref()
+                        == Some(entry.editor_id.as_str());
+
+                    if row_resp.clicked() {
+                        entity_window_resource.selected_entry = Some(entry.editor_id.clone());
+                    }
+
+                    // Texture, model, shader, material, and audio rows are drag sources for DnD fields
+                    if is_texture || is_model || is_shader || is_material || is_audio {
+                        row_resp.dnd_set_drag_payload(entry.editor_id.clone());
+                        if row_resp.hovered() {
+                            ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                        }
+                    }
+
+                    row_resp.context_menu(|ui| {
+                        if ui.button("Edit Asset").clicked() {
+                            pending_open_in_editor = Some(entry.editor_id.clone());
+                            ui.close();
+                        }
+                        if ui.button("New Asset").clicked() {
+                            pending_new_asset = true;
+                            ui.close();
+                        }
+
+                        if is_scene {
+                            ui.separator();
+                            if ui.button("Load").clicked() {
+                                pending_scene_load = Some(entry.name.clone());
+                                ui.close();
+                            }
+                            if ui.button("Rename").clicked() {
+                                entity_window_resource.renaming_entry =
+                                    Some(entry.editor_id.clone());
+                                entity_window_resource.rename_buf = entry.name.clone();
+                                entity_window_resource.rename_request_focus = true;
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("Delete").clicked() {
+                                pending_scene_delete = Some(entry.name.clone());
+                                ui.close();
+                            }
+                        }
+                    });
+
+                    let bg = if is_selected {
+                        style.sel_bg
+                    } else if row_resp.hovered() {
+                        style.hover_bg
+                    } else if idx % 2 == 0 {
+                        style.dark_bg
+                    } else {
+                        style.row_alt
+                    };
+
+                    ui.painter().rect_filled(row_rect, 0.0, bg);
+
+                    let rl = row_rect.left();
+                    let cy = row_rect.center().y;
+                    let fnt = style.font_ui();
+
+                    paint_clipped(
+                        ui,
+                        Pos2::new(rl + 6.0, cy),
+                        hex_w - 12.0,
+                        &entry.hex_id,
+                        fnt.clone(),
+                        style.dim_col,
+                    );
+                    paint_clipped(
+                        ui,
+                        Pos2::new(rl + hex_w + 6.0, cy),
+                        type_w - 12.0,
+                        &entry.entry_type,
+                        fnt.clone(),
+                        style.dim_col,
+                    );
+                    if is_renaming {
+                        let name_rect = Rect::from_min_size(
+                            Pos2::new(rl + hex_w + type_w + 2.0, row_rect.top() + 1.0),
+                            Vec2::new(name_w - 4.0, row_h - 2.0),
+                        );
+                        let te = egui::TextEdit::singleline(&mut entity_window_resource.rename_buf)
+                            .font(fnt.clone());
+                        let te_resp = ui.put(name_rect, te);
+                        if entity_window_resource.rename_request_focus {
+                            te_resp.request_focus();
+                            entity_window_resource.rename_request_focus = false;
+                        }
+                        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if (te_resp.lost_focus() && !escape) || enter {
+                            let new_name = entity_window_resource.rename_buf.trim().to_string();
+                            if !new_name.is_empty() && new_name != entry.name {
+                                pending_scene_rename = Some((entry.name.clone(), new_name));
+                            }
+                            entity_window_resource.renaming_entry = None;
+                        } else if escape {
+                            entity_window_resource.renaming_entry = None;
+                        }
+                    } else {
+                        paint_clipped(
+                            ui,
+                            Pos2::new(rl + hex_w + type_w + 6.0, cy),
+                            name_w - 12.0,
+                            &entry.name,
+                            fnt.clone(),
+                            style.dim_col,
+                        );
+                    }
+                    paint_clipped(
+                        ui,
+                        Pos2::new(rl + hex_w + type_w + name_w + 6.0, cy),
+                        count_w - 12.0,
+                        &entry.count.to_string(),
+                        fnt.clone(),
+                        style.dim_col,
+                    );
+
+                    ui.painter().line_segment(
+                        [row_rect.left_bottom(), row_rect.right_bottom()],
+                        Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
+                    );
+                    for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
+                        ui.painter().line_segment(
+                            [
+                                Pos2::new(rl + offset, row_rect.top()),
+                                Pos2::new(rl + offset, row_rect.bottom()),
+                            ],
+                            Stroke::new(1.0, style.div_col),
+                        );
+                    }
+                }
+
+                // filler rows always at least 8 below the content
+                let rows_drawn = filtered.len();
+                let remaining_h = ui.available_height();
+                let filler_rows = (remaining_h / row_h).ceil() as usize;
+                let filler_rows = filler_rows.max(8);
+
+                for i in 0..filler_rows {
+                    let idx = rows_drawn + i;
+                    let bg = if idx.is_multiple_of(2) {
+                        style.dark_bg
+                    } else {
+                        style.row_alt
+                    };
+                    let (row_rect, row_resp) =
+                        ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
+                    ui.painter().rect_filled(row_rect, 0.0, bg);
+
+                    row_resp.context_menu(|ui| {
+                        if ui.button("New Asset").clicked() {
+                            pending_new_asset = true;
+                            ui.close();
+                        }
+                    });
+
+                    let rl = row_rect.left();
+                    ui.painter().line_segment(
+                        [row_rect.left_bottom(), row_rect.right_bottom()],
+                        Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
+                    );
+                    for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
+                        ui.painter().line_segment(
+                            [
+                                Pos2::new(rl + offset, row_rect.top()),
+                                Pos2::new(rl + offset, row_rect.bottom()),
+                            ],
+                            Stroke::new(1.0, style.div_col),
+                        );
+                    }
                 }
             });
 
-            // data table single loop inside the ScrollArea
-            let mut right_child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::top_down(egui::Align::LEFT)),
-            );
+        // column drag handles
+        let win_top = header_rect.top();
+        let win_bot = win_top + header_h + body_h;
+        let left_edge = header_rect.left();
 
-            right_child.spacing_mut().item_spacing = Vec2::ZERO;
-
-            ScrollArea::vertical()
-                .id_salt("data_scroll")
-                .auto_shrink([false; 2])
-                .show(&mut right_child, |ui| {
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-
-                    for (idx, entry) in filtered.iter().enumerate() {
-                        let is_selected = entity_window_resource.selected_entry.as_deref()
-                            == Some(entry.editor_id.as_str());
-
-                        let is_texture = entry.editor_id.starts_with("texture:");
-                        let is_model = entry.editor_id.starts_with("model:");
-                        let is_shader = entry.editor_id.starts_with("shader:");
-                        let is_material = entry.editor_id.contains(":Material:");
-                        let is_audio = entry.editor_id.starts_with("audio:");
-                        let (row_rect, row_resp) = ui.allocate_exact_size(
-                            Vec2::new(table_w, row_h),
-                            Sense::click_and_drag(),
-                        );
-
-                        let is_scene = entry.category_path.len() >= 2
-                            && entry.category_path[1] == "worldspace";
-                        let is_renaming = entity_window_resource.renaming_entry.as_deref()
-                            == Some(entry.editor_id.as_str());
-
-                        if row_resp.clicked() {
-                            entity_window_resource.selected_entry = Some(entry.editor_id.clone());
-                        }
-
-                        // Texture, model, shader, material, and audio rows are drag sources for DnD fields
-                        if is_texture || is_model || is_shader || is_material || is_audio {
-                            row_resp.dnd_set_drag_payload(entry.editor_id.clone());
-                            if row_resp.hovered() {
-                                ui.ctx().set_cursor_icon(CursorIcon::Grab);
-                            }
-                        }
-
-                        row_resp.context_menu(|ui| {
-                            if ui.button("Edit Asset").clicked() {
-                                pending_open_in_editor = Some(entry.editor_id.clone());
-                                ui.close();
-                            }
-                            if ui.button("New Asset").clicked() {
-                                pending_new_asset = true;
-                                ui.close();
-                            }
-
-                            if is_scene {
-                                ui.separator();
-                                if ui.button("Load").clicked() {
-                                    pending_scene_load = Some(entry.name.clone());
-                                    ui.close();
-                                }
-                                if ui.button("Rename").clicked() {
-                                    entity_window_resource.renaming_entry =
-                                        Some(entry.editor_id.clone());
-                                    entity_window_resource.rename_buf = entry.name.clone();
-                                    entity_window_resource.rename_request_focus = true;
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui.button("Delete").clicked() {
-                                    pending_scene_delete = Some(entry.name.clone());
-                                    ui.close();
-                                }
-                            }
-                        });
-
-                        let bg = if is_selected {
-                            style.sel_bg
-                        } else if row_resp.hovered() {
-                            style.hover_bg
-                        } else if idx % 2 == 0 {
-                            style.dark_bg
-                        } else {
-                            style.row_alt
-                        };
-
-                        ui.painter().rect_filled(row_rect, 0.0, bg);
-
-                        let rl = row_rect.left();
-                        let cy = row_rect.center().y;
-                        let fnt = style.font_ui();
-
-                        paint_clipped(
-                            ui,
-                            Pos2::new(rl + 6.0, cy),
-                            hex_w - 12.0,
-                            &entry.hex_id,
-                            fnt.clone(),
-                            style.dim_col,
-                        );
-                        paint_clipped(
-                            ui,
-                            Pos2::new(rl + hex_w + 6.0, cy),
-                            type_w - 12.0,
-                            &entry.entry_type,
-                            fnt.clone(),
-                            style.dim_col,
-                        );
-                        if is_renaming {
-                            let name_rect = Rect::from_min_size(
-                                Pos2::new(rl + hex_w + type_w + 2.0, row_rect.top() + 1.0),
-                                Vec2::new(name_w - 4.0, row_h - 2.0),
-                            );
-                            let te =
-                                egui::TextEdit::singleline(&mut entity_window_resource.rename_buf)
-                                    .font(fnt.clone());
-                            let te_resp = ui.put(name_rect, te);
-                            if entity_window_resource.rename_request_focus {
-                                te_resp.request_focus();
-                                entity_window_resource.rename_request_focus = false;
-                            }
-                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            if (te_resp.lost_focus() && !escape) || enter {
-                                let new_name = entity_window_resource.rename_buf.trim().to_string();
-                                if !new_name.is_empty() && new_name != entry.name {
-                                    pending_scene_rename = Some((entry.name.clone(), new_name));
-                                }
-                                entity_window_resource.renaming_entry = None;
-                            } else if escape {
-                                entity_window_resource.renaming_entry = None;
-                            }
-                        } else {
-                            paint_clipped(
-                                ui,
-                                Pos2::new(rl + hex_w + type_w + 6.0, cy),
-                                name_w - 12.0,
-                                &entry.name,
-                                fnt.clone(),
-                                style.dim_col,
-                            );
-                        }
-                        paint_clipped(
-                            ui,
-                            Pos2::new(rl + hex_w + type_w + name_w + 6.0, cy),
-                            count_w - 12.0,
-                            &entry.count.to_string(),
-                            fnt.clone(),
-                            style.dim_col,
-                        );
-
-                        ui.painter().line_segment(
-                            [row_rect.left_bottom(), row_rect.right_bottom()],
-                            Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
-                        );
-                        for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
-                            ui.painter().line_segment(
-                                [
-                                    Pos2::new(rl + offset, row_rect.top()),
-                                    Pos2::new(rl + offset, row_rect.bottom()),
-                                ],
-                                Stroke::new(1.0, style.div_col),
-                            );
-                        }
+        for (i, dx) in [
+            left_edge + filter_w,
+            left_edge + filter_w + hex_w,
+            left_edge + filter_w + hex_w + type_w,
+            left_edge + filter_w + hex_w + type_w + name_w,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let handle =
+                Rect::from_min_max(Pos2::new(dx - 4.0, win_top), Pos2::new(dx + 4.0, win_bot));
+            let resp = ui.allocate_rect(handle, Sense::drag());
+            if resp.hovered() || resp.dragged() {
+                ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+            }
+            if resp.dragged() {
+                let d = resp.drag_delta().x;
+                match i {
+                    0 => {
+                        entity_window_resource.col_widths[0] =
+                            (entity_window_resource.col_widths[0] + d).max(80.0)
                     }
-
-                    // filler rows always at least 8 below the content
-                    let rows_drawn = filtered.len();
-                    let remaining_h = ui.available_height();
-                    let filler_rows = (remaining_h / row_h).ceil() as usize;
-                    let filler_rows = filler_rows.max(8);
-
-                    for i in 0..filler_rows {
-                        let idx = rows_drawn + i;
-                        let bg = if idx.is_multiple_of(2) {
-                            style.dark_bg
-                        } else {
-                            style.row_alt
-                        };
-                        let (row_rect, row_resp) =
-                            ui.allocate_exact_size(Vec2::new(table_w, row_h), Sense::click());
-                        ui.painter().rect_filled(row_rect, 0.0, bg);
-
-                        row_resp.context_menu(|ui| {
-                            if ui.button("New Asset").clicked() {
-                                pending_new_asset = true;
-                                ui.close();
-                            }
-                        });
-
-                        let rl = row_rect.left();
-                        ui.painter().line_segment(
-                            [row_rect.left_bottom(), row_rect.right_bottom()],
-                            Stroke::new(0.5, Color32::from_rgb(38, 38, 38)),
-                        );
-                        for offset in [hex_w, hex_w + type_w, hex_w + type_w + name_w] {
-                            ui.painter().line_segment(
-                                [
-                                    Pos2::new(rl + offset, row_rect.top()),
-                                    Pos2::new(rl + offset, row_rect.bottom()),
-                                ],
-                                Stroke::new(1.0, style.div_col),
-                            );
-                        }
+                    1 => {
+                        entity_window_resource.col_widths[1] =
+                            (entity_window_resource.col_widths[1] + d).max(50.0)
                     }
-                });
-
-            // column drag handles
-            let win_top = header_rect.top();
-            let win_bot = win_top + header_h + body_h;
-            let left_edge = header_rect.left();
-
-            for (i, dx) in [
-                left_edge + filter_w,
-                left_edge + filter_w + hex_w,
-                left_edge + filter_w + hex_w + type_w,
-                left_edge + filter_w + hex_w + type_w + name_w,
-            ]
-            .iter()
-            .enumerate()
-            {
-                let handle =
-                    Rect::from_min_max(Pos2::new(dx - 4.0, win_top), Pos2::new(dx + 4.0, win_bot));
-                let resp = ui.allocate_rect(handle, Sense::drag());
-                if resp.hovered() || resp.dragged() {
-                    ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
-                }
-                if resp.dragged() {
-                    let d = resp.drag_delta().x;
-                    match i {
-                        0 => {
-                            entity_window_resource.col_widths[0] =
-                                (entity_window_resource.col_widths[0] + d).max(80.0)
-                        }
-                        1 => {
-                            entity_window_resource.col_widths[1] =
-                                (entity_window_resource.col_widths[1] + d).max(50.0)
-                        }
-                        2 => {
-                            entity_window_resource.col_widths[2] =
-                                (entity_window_resource.col_widths[2] + d).max(50.0)
-                        }
-                        3 => {
-                            entity_window_resource.col_widths[3] =
-                                (entity_window_resource.col_widths[3] + d).max(50.0)
-                        }
-                        _ => {}
+                    2 => {
+                        entity_window_resource.col_widths[2] =
+                            (entity_window_resource.col_widths[2] + d).max(50.0)
                     }
+                    3 => {
+                        entity_window_resource.col_widths[3] =
+                            (entity_window_resource.col_widths[3] + d).max(50.0)
+                    }
+                    _ => {}
                 }
             }
-        });
+        }
+    });
 
     if let Some(response) = window {
         let rect = response.response.rect;

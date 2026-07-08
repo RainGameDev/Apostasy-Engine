@@ -2,12 +2,14 @@ use walkdir::WalkDir;
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "tga", "bmp", "webp"];
 
-/// Returns all image files found in res/ directories, as paths relative to res/
-/// (e.g. "textures/brick.png"). Searches CWD/res, the crate's own res/, and
-/// the sibling game package's res/. Skips .editor subdirectories.
+/// Returns all image files found in asset root directories, as paths relative
+/// to their root (e.g. "textures/brick.png"). Searches the project/ directory,
+/// CWD/res, the crate's own res/, and the sibling game/editor res/ directories
+/// — the same roots texture path resolution uses. Skips .editor subdirectories.
 pub fn list_available_textures() -> Vec<String> {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let candidate_roots: &[std::path::PathBuf] = &[
+        std::path::PathBuf::from(manifest).join("../project"),
         std::path::PathBuf::from("res"),
         std::path::PathBuf::from(manifest).join("res"),
         std::path::PathBuf::from(manifest).join("../game/res"),

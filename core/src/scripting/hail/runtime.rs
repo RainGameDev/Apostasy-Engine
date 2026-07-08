@@ -206,6 +206,7 @@ pub fn build_engine_module() -> Result<hail::Module, hail::ModuleError> {
 
     // Input.
     world::hail_register_is_keybind_active(&mut module)?;
+    world::hail_register_is_context_active(&mut module)?;
     world::hail_register_input_vector_2d(&mut module)?;
     world::hail_register_mouse_delta(&mut module)?;
 

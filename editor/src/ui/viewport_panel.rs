@@ -30,7 +30,6 @@ pub struct ViewportContextMenu {
 #[derive(Resource, Clone)]
 pub struct ViewportInfo {
     pub is_hovered: bool,
-    pub needs_layout_restore: bool,
     pub open: bool,
     /// Last requested offscreen target size (pixels), used to debounce resizes.
     pub pending_pixel: [f32; 2],
@@ -42,7 +41,6 @@ impl Default for ViewportInfo {
     fn default() -> Self {
         Self {
             is_hovered: false,
-            needs_layout_restore: false,
             open: true,
             pending_pixel: [0.0, 0.0],
             pending_stable: 0,
@@ -147,21 +145,17 @@ pub fn viewport(world: &mut World) -> Result<()> {
         .get_resource::<EditorStyle>()
         .cloned()
         .unwrap_or_default();
-    let state = world.get_resource::<WindowLayout>()?.viewport.clone();
+    let layout = world.get_resource::<WindowLayout>()?;
+    let state = layout.viewport.clone();
+    let restore = layout.restore > 0;
     let (pos, size) = (state.to_pos(), state.to_size());
 
-    let mut window = Window::new("Viewport")
+    let window = Window::new("Viewport")
         .default_pos(pos)
         .default_size(size)
         .resizable(true)
         .collapsible(false)
         .movable(true);
-
-    let viewport_info = world.get_resource_mut::<ViewportInfo>()?;
-    if viewport_info.needs_layout_restore {
-        window = window.current_pos(pos).fixed_size(size).constrain(false);
-        viewport_info.needs_layout_restore = false;
-    }
 
     let (available_options, aa_before, mut aa_selected) = {
         let aa = world.get_resource::<AntiAliasing>().unwrap();
@@ -317,243 +311,240 @@ pub fn viewport(world: &mut World) -> Result<()> {
         }
     }
 
-    let vp = window
+    let mut window = window
         .open(&mut is_open)
         .resizable(true)
         .movable(true)
         .title_bar(true)
         .drag_area(egui::WindowDrag::TitleBar)
-        .frame(style.window_frame(&ctx))
-        .show(&ctx, |ui| {
-            let bar_h = style.header_height();
-            egui::ScrollArea::horizontal()
-                .id_salt("viewport_bar_scroll")
-                .max_height(bar_h)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.set_height(bar_h);
-                    ui.horizontal_centered(|ui| {
-                        ui.add_space(6.0);
+        .frame(style.window_frame(&ctx));
+    if restore {
+        window = window.fixed_pos(pos).fixed_size(size).constrain(false);
+    }
+    let vp = window.show(&ctx, |ui| {
+        let bar_h = style.header_height();
+        egui::ScrollArea::horizontal()
+            .id_salt("viewport_bar_scroll")
+            .max_height(bar_h)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_height(bar_h);
+                ui.horizontal_centered(|ui| {
+                    ui.add_space(6.0);
 
-                        ComboBox::from_label("MSAA")
-                            .selected_text(format!("{:?}", aa_selected))
-                            .show_ui(ui, |ui| {
-                                let options = [
-                                    (AntiAliasingAmount::X0, "None"),
-                                    (AntiAliasingAmount::X2, "X2"),
-                                    (AntiAliasingAmount::X4, "X4"),
-                                    (AntiAliasingAmount::X8, "X8"),
-                                ];
-                                for (amount, label) in options {
-                                    if available_options.contains(&amount) {
-                                        ui.selectable_value(&mut aa_selected, amount, label);
-                                    }
-                                }
-                            });
-
-                        ui.add_space(8.0);
-                        ui.label("Camera Speed");
-                        ui.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
-
-                        ui.add_space(8.0);
-                        ui.separator();
-                        ui.add_space(4.0);
-                        use crate::ui::gizmo::GizmoMode;
-                        if ui
-                            .selectable_label(gizmo_state.mode == GizmoMode::Translate, "Move")
-                            .clicked()
-                        {
-                            gizmo_state.mode = GizmoMode::Translate;
-                            gizmo_state.drag = None;
-                        }
-                        if ui
-                            .selectable_label(gizmo_state.mode == GizmoMode::Rotate, "Rotate")
-                            .clicked()
-                        {
-                            gizmo_state.mode = GizmoMode::Rotate;
-                            gizmo_state.drag = None;
-                        }
-                        if ui
-                            .selectable_label(gizmo_state.mode == GizmoMode::Scale, "Scale")
-                            .clicked()
-                        {
-                            gizmo_state.mode = GizmoMode::Scale;
-                            gizmo_state.drag = None;
-                        }
-
-                        ui.add_space(4.0);
-                        ui.separator();
-                        ui.add_space(4.0);
-                        {
-                            let terrain_active = world
-                                .get_resource::<TerrainToolState>()
-                                .map(|s| s.active)
-                                .unwrap_or(false);
-
-                            if ui.selectable_label(terrain_active, "Terrain").clicked() {
-                                if !world.has_resource::<TerrainToolState>() {
-                                    world.insert_resource(TerrainToolState::default());
-                                }
-                                if let Ok(s) = world.get_resource_mut::<TerrainToolState>() {
-                                    s.active = !terrain_active;
+                    ComboBox::from_label("MSAA")
+                        .selected_text(format!("{:?}", aa_selected))
+                        .show_ui(ui, |ui| {
+                            let options = [
+                                (AntiAliasingAmount::X0, "None"),
+                                (AntiAliasingAmount::X2, "X2"),
+                                (AntiAliasingAmount::X4, "X4"),
+                                (AntiAliasingAmount::X8, "X8"),
+                            ];
+                            for (amount, label) in options {
+                                if available_options.contains(&amount) {
+                                    ui.selectable_value(&mut aa_selected, amount, label);
                                 }
                             }
+                        });
+
+                    ui.add_space(8.0);
+                    ui.label("Camera Speed");
+                    ui.add(Slider::new(&mut camera_speed, 1.0..=256.0).text("M/s"));
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    use crate::ui::gizmo::GizmoMode;
+                    if ui
+                        .selectable_label(gizmo_state.mode == GizmoMode::Translate, "Move")
+                        .clicked()
+                    {
+                        gizmo_state.mode = GizmoMode::Translate;
+                        gizmo_state.drag = None;
+                    }
+                    if ui
+                        .selectable_label(gizmo_state.mode == GizmoMode::Rotate, "Rotate")
+                        .clicked()
+                    {
+                        gizmo_state.mode = GizmoMode::Rotate;
+                        gizmo_state.drag = None;
+                    }
+                    if ui
+                        .selectable_label(gizmo_state.mode == GizmoMode::Scale, "Scale")
+                        .clicked()
+                    {
+                        gizmo_state.mode = GizmoMode::Scale;
+                        gizmo_state.drag = None;
+                    }
+
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    {
+                        let terrain_active = world
+                            .get_resource::<TerrainToolState>()
+                            .map(|s| s.active)
+                            .unwrap_or(false);
+
+                        if ui.selectable_label(terrain_active, "Terrain").clicked() {
+                            if !world.has_resource::<TerrainToolState>() {
+                                world.insert_resource(TerrainToolState::default());
+                            }
+                            if let Ok(s) = world.get_resource_mut::<TerrainToolState>() {
+                                s.active = !terrain_active;
+                            }
                         }
-                        ui.add_space(4.0);
-                        ui.separator();
-                        ui.add_space(4.0);
-                        if ui.selectable_label(!gizmo_state.local, "Global").clicked() {
-                            gizmo_state.local = false;
-                            gizmo_state.drag = None;
-                        }
-                        if ui.selectable_label(gizmo_state.local, "Local").clicked() {
-                            gizmo_state.local = true;
-                            gizmo_state.drag = None;
-                        }
+                    }
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    if ui.selectable_label(!gizmo_state.local, "Global").clicked() {
+                        gizmo_state.local = false;
+                        gizmo_state.drag = None;
+                    }
+                    if ui.selectable_label(gizmo_state.local, "Local").clicked() {
+                        gizmo_state.local = true;
+                        gizmo_state.drag = None;
+                    }
 
-                        ui.add_space(4.0);
-                        ui.separator();
-                        ui.add_space(4.0);
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
 
-                        if ui
-                            .selectable_label(gizmo_state.snap_translate, "Grid")
-                            .on_hover_text("Snap position to grid")
-                            .clicked()
-                        {
-                            gizmo_state.snap_translate = !gizmo_state.snap_translate;
-                        }
-                        ui.add(
-                            DragValue::new(&mut gizmo_state.snap_translate_size)
-                                .range(0.001_f32..=100.0)
-                                .speed(0.05),
-                        );
-
-                        ui.add_space(4.0);
-                        if ui
-                            .selectable_label(gizmo_state.snap_rotate, "Angle")
-                            .on_hover_text("Snap rotation to angle increment")
-                            .clicked()
-                        {
-                            gizmo_state.snap_rotate = !gizmo_state.snap_rotate;
-                        }
-                        ui.add(
-                            DragValue::new(&mut gizmo_state.snap_rotate_deg)
-                                .range(0.1_f32..=180.0)
-                                .speed(0.5)
-                                .suffix("°"),
-                        );
-
-                        ui.add_space(4.0);
-                        if ui
-                            .selectable_label(gizmo_state.snap_scale, "Step")
-                            .on_hover_text("Snap scale to step increment")
-                            .clicked()
-                        {
-                            gizmo_state.snap_scale = !gizmo_state.snap_scale;
-                        }
-                        ui.add(
-                            DragValue::new(&mut gizmo_state.snap_scale_size)
-                                .range(0.001_f32..=10.0)
-                                .speed(0.01),
-                        );
-                    });
-                });
-
-            // Some othershit idc
-
-            let available_size = ui.available_size();
-            if available_size.x <= 0.0 || available_size.y <= 0.0 {
-                return;
-            }
-
-            let (frame_rect, frame_resp) = ui.allocate_exact_size(available_size, Sense::click());
-            frame_rect_out = Some(frame_rect);
-            ui.painter()
-                .rect_filled(frame_rect, 4.0, Color32::from_gray(40));
-
-            if let Some(texture_id) = viewport_texture {
-                let image = Image::new((texture_id, available_size));
-                ui.put(frame_rect, image);
-            } else {
-                let label =
-                    Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
-                ui.put(frame_rect, label);
-            }
-
-            let terrain_tool_active = world
-                .get_resource::<TerrainToolState>()
-                .map(|s| s.active)
-                .unwrap_or(false);
-
-            if !terrain_tool_active {
-                if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
-                    let (new_t, gs) = crate::ui::gizmo::gizmo(
-                        ui,
-                        gizmo_state.clone(),
-                        obj_t,
-                        view_proj,
-                        frame_rect,
+                    if ui
+                        .selectable_label(gizmo_state.snap_translate, "Grid")
+                        .on_hover_text("Snap position to grid")
+                        .clicked()
+                    {
+                        gizmo_state.snap_translate = !gizmo_state.snap_translate;
+                    }
+                    ui.add(
+                        DragValue::new(&mut gizmo_state.snap_translate_size)
+                            .range(0.001_f32..=100.0)
+                            .speed(0.05),
                     );
-                    gizmo_transform_out = new_t;
-                    new_gizmo_state_from_fn = Some(gs);
-                    if let Some(collider) = maybe_collider {
-                        let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
-                        crate::ui::gizmo::collider_gizmo(
-                            ui, display_t, collider, view_proj, frame_rect,
-                        );
-                    }
-                }
 
-                if let Some(vp_mat) = light_view_proj {
-                    let consuming = new_gizmo_state_from_fn
-                        .as_ref()
-                        .map(|s| s.consuming)
-                        .unwrap_or(gizmo_state.consuming);
-                    if let Some(id) = crate::ui::gizmo::light_gizmos(
-                        ui,
-                        &light_entries,
-                        vp_mat,
-                        frame_rect,
-                        light_selected_id,
-                        consuming,
-                    ) {
-                        light_clicked = Some(id);
+                    ui.add_space(4.0);
+                    if ui
+                        .selectable_label(gizmo_state.snap_rotate, "Angle")
+                        .on_hover_text("Snap rotation to angle increment")
+                        .clicked()
+                    {
+                        gizmo_state.snap_rotate = !gizmo_state.snap_rotate;
                     }
-                }
-            } else if let Some((hit_pos, radius, vp)) = terrain_brush_data {
-                crate::ui::gizmo::terrain_brush_gizmo(ui, hit_pos, radius, vp, frame_rect);
-            }
+                    ui.add(
+                        DragValue::new(&mut gizmo_state.snap_rotate_deg)
+                            .range(0.1_f32..=180.0)
+                            .speed(0.5)
+                            .suffix("°"),
+                    );
 
-            if ctx_obj_id.is_some() {
-                frame_resp.context_menu(|ui| {
-                    ui.set_min_width(190.0);
-                    ui.weak(ctx_obj_name.as_deref().unwrap_or("Entity"));
-                    ui.separator();
-                    if ui.button("Teleport to Entity").clicked() {
-                        pending_focus = true;
-                        ui.close();
+                    ui.add_space(4.0);
+                    if ui
+                        .selectable_label(gizmo_state.snap_scale, "Step")
+                        .on_hover_text("Snap scale to step increment")
+                        .clicked()
+                    {
+                        gizmo_state.snap_scale = !gizmo_state.snap_scale;
                     }
-                    if ui.button("Inspect Entity").clicked() {
-                        pending_inspect = true;
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button("Copy Entity").clicked() {
-                        pending_copy = true;
-                        ui.close();
-                    }
-                    if ui.button("Duplicate Entity").clicked() {
-                        pending_duplicate = true;
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button("Delete Entity").clicked() {
-                        pending_delete = true;
-                        ui.close();
-                    }
+                    ui.add(
+                        DragValue::new(&mut gizmo_state.snap_scale_size)
+                            .range(0.001_f32..=10.0)
+                            .speed(0.01),
+                    );
                 });
+            });
+
+        // Some othershit idc
+
+        let available_size = ui.available_size();
+        if available_size.x <= 0.0 || available_size.y <= 0.0 {
+            return;
+        }
+
+        let (frame_rect, frame_resp) = ui.allocate_exact_size(available_size, Sense::click());
+        frame_rect_out = Some(frame_rect);
+        ui.painter()
+            .rect_filled(frame_rect, 4.0, Color32::from_gray(40));
+
+        if let Some(texture_id) = viewport_texture {
+            let image = Image::new((texture_id, available_size));
+            ui.put(frame_rect, image);
+        } else {
+            let label = Label::new(RichText::new("Viewport initializing...").color(Color32::WHITE));
+            ui.put(frame_rect, label);
+        }
+
+        let terrain_tool_active = world
+            .get_resource::<TerrainToolState>()
+            .map(|s| s.active)
+            .unwrap_or(false);
+
+        if !terrain_tool_active {
+            if let Some((_, ref obj_t, view_proj, ref maybe_collider)) = gizmo_data {
+                let (new_t, gs) =
+                    crate::ui::gizmo::gizmo(ui, gizmo_state.clone(), obj_t, view_proj, frame_rect);
+                gizmo_transform_out = new_t;
+                new_gizmo_state_from_fn = Some(gs);
+                if let Some(collider) = maybe_collider {
+                    let display_t = gizmo_transform_out.as_ref().unwrap_or(obj_t);
+                    crate::ui::gizmo::collider_gizmo(
+                        ui, display_t, collider, view_proj, frame_rect,
+                    );
+                }
             }
-        });
+
+            if let Some(vp_mat) = light_view_proj {
+                let consuming = new_gizmo_state_from_fn
+                    .as_ref()
+                    .map(|s| s.consuming)
+                    .unwrap_or(gizmo_state.consuming);
+                if let Some(id) = crate::ui::gizmo::light_gizmos(
+                    ui,
+                    &light_entries,
+                    vp_mat,
+                    frame_rect,
+                    light_selected_id,
+                    consuming,
+                ) {
+                    light_clicked = Some(id);
+                }
+            }
+        } else if let Some((hit_pos, radius, vp)) = terrain_brush_data {
+            crate::ui::gizmo::terrain_brush_gizmo(ui, hit_pos, radius, vp, frame_rect);
+        }
+
+        if ctx_obj_id.is_some() {
+            frame_resp.context_menu(|ui| {
+                ui.set_min_width(190.0);
+                ui.weak(ctx_obj_name.as_deref().unwrap_or("Entity"));
+                ui.separator();
+                if ui.button("Teleport to Entity").clicked() {
+                    pending_focus = true;
+                    ui.close();
+                }
+                if ui.button("Inspect Entity").clicked() {
+                    pending_inspect = true;
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Copy Entity").clicked() {
+                    pending_copy = true;
+                    ui.close();
+                }
+                if ui.button("Duplicate Entity").clicked() {
+                    pending_duplicate = true;
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Delete Entity").clicked() {
+                    pending_delete = true;
+                    ui.close();
+                }
+            });
+        }
+    });
 
     if let Some(response) = vp {
         let rect = response.response.rect;
@@ -573,8 +564,6 @@ pub fn viewport(world: &mut World) -> Result<()> {
 
         {
             let viewport_size = world.get_resource_mut::<ViewportSize>().unwrap();
-            // Logical fields track the window every frame so the displayed rect,
-            // aspect ratio and gizmo projection stay aligned with the egui panel.
             viewport_size.logical_width = current_size.x;
             viewport_size.logical_height = current_size.y;
             if let Some(frame_rect) = frame_rect_out {
@@ -584,10 +573,6 @@ pub fn viewport(world: &mut World) -> Result<()> {
                 viewport_size.logical_height = frame_rect.height();
             }
 
-            // The pixel size drives recreation of the offscreen render target, so
-            // only commit it once it has held steady for a few frames. During an
-            // active resize drag the old target keeps being rendered and egui just
-            // stretches it, avoiding a per-frame GPU stall + reallocation.
             let committed = [viewport_size.pixel_width, viewport_size.pixel_height];
             let requested = [pixel_w, pixel_h];
             if requested != committed {

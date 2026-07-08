@@ -85,6 +85,17 @@ pub fn cursor_and_pause(world: &mut World) -> Result<()> {
 
     let paused = world.has_resource::<Paused>();
     let console_open = world.get_resource::<Console>().is_ok_and(|c| c.open);
+
+    // Publish the gameplay input context for this frame; scripts gate their input
+    // on it, so movement/look/actions stop while paused or the console is open.
+    // `active_contexts` is cleared each frame, so absence means "not active".
+    if !paused && !console_open {
+        world
+            .get_resource_mut::<InputManager>()?
+            .active_contexts
+            .insert("gameplay".to_string());
+    }
+
     {
         let cursor = world.get_resource_mut::<CursorManager>()?;
         cursor.set_mode(if paused || console_open {

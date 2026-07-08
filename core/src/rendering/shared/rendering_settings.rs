@@ -57,6 +57,15 @@ impl RenderingSettings {
         settings
     }
 
+    /// Skybox pass: depth test/write disabled (drawn first, scene renders over it)
+    /// and no culling since the sky mesh is viewed from inside.
+    pub fn skybox() -> Self {
+        let mut settings = Self::default();
+        settings.depth_settings.depth_test_enabled = false;
+        settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
+        settings
+    }
+
     /// Wireframe overlay used for collider debug visuals: no depth test (so it always
     /// draws on top of the mesh underneath) and standard alpha blending — the fragment
     /// shader outputs a fixed translucent white, so every collider reads as a consistent,

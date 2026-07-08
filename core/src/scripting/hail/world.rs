@@ -63,6 +63,17 @@ pub fn is_keybind_active(world: &WorldHandle, name: String) -> bool {
         .unwrap_or(false)
 }
 
+/// True if the named input context is active this frame (set by the owning
+/// systems, e.g. the game clears "gameplay" while paused or the console is open).
+#[hail(method, "is_context_active")]
+pub fn is_context_active(world: &WorldHandle, name: String) -> bool {
+    world
+        .world()
+        .get_resource::<InputManager>()
+        .map(|im| im.active_contexts.contains(&name))
+        .unwrap_or(false)
+}
+
 #[hail(method, "input_vector_2d")]
 pub fn input_vector_2d(
     world: &WorldHandle,

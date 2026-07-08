@@ -95,6 +95,17 @@ pub trait RenderingAPI {
         model_push_constants: &ModelPushConstants,
     ) -> Result<()>;
 
+    /// Draws the skybox sphere with the day/night sky texture array bound at the
+    /// albedo slot; `color_modifier.a` in the model push constants is the blend.
+    /// Depth is disabled — call this first in the viewport pass so the scene draws over it.
+    fn skybox_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        push_constants: PushConstants,
+        model_push_constants: &ModelPushConstants,
+        sky_descriptor_set: vk::DescriptorSet,
+    ) -> Result<()>;
+
     /// Draws a voxel mesh using the provided texture atlas. `wireframe` selects
     /// the line-rasterized voxel pipeline instead of the filled one.
     fn voxel_render(
