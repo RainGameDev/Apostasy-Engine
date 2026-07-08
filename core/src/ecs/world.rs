@@ -579,14 +579,16 @@ impl World {
 
     // ========== Queries ==========
 
-    /// Build a typed query over components and tags.
+    /// Build a typed query over components and tags. Fetch with `&T` / `&mut T`
+    /// (tuples up to 8); candidates come from the first element, so put the
+    /// rarest component first. Don't spawn/despawn inside `for_each`.
     ///
     /// ```rust
-    /// world.query::<(Mut<Transform>, Ref<Velocity>)>()
+    /// world.query::<(&mut Transform, &Velocity)>()
     ///     .with_tag::<ActiveCamera>()
     ///     .without::<Frozen>()
     ///     .for_each(|id, (transform, vel)| {
-    ///         transform.position += vel.linear * dt;
+    ///         transform.local_position += vel.linear * dt;
     ///     });
     /// ```
     pub fn query<F: QueryFetch>(&mut self) -> QueryBuilder<'_, F> {

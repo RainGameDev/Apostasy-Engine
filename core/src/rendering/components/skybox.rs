@@ -1,5 +1,6 @@
 use std::{f32::consts::PI, sync::Arc};
 
+use crate::ecs::Query;
 use anyhow::Result;
 use apostasy_macros::{Component, update};
 use ash::vk;
@@ -7,7 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     assets::gltf::upload_texture_from_pixels,
-    ecs::{components::Inspect, systems::DeltaTime, world::World},
+    ecs::{
+        components::{Inspect, transform::Transform},
+        systems::DeltaTime,
+        world::World,
+    },
     egui::{self, DragAndDrop, StrokeKind},
     rendering::{
         shared::{model::Mesh, texture::GpuTexture, vertex::Vertex},
@@ -331,4 +336,30 @@ pub fn build_skybox_sphere_mesh(
         material_name: String::new(),
         material: None,
     })
+}
+
+#[update(mode = "all")]
+pub fn update_skybox_time(
+    world: &mut World,
+    q: Query<(&mut Transform, &mut Skybox)>,
+) -> Result<()> {
+    let delta = world.get_resource::<DeltaTime>()?.0;
+
+    q.for_each(|_id, (transform, sky)| {
+        if sky.progress_time {
+            if sky.day_length > 0.0 {
+                sky.time = (sky.time + delta * 24.0 / sky.day_length).rem_euclid(24.0);
+            }
+            let time_of_day = sky.time;
+            let pitch = -(time_of_day - 6.0) / 24.0 * 360.0;
+            let sun_elevation = -pitch.to_radians().sin();
+
+            let blend = 1.0 - smoothstep(-0.15, 0.1, sun_elevation);
+
+            transform.local_euler_angles.x = pitch;
+            sky.blend = blend;
+        }
+    });
+
+    Ok(())
 }
