@@ -95,17 +95,6 @@ pub trait RenderingAPI {
         model_push_constants: &ModelPushConstants,
     ) -> Result<()>;
 
-    /// Draws the skybox sphere with the day/night sky texture array bound at the
-    /// albedo slot; `color_modifier.a` in the model push constants is the blend.
-    /// Depth is disabled — call this first in the viewport pass so the scene draws over it.
-    fn skybox_render(
-        &mut self,
-        mesh: Box<dyn GpuMesh>,
-        push_constants: PushConstants,
-        model_push_constants: &ModelPushConstants,
-        sky_descriptor_set: vk::DescriptorSet,
-    ) -> Result<()>;
-
     /// Draws a voxel mesh using the provided texture atlas. `wireframe` selects
     /// the line-rasterized voxel pipeline instead of the filled one.
     fn voxel_render(
@@ -124,6 +113,18 @@ pub trait RenderingAPI {
         atlas: &VoxelTextureAtlas,
         push_constants: &PushConstants,
         voxel_push_constants: &VoxelPushConstants,
+    ) -> Result<()>;
+
+    /// Draws one sky layer on the sky sphere; call once per layer, back to front.
+    /// `color_modifier.a` is the layer opacity; `additive` selects the additive
+    /// blend pipeline (glow layers) instead of alpha-over.
+    fn skybox_render(
+        &mut self,
+        mesh: Box<dyn GpuMesh>,
+        push_constants: PushConstants,
+        model_push_constants: &ModelPushConstants,
+        sky_descriptor_set: vk::DescriptorSet,
+        additive: bool,
     ) -> Result<()>;
 
     /// Begins the egui UI render pass for this frame.

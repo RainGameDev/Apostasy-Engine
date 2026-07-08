@@ -1,305 +1,288 @@
-use std::sync::Arc;
+use std::{f32::consts::PI, sync::Arc};
 
 use anyhow::Result;
-use apostasy_macros::Component;
-use ash::vk::{self, SampleCountFlags};
+use apostasy_macros::{Component, update};
+use ash::vk;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    ecs::component::Inspect,
+    assets::gltf::upload_texture_from_pixels,
+    ecs::{components::Inspect, systems::DeltaTime, world::World},
     egui::{self, DragAndDrop, StrokeKind},
-    rendering::shared::{model::Mesh, vertex::Vertex},
-    rendering::vulkan::rendering_context::VulkanRenderingContext,
+    rendering::{
+        shared::{model::Mesh, texture::GpuTexture, vertex::Vertex},
+        vulkan::rendering_context::VulkanRenderingContext,
+    },
     terrain::texture_atlas::load_terrain_texture,
-    ui::LABEL_WIDTH,
+    ui::{DRAG_SIZE, LABEL_WIDTH},
 };
 
-/// GPU resources for the uploaded day/night sky texture array (layer 0 = day, 1 = night).
-#[derive(Clone, Debug)]
-pub struct SkyboxTextures {
-    pub image: vk::Image,
-    pub image_memory: vk::DeviceMemory,
-    pub image_view: vk::ImageView,
-    pub sampler: vk::Sampler,
-    pub descriptor_set: vk::DescriptorSet,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum SkyProjection {
+    Spherical,
+    #[default]
+    Planar,
+    Celestial,
 }
 
-/// Equirectangular skybox rendered behind all scene geometry on a sky sphere.
-/// `blend` cross-fades day → night; the sky rotates with this entity's `Transform`.
-#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SkyLayer {
+    pub path: Option<String>,
+    pub projection: SkyProjection,
+    /// UV tiling scale for planar projection.
+    pub scale: f32,
+}
+
+impl Default for SkyLayer {
+    fn default() -> Self {
+        Self {
+            path: None,
+            projection: SkyProjection::Planar,
+            scale: 0.3,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Component, Serialize, Deserialize)]
 #[component(serde)]
 #[serde(default)]
 pub struct Skybox {
-    /// Equirectangular (panorama) day sky texture path.
-    pub day: String,
-    /// Equirectangular night sky texture path; falls back to `day` if empty.
-    pub night: String,
-    /// 0.0 = full day, 1.0 = full night.
+    /// The paths to the day textures,
+    /// Textures are loaded as layers (0 then 1 then 2 ect)
+    pub day_textures: Vec<SkyLayer>,
+    /// The paths to the night textures,
+    /// Textures are loaded as layers (0 then 1 then 2 ect)
+    pub night_textures: Vec<SkyLayer>,
+    // and the snapshots:
+    #[serde(skip)]
+    pub(crate) loaded_day_paths: Vec<SkyLayer>,
+    #[serde(skip)]
+    pub(crate) loaded_night_paths: Vec<SkyLayer>,
+
+    /// Time in a 24 hour setting
+    pub time: f32,
+    /// Should the time progress
+    pub progress_time: bool,
+    /// Real seconds for a full 24 hour cycle.
+    pub day_length: f32,
+    /// The blend between day and night textures
     pub blend: f32,
-    /// Uploaded GPU textures; rebuilt when paths change.
+
+    /// Gpu textures for the day.
     #[serde(skip)]
-    pub textures: Option<SkyboxTextures>,
+    pub(crate) day_texture_resources: Vec<Option<GpuTexture>>,
+    /// Gpu textures for the night.
     #[serde(skip)]
-    pub sky_mesh: Option<Mesh>,
-    /// Set after a failed upload so it isn't retried every frame.
+    pub(crate) night_texture_resources: Vec<Option<GpuTexture>>,
+    /// Mesh used to render the skybox.
     #[serde(skip)]
-    pub load_failed: bool,
+    pub(crate) skybox_mesh: Option<Mesh>,
 }
 
 impl Default for Skybox {
     fn default() -> Self {
         Self {
-            day: String::new(),
-            night: String::new(),
+            day_textures: Vec::new(),
+            night_textures: Vec::new(),
+            time: 12.0,
+            progress_time: false,
+            day_length: 600.0,
             blend: 0.0,
-            textures: None,
-            sky_mesh: None,
-            load_failed: false,
+            day_texture_resources: Vec::new(),
+            night_texture_resources: Vec::new(),
+            skybox_mesh: None,
+            loaded_day_paths: Vec::new(),
+            loaded_night_paths: Vec::new(),
         }
+    }
+}
+
+/// Editable list of layer texture paths with add/remove and texture drag-drop.
+/// Typed edits commit on Enter/focus-loss so the render loop doesn't re-upload
+/// textures on every keystroke.
+fn texture_list_ui(ui: &mut egui::Ui, label: &str, layers: &mut Vec<SkyLayer>) {
+    let row_h = 20.0;
+    let has_texture_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
+
+    ui.label(label);
+    let mut remove: Option<usize> = None;
+    for i in 0..layers.len() {
+        let draft_id = ui.make_persistent_id(("skybox_layer", label, i));
+        let committed = layers[i].path.clone().unwrap_or_default();
+        let mut draft: String = ui
+            .data_mut(|d| d.get_temp(draft_id))
+            .unwrap_or_else(|| committed.clone());
+
+        let inner = ui.horizontal(|ui| {
+            ui.add_sized(
+                [LABEL_WIDTH, row_h],
+                egui::Label::new(format!("Layer {}", i)),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add_sized([20.0, row_h], egui::Button::new("✕"))
+                    .clicked()
+                {
+                    remove = Some(i);
+                }
+                ui.add_sized(
+                    [ui.available_width(), row_h],
+                    egui::TextEdit::singleline(&mut draft).hint_text("drag a texture here…"),
+                )
+            })
+            .inner
+        });
+        let resp = inner.inner;
+
+        if resp.changed() {
+            ui.data_mut(|d| d.insert_temp(draft_id, draft.clone()));
+        }
+        if resp.lost_focus() {
+            ui.data_mut(|d| d.remove_temp::<String>(draft_id));
+            if draft != committed {
+                let trimmed = draft.trim();
+                layers[i].path = (!trimmed.is_empty()).then(|| trimmed.to_string());
+            }
+        }
+
+        if has_texture_drag && ui.rect_contains_pointer(resp.rect) {
+            ui.painter().rect_stroke(
+                resp.rect.expand(2.0),
+                3.0,
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 160, 220)),
+                StrokeKind::Outside,
+            );
+        }
+        if let Some(payload) = resp.dnd_release_payload::<String>()
+            && let Some(name) = payload.strip_prefix("texture:")
+        {
+            layers[i].path = Some(name.to_string());
+            ui.data_mut(|d| d.remove_temp::<String>(draft_id));
+        }
+
+        ui.horizontal(|ui| {
+            ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("  Projection"));
+            egui::ComboBox::from_id_salt(("sky_projection", label, i))
+                .selected_text(match layers[i].projection {
+                    SkyProjection::Spherical => "Spherical",
+                    SkyProjection::Planar => "Planar",
+                    SkyProjection::Celestial => "Celestial",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut layers[i].projection,
+                        SkyProjection::Spherical,
+                        "Spherical",
+                    );
+                    ui.selectable_value(&mut layers[i].projection, SkyProjection::Planar, "Planar");
+                    ui.selectable_value(
+                        &mut layers[i].projection,
+                        SkyProjection::Celestial,
+                        "Celestial",
+                    );
+                });
+            if layers[i].projection == SkyProjection::Planar {
+                ui.add_sized(
+                    DRAG_SIZE,
+                    egui::DragValue::new(&mut layers[i].scale)
+                        .speed(0.05)
+                        .range(0.05..=32.0)
+                        .prefix("scale "),
+                );
+            }
+        });
+    }
+    if let Some(i) = remove {
+        layers.remove(i);
+    }
+    if ui.button("Add layer").clicked() {
+        layers.push(SkyLayer::default());
     }
 }
 
 impl Inspect for Skybox {
     fn inspect(&mut self, ui: &mut egui::Ui) {
         let row_h = 20.0;
-        let mut changed = false;
 
-        let has_texture_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
-        for (label, path) in [("Day", &mut self.day), ("Night", &mut self.night)] {
-            let inner = ui.horizontal(|ui| {
-                ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new(label));
-                ui.add_sized(
-                    [ui.available_width(), row_h],
-                    egui::TextEdit::singleline(path).hint_text("drag a texture here…"),
-                )
-            });
-            let resp = inner.inner;
-            if has_texture_drag && ui.rect_contains_pointer(resp.rect) {
-                ui.painter().rect_stroke(
-                    resp.rect.expand(2.0),
-                    3.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 160, 220)),
-                    StrokeKind::Outside,
-                );
-            }
-            if let Some(payload) = resp.dnd_release_payload::<String>() {
-                if let Some(name) = payload.strip_prefix("texture:") {
-                    *path = name.to_string();
-                    changed = true;
-                }
-            }
-            changed |= resp.changed();
-        }
+        texture_list_ui(ui, "Day textures", &mut self.day_textures);
+        texture_list_ui(ui, "Night textures", &mut self.night_textures);
 
+        ui.horizontal(|ui| {
+            ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Time"));
+            ui.add(egui::Slider::new(&mut self.time, 0.0..=24.0));
+        });
+        ui.horizontal(|ui| {
+            ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Progress time"));
+            ui.checkbox(&mut self.progress_time, "");
+        });
+        ui.horizontal(|ui| {
+            ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Day length"));
+            ui.add_sized(
+                DRAG_SIZE,
+                egui::DragValue::new(&mut self.day_length)
+                    .speed(1.0)
+                    .range(1.0..=86400.0)
+                    .suffix(" s"),
+            );
+        });
         ui.horizontal(|ui| {
             ui.add_sized([LABEL_WIDTH, row_h], egui::Label::new("Blend"));
             ui.add(egui::Slider::new(&mut self.blend, 0.0..=1.0));
         });
-
-        if changed {
-            self.textures = None;
-            self.load_failed = false;
-        }
     }
 }
 
-/// Loads the day/night equirectangular textures and uploads them as a 2-layer
-/// texture array with a combined-image-sampler descriptor set (same layout as
-/// material albedos). An empty night path reuses the day texture.
-pub fn upload_skybox_textures(
-    ctx: &VulkanRenderingContext,
+/// Loads one sky layer texture (project/res path resolution) and uploads it
+/// with its own combined-image-sampler descriptor set.
+pub(crate) fn upload_skybox_layer(
+    context: &Arc<VulkanRenderingContext>,
     command_pool: vk::CommandPool,
     descriptor_pool: vk::DescriptorPool,
     descriptor_set_layout: vk::DescriptorSetLayout,
-    day_path: &str,
-    night_path: &str,
-) -> Result<SkyboxTextures> {
-    if day_path.trim().is_empty() {
-        anyhow::bail!("Skybox requires at least a day texture path");
-    }
-
-    // Both layers must match the day texture's dimensions.
-    let day = load_terrain_texture(day_path).to_rgba8();
-    let (width, height) = (day.width().max(1), day.height().max(1));
-    let night = if night_path.trim().is_empty() {
-        day.clone()
-    } else {
-        load_terrain_texture(night_path)
-            .resize_exact(width, height, image::imageops::FilterType::Triangle)
-            .to_rgba8()
-    };
-    let layers = [day, night];
-
-    let layer_bytes = (width * height * 4) as vk::DeviceSize;
-    let total_bytes = layer_bytes * 2;
-
-    let (staging_buffer, staging_memory) = ctx.create_buffer(
-        total_bytes,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-    )?;
-
-    unsafe {
-        let ptr = ctx
-            .device
-            .map_memory(staging_memory, 0, total_bytes, vk::MemoryMapFlags::empty())?
-            as *mut u8;
-        let mut offset = 0usize;
-        for layer in &layers {
-            let raw = layer.as_raw();
-            ptr.add(offset)
-                .copy_from_nonoverlapping(raw.as_ptr(), raw.len());
-            offset += raw.len();
-        }
-        ctx.device.unmap_memory(staging_memory);
-    }
-
-    let extent = vk::Extent3D {
-        width,
-        height,
-        depth: 1,
-    };
-    let image_info = vk::ImageCreateInfo::default()
-        .image_type(vk::ImageType::TYPE_2D)
-        .extent(extent)
-        .mip_levels(1)
-        .array_layers(2)
-        .format(vk::Format::R8G8B8A8_SRGB)
-        .tiling(vk::ImageTiling::OPTIMAL)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-        .samples(SampleCountFlags::TYPE_1)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-    let image = unsafe { ctx.device.create_image(&image_info, None)? };
-    let mem_reqs = unsafe { ctx.device.get_image_memory_requirements(image) };
-    let image_memory = unsafe {
-        ctx.device.allocate_memory(
-            &vk::MemoryAllocateInfo::default()
-                .allocation_size(mem_reqs.size)
-                .memory_type_index(ctx.find_memory_type(
-                    mem_reqs.memory_type_bits,
-                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                )?),
-            None,
-        )?
-    };
-    unsafe { ctx.device.bind_image_memory(image, image_memory, 0)? };
-
-    let all_layers = vk::ImageSubresourceRange {
-        aspect_mask: vk::ImageAspectFlags::COLOR,
-        base_mip_level: 0,
-        level_count: 1,
-        base_array_layer: 0,
-        layer_count: 2,
-    };
-
-    let cmd = ctx.begin_single_time_commands(command_pool);
-    unsafe {
-        ctx.device.cmd_pipeline_barrier(
-            cmd,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .image(image)
-                .subresource_range(all_layers)
-                .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)],
-        );
-
-        for i in 0..2u32 {
-            let region = vk::BufferImageCopy::default()
-                .buffer_offset(i as vk::DeviceSize * layer_bytes)
-                .image_subresource(vk::ImageSubresourceLayers {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    mip_level: 0,
-                    base_array_layer: i,
-                    layer_count: 1,
-                })
-                .image_extent(extent);
-            ctx.device.cmd_copy_buffer_to_image(
-                cmd,
-                staging_buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-        }
-
-        ctx.device.cmd_pipeline_barrier(
-            cmd,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image(image)
-                .subresource_range(all_layers)
-                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ)],
-        );
-    }
-    ctx.end_single_time_commands(
-        cmd,
-        ctx.queues[&ctx.queue_families.transfer],
+    path: &str,
+) -> Result<GpuTexture> {
+    let rgba = load_terrain_texture(path).to_rgba8();
+    upload_texture_from_pixels(
+        rgba.as_raw(),
+        rgba.width().max(1),
+        rgba.height().max(1),
+        path,
+        context,
         command_pool,
-    );
-
-    unsafe {
-        ctx.device.destroy_buffer(staging_buffer, None);
-        ctx.device.free_memory(staging_memory, None);
-    }
-
-    let image_view = unsafe {
-        ctx.device.create_image_view(
-            &vk::ImageViewCreateInfo::default()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D_ARRAY)
-                .format(vk::Format::R8G8B8A8_SRGB)
-                .subresource_range(all_layers),
-            None,
-        )?
-    };
-
-    // Wrap horizontally (longitude seam), clamp vertically (poles).
-    let sampler = unsafe {
-        ctx.device.create_sampler(
-            &vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::REPEAT)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR),
-            None,
-        )?
-    };
-
-    let descriptor_set = ctx.create_texture_descriptor_set(
         descriptor_pool,
         descriptor_set_layout,
-        image_view,
-        sampler,
-    );
-
-    Ok(SkyboxTextures {
-        image,
-        image_memory,
-        image_view,
-        sampler,
-        descriptor_set,
-    })
+    )
 }
 
-/// Builds the unit UV sphere drawn by the skybox pass. Positions double as the
-/// view directions; tex_coord carries the equirectangular UVs.
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Advances `time` and derives `blend` from the sun's elevation. Both stay
+/// manual while `progress_time` is off.
+#[update(mode = "all", priority = 2)]
+pub fn skybox_time_update(world: &mut World) -> Result<()> {
+    let delta = world.get_resource::<DeltaTime>()?.0;
+
+    for id in world.get_entities_with_component::<Skybox>() {
+        let Some(sky) = world.get_component_mut::<Skybox>(id) else {
+            continue;
+        };
+        if !sky.progress_time {
+            continue;
+        }
+        if sky.day_length > 0.0 {
+            sky.time = (sky.time + delta * 24.0 / sky.day_length).rem_euclid(24.0);
+        }
+        let sun_elevation = ((sky.time - 6.0) / 24.0 * std::f32::consts::TAU).sin();
+        sky.blend = 1.0 - smoothstep(-0.15, 0.1, sun_elevation);
+    }
+
+    Ok(())
+}
+
 pub fn build_skybox_sphere_mesh(
     context: &Arc<VulkanRenderingContext>,
     command_pool: vk::CommandPool,
@@ -310,15 +293,11 @@ pub fn build_skybox_sphere_mesh(
     let mut vertices: Vec<Vertex> = Vec::with_capacity(((RINGS + 1) * (SEGMENTS + 1)) as usize);
     for ring in 0..=RINGS {
         let v = ring as f32 / RINGS as f32;
-        let phi = v * std::f32::consts::PI; // 0 (top) → π (bottom)
+        let phi = v * PI;
         for segment in 0..=SEGMENTS {
             let u = segment as f32 / SEGMENTS as f32;
             let theta = u * std::f32::consts::TAU;
-            let position = [
-                phi.sin() * theta.cos(),
-                phi.cos(),
-                phi.sin() * theta.sin(),
-            ];
+            let position = [phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin()];
             vertices.push(Vertex {
                 position,
                 normal: position,

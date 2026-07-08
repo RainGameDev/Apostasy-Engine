@@ -48,20 +48,37 @@ impl Default for RenderingSettings {
 }
 
 impl RenderingSettings {
-    /// Same as `default()` but rasterizes triangle edges only, with backface
-    /// culling disabled so wireframe meshes stay visible from any angle.
-    pub fn wireframe() -> Self {
-        let mut settings = Self::default();
-        settings.rasterization_settings.polygon_mode = vk::PolygonMode::LINE;
-        settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
-        settings
-    }
-
     /// Skybox pass: depth test/write disabled (drawn first, scene renders over it)
     /// and no culling since the sky mesh is viewed from inside.
     pub fn skybox() -> Self {
         let mut settings = Self::default();
         settings.depth_settings.depth_test_enabled = false;
+        settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
+        settings
+    }
+
+    /// Additive skybox variant for glow layers (stars, nebulae, aurora):
+    /// fragment colour is added onto the sky beneath, scaled by fragment alpha.
+    pub fn skybox_additive() -> Self {
+        let mut settings = Self::skybox();
+        settings.color_blend_settings.blend_attachment =
+            PipelineColorBlendAttachmentState::default()
+                .color_write_mask(ColorComponentFlags::RGBA)
+                .blend_enable(true)
+                .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+                .dst_color_blend_factor(BlendFactor::ONE)
+                .color_blend_op(BlendOp::ADD)
+                .src_alpha_blend_factor(BlendFactor::ZERO)
+                .dst_alpha_blend_factor(BlendFactor::ONE)
+                .alpha_blend_op(BlendOp::ADD);
+        settings
+    }
+
+    /// Same as `default()` but rasterizes triangle edges only, with backface
+    /// culling disabled so wireframe meshes stay visible from any angle.
+    pub fn wireframe() -> Self {
+        let mut settings = Self::default();
+        settings.rasterization_settings.polygon_mode = vk::PolygonMode::LINE;
         settings.rasterization_settings.cull_mode = vk::CullModeFlags::NONE;
         settings
     }
@@ -73,15 +90,16 @@ impl RenderingSettings {
     pub fn collider_debug() -> Self {
         let mut settings = Self::wireframe();
         settings.depth_settings.depth_test_enabled = false;
-        settings.color_blend_settings.blend_attachment = PipelineColorBlendAttachmentState::default()
-            .color_write_mask(ColorComponentFlags::RGBA)
-            .blend_enable(true)
-            .src_color_blend_factor(BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(BlendOp::ADD)
-            .src_alpha_blend_factor(BlendFactor::ONE)
-            .dst_alpha_blend_factor(BlendFactor::ZERO)
-            .alpha_blend_op(BlendOp::ADD);
+        settings.color_blend_settings.blend_attachment =
+            PipelineColorBlendAttachmentState::default()
+                .color_write_mask(ColorComponentFlags::RGBA)
+                .blend_enable(true)
+                .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+                .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
+                .color_blend_op(BlendOp::ADD)
+                .src_alpha_blend_factor(BlendFactor::ONE)
+                .dst_alpha_blend_factor(BlendFactor::ZERO)
+                .alpha_blend_op(BlendOp::ADD);
         settings
     }
 }

@@ -164,6 +164,8 @@ impl VulkanRenderer {
         let voxel_fragment_shader = self.load_shader_module(&self.voxel_fragment_shader)?;
         let water_vertex_shader = self.load_shader_module(&self.water_vertex_shader)?;
         let water_fragment_shader = self.load_shader_module(&self.water_fragment_shader)?;
+        let skybox_vertex_shader = self.load_shader_module("sdr_default_skybox.vert")?;
+        let skybox_fragment_shader = self.load_shader_module("sdr_default_skybox.frag")?;
         let shadow_model_vert = self.load_shader_module(&self.shadow_model_vertex_shader)?;
         let shadow_voxel_vert = self.load_shader_module(&self.shadow_voxel_vertex_shader)?;
         let shadow_frag = self.load_shader_module(&self.shadow_fragment_shader)?;
@@ -252,28 +254,27 @@ impl VulkanRenderer {
                 aa_amount,
             )?;
 
-            let skybox_vertex_shader = self.load_shader_module("sdr_skybox.vert")?;
-            let skybox_fragment_shader = self.load_shader_module("sdr_skybox.frag")?;
+            let skybox_pipeline_options = PipelineOptions {
+                image_format: Some(swapchain.format),
+                image_extent: swapchain.extent,
+                depth_format: Some(swapchain.depth_format),
+                vertex_shader: skybox_vertex_shader,
+                fragment_shader: skybox_fragment_shader,
+                vertex_bindings: vec![Vertex::get_binding_description()],
+                vertex_attributes: Vertex::get_attribute_descriptions(),
+            };
             let skybox_pipeline = context.create_graphics_pipeline(
-                PipelineOptions {
-                    image_format: Some(swapchain.format),
-                    image_extent: swapchain.extent,
-                    depth_format: Some(swapchain.depth_format),
-                    vertex_shader: skybox_vertex_shader,
-                    fragment_shader: skybox_fragment_shader,
-                    vertex_bindings: vec![Vertex::get_binding_description()],
-                    vertex_attributes: Vertex::get_attribute_descriptions(),
-                },
+                skybox_pipeline_options.clone(),
                 RenderingSettings::skybox(),
                 pipeline_layout,
                 aa_amount,
             )?;
-            self.context
-                .device
-                .destroy_shader_module(skybox_vertex_shader, None);
-            self.context
-                .device
-                .destroy_shader_module(skybox_fragment_shader, None);
+            let skybox_additive_pipeline = context.create_graphics_pipeline(
+                skybox_pipeline_options,
+                RenderingSettings::skybox_additive(),
+                pipeline_layout,
+                aa_amount,
+            )?;
 
             self.context
                 .device
@@ -296,6 +297,12 @@ impl VulkanRenderer {
             self.context
                 .device
                 .destroy_shader_module(water_fragment_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(skybox_vertex_shader, None);
+            self.context
+                .device
+                .destroy_shader_module(skybox_fragment_shader, None);
 
             let shadow_extent = vk::Extent2D {
                 width: 2048,
@@ -433,6 +440,9 @@ impl VulkanRenderer {
             self.pipeline_manager
                 .pipeline_cache
                 .insert("skybox".to_string(), skybox_pipeline);
+            self.pipeline_manager
+                .pipeline_cache
+                .insert("skybox::additive".to_string(), skybox_additive_pipeline);
             self.pipeline_manager
                 .pipeline_cache
                 .insert("shadow_model".to_string(), shadow_model_pipeline);
@@ -663,6 +673,8 @@ impl RenderingAPI for VulkanRenderer {
         let voxel_fragment_shader = "sdr_default_voxel.frag".to_string();
         let water_vertex_shader = "sdr_default_water.vert".to_string();
         let water_fragment_shader = "sdr_default_water.frag".to_string();
+        let skybox_vertex_shader = "sdr_default_skybox.vert".to_string();
+        let skybox_fragment_shader = "sdr_default_skybox.frag".to_string();
 
         let vertex_shader = pipeline_manager.create_shader_module(
             &rendering_info.context.clone().into(),
@@ -687,6 +699,15 @@ impl RenderingAPI for VulkanRenderer {
         let water_fragment_shader = pipeline_manager.create_shader_module(
             &rendering_info.context.clone().into(),
             &water_fragment_shader,
+        )?;
+
+        let skybox_vert_module = pipeline_manager.create_shader_module(
+            &rendering_info.context.clone().into(),
+            &skybox_vertex_shader,
+        )?;
+        let skybox_frag_module = pipeline_manager.create_shader_module(
+            &rendering_info.context.clone().into(),
+            &skybox_fragment_shader,
         )?;
 
         unsafe {
@@ -789,6 +810,28 @@ impl RenderingAPI for VulkanRenderer {
                 None,
             )?;
 
+            let skybox_pipeline_options = PipelineOptions {
+                image_format: Some(swapchain.format),
+                image_extent: swapchain.extent,
+                depth_format: Some(swapchain.depth_format),
+                vertex_shader: skybox_vert_module,
+                fragment_shader: skybox_frag_module,
+                vertex_bindings: vec![Vertex::get_binding_description()],
+                vertex_attributes: Vertex::get_attribute_descriptions(),
+            };
+            let skybox_pipeline = context.create_graphics_pipeline(
+                skybox_pipeline_options.clone(),
+                RenderingSettings::skybox(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+            let skybox_additive_pipeline = context.create_graphics_pipeline(
+                skybox_pipeline_options,
+                RenderingSettings::skybox_additive(),
+                pipeline_layout,
+                aa_amount,
+            )?;
+
             let pipeline_options = PipelineOptions {
                 image_format: Some(swapchain.format),
                 image_extent: swapchain.extent,
@@ -878,31 +921,6 @@ impl RenderingAPI for VulkanRenderer {
                 aa_amount,
             )?;
 
-            let skybox_vert_module = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "sdr_skybox.vert")?;
-            let skybox_frag_module = pipeline_manager
-                .create_shader_module(&rendering_info.context.clone().into(), "sdr_skybox.frag")?;
-            let skybox_pipeline = context.create_graphics_pipeline(
-                PipelineOptions {
-                    image_format: Some(swapchain.format),
-                    image_extent: swapchain.extent,
-                    depth_format: Some(swapchain.depth_format),
-                    vertex_shader: skybox_vert_module,
-                    fragment_shader: skybox_frag_module,
-                    vertex_bindings: vec![Vertex::get_binding_description()],
-                    vertex_attributes: Vertex::get_attribute_descriptions(),
-                },
-                RenderingSettings::skybox(),
-                pipeline_layout,
-                aa_amount,
-            )?;
-            context
-                .device
-                .destroy_shader_module(skybox_vert_module, None);
-            context
-                .device
-                .destroy_shader_module(skybox_frag_module, None);
-
             context.device.destroy_shader_module(vertex_shader, None);
             context
                 .device
@@ -920,6 +938,12 @@ impl RenderingAPI for VulkanRenderer {
             context
                 .device
                 .destroy_shader_module(water_fragment_shader, None);
+            context
+                .device
+                .destroy_shader_module(skybox_vert_module, None);
+            context
+                .device
+                .destroy_shader_module(skybox_frag_module, None);
 
             let command_pool = context.device.create_command_pool(
                 &ash::vk::CommandPoolCreateInfo::default()
@@ -1636,6 +1660,13 @@ impl RenderingAPI for VulkanRenderer {
             };
 
             // Populate the pipeline cache and set the model template before moving pipeline_manager.
+
+            pipeline_manager
+                .pipeline_cache
+                .insert("skybox".to_string(), skybox_pipeline);
+            pipeline_manager
+                .pipeline_cache
+                .insert("skybox::additive".to_string(), skybox_additive_pipeline);
             pipeline_manager
                 .pipeline_cache
                 .insert("model".to_string(), pipeline);
@@ -1654,9 +1685,6 @@ impl RenderingAPI for VulkanRenderer {
             pipeline_manager
                 .pipeline_cache
                 .insert("water".to_string(), water_pipeline);
-            pipeline_manager
-                .pipeline_cache
-                .insert("skybox".to_string(), skybox_pipeline);
             pipeline_manager
                 .pipeline_cache
                 .insert("shadow_model".to_string(), shadow_model_pipeline);
@@ -2329,9 +2357,10 @@ impl RenderingAPI for VulkanRenderer {
         push_constants: PushConstants,
         model_push_constants: &ModelPushConstants,
         sky_descriptor_set: vk::DescriptorSet,
-    ) -> anyhow::Result<()> {
+        additive: bool,
+    ) -> Result<()> {
         let frame = &self.frames[self.current_frame];
-        let pipeline = self.get_pipeline("skybox");
+        let pipeline = self.get_pipeline(if additive { "skybox::additive" } else { "skybox" });
 
         unsafe {
             self.context.device.cmd_bind_pipeline(

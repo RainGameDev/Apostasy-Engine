@@ -34,8 +34,12 @@ use crate::ecs::resources::input_manager::KeyAction;
 use crate::ecs::resources::input_manager::KeyBind;
 use crate::ecs::resources::window_manager::WindowManager;
 use crate::ecs::systems::EngineTimer;
+use crate::ecs::tags::ColliderDebugVisual;
 use crate::packages::Packages;
 use crate::packages::add_package;
+use crate::physics::{
+    ColliderRenderDebug, Noclip, PlayerColliderRenderDebug, collider::MeshColliderDebugSource,
+};
 use crate::rendering::WindowInfo;
 use crate::rendering::components::camera::ActiveCamera;
 use crate::rendering::components::camera::Camera;
@@ -44,9 +48,9 @@ use crate::rendering::components::camera::get_perspective_projection;
 use crate::rendering::components::camera::get_view_matrix;
 use crate::rendering::components::lighting::{Light, LightType};
 use crate::rendering::components::model_renderer::ModelRenderer;
-use crate::rendering::components::skybox::{
-    Skybox, build_skybox_sphere_mesh, upload_skybox_textures,
-};
+use crate::rendering::components::skybox::SkyLayer;
+use crate::rendering::components::skybox::SkyProjection;
+use crate::rendering::components::skybox::{Skybox, build_skybox_sphere_mesh, upload_skybox_layer};
 use crate::rendering::lighting::gpu_light::{
     GpuLight, PointShadowData, ShadowData, compute_csm_matrices, compute_light_space_matrix,
     compute_point_shadow_matrices,
@@ -58,16 +62,13 @@ use crate::rendering::shared::frustrum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::model::build_collider_debug_model;
 use crate::rendering::shared::push_constants::ModelPushConstants;
-use crate::ecs::tags::ColliderDebugVisual;
-use crate::physics::{
-    ColliderRenderDebug, Noclip, PlayerColliderRenderDebug, collider::MeshColliderDebugSource,
-};
-use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::rendering::shared::push_constants::{
     PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,
     ShadowPointVoxelPushConstants, ShadowVoxelPushConstants, VoxelPushConstants,
 };
 use crate::rendering::shared::shadow_settings::ShadowDistance;
+use crate::rendering::shared::texture::GpuTexture;
+use crate::rendering::shared::wireframe::GlobalWireframe;
 use crate::states::ShouldExit;
 use crate::terrain::chunk::{NeedsTerrainRebuild, TerrainChunk, TerrainMesh};
 use crate::terrain::rebuild::rebuild_dirty_terrain;
@@ -117,8 +118,8 @@ pub use egui_extras;
 pub use epaint;
 pub use lru;
 pub use noise;
-pub use parking_lot;
 pub use num_cpus;
+pub use parking_lot;
 pub use rand;
 pub use rayon;
 pub use serde;
@@ -812,41 +813,60 @@ impl Core {
                     // Skybox — drawn first with depth disabled so the scene renders over it.
                     let skybox_ids = world.get_entities_with_component::<Skybox>();
                     if let Some(&sky_id) = skybox_ids.first() {
+                        // (Re)upload layer textures when the path lists change.
                         let needs_upload = world
                             .get_component::<Skybox>(sky_id)
-                            .map(|s| s.textures.is_none() && !s.load_failed)
+                            .map(|s| {
+                                s.skybox_mesh.is_none()
+                                    || s.day_textures != s.loaded_day_paths
+                                    || s.night_textures != s.loaded_night_paths
+                            })
                             .unwrap_or(false);
                         if needs_upload
-                            && let Some((day, night)) = world
+                            && let Some((day_paths, night_paths)) = world
                                 .get_component::<Skybox>(sky_id)
-                                .map(|s| (s.day.clone(), s.night.clone()))
+                                .map(|s| (s.day_textures.clone(), s.night_textures.clone()))
                             && let Ok(command_pool) = renderer.get_command_pool()
                         {
                             let dp = renderer.get_descriptor_pool();
                             let dsl = renderer.get_voxel_descriptor_set_layout();
-                            let uploaded = upload_skybox_textures(
-                                &context,
-                                command_pool,
-                                dp,
-                                dsl,
-                                &day,
-                                &night,
-                            )
-                            .and_then(|textures| {
-                                let mesh = build_skybox_sphere_mesh(&context, command_pool)?;
-                                Ok((textures, mesh))
-                            });
+
+                            let upload_set = |layers: &[SkyLayer]| {
+                                layers
+                                    .iter()
+                                    .map(|layer| {
+                                        let path = layer.path.as_deref()?.trim();
+                                        if path.is_empty() {
+                                            return None;
+                                        }
+                                        upload_skybox_layer(&context, command_pool, dp, dsl, path)
+                                            .map_err(|e| {
+                                                log_error!(
+                                                    "Failed to load skybox layer '{}': {}",
+                                                    path,
+                                                    e
+                                                );
+                                            })
+                                            .ok()
+                                    })
+                                    .collect::<Vec<Option<GpuTexture>>>()
+                            };
+
+                            let day_resources = upload_set(&day_paths);
+                            let night_resources = upload_set(&night_paths);
+                            let mesh = build_skybox_sphere_mesh(&context, command_pool)
+                                .map_err(|e| {
+                                    log_error!("Failed to build skybox mesh: {}", e);
+                                })
+                                .ok();
                             if let Some(sb) = world.get_component_mut::<Skybox>(sky_id) {
-                                match uploaded {
-                                    Ok((textures, mesh)) => {
-                                        sb.textures = Some(textures);
-                                        sb.sky_mesh = Some(mesh);
-                                    }
-                                    Err(e) => {
-                                        sb.load_failed = true;
-                                        log_error!("Failed to load skybox: {}", e);
-                                    }
+                                sb.day_texture_resources = day_resources;
+                                sb.night_texture_resources = night_resources;
+                                if sb.skybox_mesh.is_none() {
+                                    sb.skybox_mesh = mesh;
                                 }
+                                sb.loaded_day_paths = day_paths;
+                                sb.loaded_night_paths = night_paths;
                             }
                         }
 
@@ -855,18 +875,51 @@ impl Core {
                             .map(|t| t.global_rotation)
                             .unwrap_or(cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0));
                         if let Some(sb) = world.get_component::<Skybox>(sky_id)
-                            && let (Some(textures), Some(mesh)) = (&sb.textures, &sb.sky_mesh)
+                            && let Some(mesh) = &sb.skybox_mesh
                         {
-                            let mut sky_push = model_push_constants.clone();
-                            sky_push.world_rotation = sky_rotation;
-                            sky_push.color_modifier = [1.0, 1.0, 1.0, sb.blend];
-                            if let Err(e) = renderer.skybox_render(
-                                Box::new(mesh.clone()),
-                                push_constants.clone(),
-                                &sky_push,
-                                textures.descriptor_set,
-                            ) {
-                                log_error!("Failed to render skybox: {}", e);
+                            let blend = sb.blend.clamp(0.0, 1.0);
+
+                            let mut draws: Vec<(ash::vk::DescriptorSet, bool, f32, u32, f32)> =
+                                Vec::new();
+                            for (set, layers, set_opacity) in [
+                                (&sb.day_texture_resources, &sb.loaded_day_paths, 1.0),
+                                (&sb.night_texture_resources, &sb.loaded_night_paths, blend),
+                            ] {
+                                let mut is_base = true;
+                                for (texture, layer) in set.iter().zip(layers.iter()) {
+                                    let Some(texture) = texture else { continue };
+                                    let projection = match layer.projection {
+                                        SkyProjection::Spherical => 0,
+                                        SkyProjection::Planar => 1,
+                                        SkyProjection::Celestial => 2,
+                                    };
+                                    draws.push((
+                                        texture.descriptor_set,
+                                        !is_base,
+                                        set_opacity,
+                                        projection,
+                                        layer.scale,
+                                    ));
+                                    is_base = false;
+                                }
+                            }
+
+                            let mesh = mesh.clone();
+                            for (descriptor_set, additive, opacity, projection, scale) in draws {
+                                let mut sky_push = model_push_constants.clone();
+                                sky_push.world_rotation = sky_rotation;
+                                sky_push.layer_count = projection;
+                                sky_push.active_layer_ids_packed[0] = scale.to_bits();
+                                sky_push.color_modifier = [1.0, 1.0, 1.0, opacity];
+                                if let Err(e) = renderer.skybox_render(
+                                    Box::new(mesh.clone()),
+                                    push_constants.clone(),
+                                    &sky_push,
+                                    descriptor_set,
+                                    additive,
+                                ) {
+                                    log_error!("Failed to render skybox layer: {}", e);
+                                }
                             }
                         }
                     }

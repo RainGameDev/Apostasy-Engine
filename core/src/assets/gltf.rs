@@ -354,7 +354,7 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
     }
 }
 
-fn upload_texture_from_pixels(
+pub(crate) fn upload_texture_from_pixels(
     pixels: &[u8],
     width: u32,
     height: u32,
