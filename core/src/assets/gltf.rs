@@ -3,8 +3,8 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use ash::vk::{self, CommandPool, SampleCountFlags};
 use cgmath::{InnerSpace, Vector3};
-use parking_lot::RwLock;
 use hashbrown::HashMap;
+use parking_lot::RwLock;
 use walkdir::WalkDir;
 
 use crate::{
@@ -129,16 +129,25 @@ pub fn load_model(
                 None => vec![[0.0, 0.0]; positions.len()],
             };
 
+            let tangents = match reader.read_tangents() {
+                Some(t) => t.collect::<Vec<_>>(),
+                None => compute_tangents(&positions, &normals, &tex_coords, &indices),
+            };
+
+            dbg!(&tangents);
+
             let vertices: Vec<Vertex> = positions
                 .iter()
                 .zip(normals.iter())
                 .zip(tex_coords.iter())
-                .map(|((pos, norm), tex)| Vertex {
+                .zip(tangents.iter())
+                .map(|(((pos, norm), tex), tan)| Vertex {
                     position: *pos,
                     normal: *norm,
                     tex_coord: *tex,
                     weights: [0.0; 32],
                     color: [1.0, 1.0, 1.0],
+                    tangent: *tan,
                 })
                 .collect();
 
@@ -243,21 +252,39 @@ fn resolve_material(
 ) -> Option<GpuMaterial> {
     // YAML-defined material takes priority
     if let Some(yaml_mat) = material_registry.materials.get(material_name) {
-        let texture = yaml_mat.albedo_path.as_deref().and_then(|path| {
+        let albedo = yaml_mat.albedo_path.as_deref().and_then(|path| {
             upload_texture_from_path(
                 path,
                 material_name,
+                vk::Format::R8G8B8A8_SRGB,
                 context,
                 command_pool,
                 descriptor_pool,
                 descriptor_set_layout,
             )
         });
-        return Some(GpuMaterial {
-            albedo: texture,
-            color: yaml_mat.color,
-            shader: yaml_mat.shader_path.clone(),
+        // Normal maps store vectors, not color — upload as linear (UNORM).
+        let normal = yaml_mat.normal_path.as_deref().and_then(|path| {
+            upload_texture_from_path(
+                path,
+                material_name,
+                vk::Format::R8G8B8A8_UNORM,
+                context,
+                command_pool,
+                descriptor_pool,
+                descriptor_set_layout,
+            )
         });
+        return Some(build_material_set(
+            albedo,
+            normal,
+            yaml_mat.color,
+            yaml_mat.shader_path.clone(),
+            context,
+            command_pool,
+            descriptor_pool,
+            descriptor_set_layout,
+        ));
     }
 
     // Fall back to glTF embedded material
@@ -281,16 +308,17 @@ fn from_gltf_material(
 ) -> Option<GpuMaterial> {
     let pbr = material.pbr_metallic_roughness();
     let color = pbr.base_color_factor();
+    let name = material.name().unwrap_or("gltf_texture");
 
     let albedo = pbr.base_color_texture().and_then(|info| {
         let idx = info.texture().source().index();
         images.get(idx).and_then(|img| {
-            let name = material.name().unwrap_or("gltf_texture");
             upload_texture_from_pixels(
                 &to_rgba8(img),
                 img.width,
                 img.height,
                 name,
+                vk::Format::R8G8B8A8_SRGB,
                 context,
                 command_pool,
                 descriptor_pool,
@@ -300,16 +328,125 @@ fn from_gltf_material(
         })
     });
 
-    if albedo.is_some() || color != [1.0, 1.0, 1.0, 1.0] {
-        Some(GpuMaterial { albedo, color, shader: None })
+    let normal = material.normal_texture().and_then(|info| {
+        let idx = info.texture().source().index();
+        images.get(idx).and_then(|img| {
+            upload_texture_from_pixels(
+                &to_rgba8(img),
+                img.width,
+                img.height,
+                name,
+                vk::Format::R8G8B8A8_UNORM,
+                context,
+                command_pool,
+                descriptor_pool,
+                descriptor_set_layout,
+            )
+            .ok()
+        })
+    });
+
+    if albedo.is_some() || normal.is_some() || color != [1.0, 1.0, 1.0, 1.0] {
+        Some(build_material_set(
+            albedo,
+            normal,
+            color,
+            None,
+            context,
+            command_pool,
+            descriptor_pool,
+            descriptor_set_layout,
+        ))
     } else {
         None
     }
 }
 
+/// Fills missing albedo/normal slots with default textures and builds the
+/// combined per-material descriptor set (binding 0 = albedo, 1 = normal).
+fn build_material_set(
+    albedo: Option<GpuTexture>,
+    normal: Option<GpuTexture>,
+    color: [f32; 4],
+    shader: Option<String>,
+    context: &Arc<VulkanRenderingContext>,
+    command_pool: CommandPool,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+) -> GpuMaterial {
+    let albedo = albedo.or_else(|| {
+        solid_texture(
+            [255, 255, 255, 255],
+            vk::Format::R8G8B8A8_SRGB,
+            "mat_default_albedo",
+            context,
+            command_pool,
+            descriptor_pool,
+            descriptor_set_layout,
+        )
+    });
+    let normal = normal.or_else(|| {
+        solid_texture(
+            [128, 128, 255, 255],
+            vk::Format::R8G8B8A8_UNORM,
+            "mat_default_normal",
+            context,
+            command_pool,
+            descriptor_pool,
+            descriptor_set_layout,
+        )
+    });
+
+    let descriptor_set = match (&albedo, &normal) {
+        (Some(a), Some(n)) => context.create_material_descriptor_set(
+            descriptor_pool,
+            descriptor_set_layout,
+            a.image_view,
+            a.sampler,
+            n.image_view,
+            n.sampler,
+        ),
+        // If either upload failed, leave null so the draw path falls back to
+        // the shared default material set.
+        _ => vk::DescriptorSet::null(),
+    };
+
+    GpuMaterial {
+        albedo,
+        normal,
+        color,
+        shader,
+        descriptor_set,
+    }
+}
+
+fn solid_texture(
+    rgba: [u8; 4],
+    format: vk::Format,
+    name: &str,
+    context: &Arc<VulkanRenderingContext>,
+    command_pool: CommandPool,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+) -> Option<GpuTexture> {
+    upload_texture_from_pixels(
+        &rgba,
+        1,
+        1,
+        name,
+        format,
+        context,
+        command_pool,
+        descriptor_pool,
+        descriptor_set_layout,
+    )
+    .ok()
+}
+
 fn upload_texture_from_path(
     path: &str,
     name: &str,
+    format: vk::Format,
     context: &Arc<VulkanRenderingContext>,
     command_pool: CommandPool,
     descriptor_pool: vk::DescriptorPool,
@@ -328,6 +465,7 @@ fn upload_texture_from_path(
         rgba.width(),
         rgba.height(),
         name,
+        format,
         context,
         command_pool,
         descriptor_pool,
@@ -359,7 +497,8 @@ pub(crate) fn upload_texture_from_pixels(
     width: u32,
     height: u32,
     name: &str,
-    context: &Arc<VulkanRenderingContext>,
+    format: vk::Format,
+    context: &VulkanRenderingContext,
     command_pool: CommandPool,
     descriptor_pool: vk::DescriptorPool,
     descriptor_set_layout: vk::DescriptorSetLayout,
@@ -383,7 +522,7 @@ pub(crate) fn upload_texture_from_pixels(
 
     let (image, memory) = context.create_image(
         vk::Extent2D { width, height },
-        vk::Format::R8G8B8A8_SRGB,
+        format,
         vk::ImageTiling::OPTIMAL,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -459,11 +598,7 @@ pub(crate) fn upload_texture_from_pixels(
         context.device.free_memory(staging_memory, None);
     }
 
-    let image_view = context.create_image_view(
-        image,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageAspectFlags::COLOR,
-    )?;
+    let image_view = context.create_image_view(image, format, vk::ImageAspectFlags::COLOR)?;
 
     let sampler = unsafe {
         context.device.create_sampler(
@@ -494,4 +629,77 @@ pub(crate) fn upload_texture_from_pixels(
         sampler,
         descriptor_set,
     })
+}
+
+fn compute_tangents(
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    tex_coords: &[[f32; 2]],
+    indices: &[u32],
+) -> Vec<[f32; 4]> {
+    let mut tan = vec![Vector3::new(0.0f32, 0.0, 0.0); positions.len()];
+    let mut bitan = vec![Vector3::new(0.0f32, 0.0, 0.0); positions.len()];
+
+    for tri in indices.chunks_exact(3) {
+        let (i0, i1, i2) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+            continue;
+        }
+
+        let p0 = Vector3::from(positions[i0]);
+        let p1 = Vector3::from(positions[i1]);
+        let p2 = Vector3::from(positions[i2]);
+
+        let uv0 = tex_coords[i0];
+        let uv1 = tex_coords[i1];
+        let uv2 = tex_coords[i2];
+
+        let edge1 = p1 - p0;
+        let edge2 = p2 - p0;
+        let duv1 = [uv1[0] - uv0[0], uv1[1] - uv0[1]];
+        let duv2 = [uv2[0] - uv0[0], uv2[1] - uv0[1]];
+
+        let denom = duv1[0] * duv2[1] - duv2[0] * duv1[1];
+        if denom.abs() < 1e-12 {
+            continue; // degenerate UVs on this triangle; let neighbors carry it
+        }
+        let f = 1.0 / denom;
+
+        let t = (edge1 * duv2[1] - edge2 * duv1[1]) * f;
+        let b = (edge2 * duv1[0] - edge1 * duv2[0]) * f;
+
+        for i in [i0, i1, i2] {
+            tan[i] += t;
+            bitan[i] += b;
+        }
+    }
+
+    positions
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let n = Vector3::from(normals[i]);
+            let mut t = tan[i];
+
+            t -= n * n.dot(t);
+
+            let t = if t.magnitude2() > 1e-12 {
+                t.normalize()
+            } else {
+                let fallback = if n.x.abs() < 0.9 {
+                    Vector3::new(1.0, 0.0, 0.0)
+                } else {
+                    Vector3::new(0.0, 1.0, 0.0)
+                };
+                (fallback - n * n.dot(fallback)).normalize()
+            };
+
+            let handedness = if n.cross(t).dot(bitan[i]) < 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
+            [t.x, t.y, t.z, handedness]
+        })
+        .collect()
 }

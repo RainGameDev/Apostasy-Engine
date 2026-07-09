@@ -936,7 +936,7 @@ pub fn cell_search(world: &mut World) -> Result<()> {
                             let name_of = |id: &EntityId| -> String {
                                 entry_by_id
                                     .get(id)
-                                    .map(|e| e.entity_name.to_lowercase())
+                                    .map(|e| e.id.clone())
                                     .unwrap_or_default()
                             };
                             roots.sort_by_key(&name_of);

@@ -14,7 +14,7 @@ use apostasy_core::{
         },
         shared::{
             UpdateRenderer,
-            anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+            anti_aliasing::{AntiAliasing, AntiAliasingAmount},
         },
     },
     ui::ui_context::{EguiContext, ViewportSize, ViewportTexture},

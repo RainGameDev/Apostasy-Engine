@@ -1,19 +1,15 @@
 use anyhow::Result;
 use apostasy_core::{
     assets::asset_manager::AssetManager,
-    egui::{self, Color32, DragAndDrop, Margin, ScrollArea, Stroke, Window},
     ecs::world::World,
+    egui::{self, Color32, DragAndDrop, Margin, ScrollArea, Stroke, Window},
     ui::ui_context::EguiContext,
     update,
 };
 use apostasy_macros::Resource;
 use std::path::{Path, PathBuf};
 
-use super::{
-    EditorStyle,
-    assets_panel::DataWindowState,
-    shared::WindowLayout,
-};
+use super::{EditorStyle, assets_panel::DataWindowState, shared::WindowLayout};
 
 // Known asset class names for the "New" dialog.
 const CLASS_OPTIONS: &[&str] = &["Voxel", "Biome", "Item", "Structure", "Material"];
@@ -38,6 +34,7 @@ fn default_template_for_class(class: &str) -> serde_yaml::Value {
         }
         "material" => {
             map.insert("albedo".into(), serde_yaml::Value::String(String::new()));
+            map.insert("normal".into(), serde_yaml::Value::String(String::new()));
             map.insert("shader".into(), serde_yaml::Value::String(String::new()));
             map.insert(
                 "color".into(),
@@ -190,7 +187,7 @@ impl Default for AssetEditorState {
             error: None,
             new_open: false,
             new_name: String::new(),
-            new_namespace: "game".to_string(),
+            new_namespace: "project".to_string(),
             new_class_idx: 0,
             add_comp_open: false,
             add_comp_search: String::new(),
@@ -461,8 +458,12 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 let child_id = format!("root/{}", key_str);
                                 if let Some(v) = map.get_mut(k) {
                                     if asset_class == "material" && key_str == "albedo" {
-                                        render_albedo_field(ui, v, dirty, &style);
-                                    } else if asset_class == "material" && key_str == "shader" {
+                                        render_texture_field(ui, v, dirty, &style, "albedo");
+                                    } 
+                                    else if asset_class == "material" && key_str == "normal" {
+                                        render_texture_field(ui, v, dirty, &style, "normal");
+                                    } 
+                                    else if asset_class == "material" && key_str == "shader" {
                                         render_shader_field(ui, v, dirty, &style);
                                     } else if asset_class == "material" && key_str == "color" {
                                         render_color_field(ui, key_str.as_str(), v, dirty);
@@ -851,8 +852,14 @@ pub fn asset_editor(world: &mut World) -> Result<()> {
                                 let child_id = format!("new_tmpl/{}", key_str);
                                 if let Some(v) = map.get_mut(k) {
                                     if template_class == "material" && key_str == "albedo" {
-                                        render_albedo_field(ui, v, &mut tmpl_modified, &style);
-                                    } else if template_class == "material" && key_str == "shader" {
+                                        render_texture_field(ui, v, &mut tmpl_modified, &style, "albedo");
+                                    } 
+
+                                    else
+if template_class == "material" && key_str == "normal" {
+                                        render_texture_field(ui, v, &mut tmpl_modified, &style, "normal");
+                                    } 
+                                    else if template_class == "material" && key_str == "shader" {
                                         render_shader_field(ui, v, &mut tmpl_modified, &style);
                                     } else if template_class == "material" && key_str == "color" {
                                         render_color_field(ui, key_str.as_str(), v, &mut tmpl_modified);
@@ -1208,17 +1215,18 @@ fn render_color_field(
 
 /// Albedo field with drag-and-drop support for texture entries from the Entity Window.
 /// When a texture is dragged from the entity window, dropping it here sets the albedo path.
-fn render_albedo_field(
+fn render_texture_field(
     ui: &mut egui::Ui,
     value: &mut serde_yaml::Value,
     modified: &mut bool,
     style: &EditorStyle,
+    texture: &str
 ) {
     let mut buf = value.as_str().unwrap_or("").to_string();
     let has_drag = DragAndDrop::has_payload_of_type::<String>(ui.ctx());
 
     let inner = ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("albedo").strong());
+        ui.label(egui::RichText::new(texture).strong());
         ui.add(
             egui::TextEdit::singleline(&mut buf)
                 .desired_width(f32::INFINITY)
@@ -1512,7 +1520,7 @@ fn find_asset_file(editor_id: &str) -> Option<(PathBuf, serde_yaml::Value)> {
 
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let dirs = [
-        base.join("../game/res"),
+        base.join("../project/res"),
         base.join("../core/res"),
         base.join("res/worldspaces"),
     ];
@@ -1636,7 +1644,7 @@ fn create_asset(
     let yaml = serde_yaml::Value::Mapping(map);
 
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../game/res")
+        .join("../project/res")
         .join(class.to_lowercase());
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join(format!("{}.yaml", name.to_lowercase()));

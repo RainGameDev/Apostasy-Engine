@@ -8,7 +8,7 @@ use apostasy_core::{
     egui,
     ecs::{components::transform::Transform, systems::DeltaTime, tags::Player, world::World},
     physics::velocity::Velocity,
-    rendering::shared::frustrum::EntitiesDrawing,
+    rendering::shared::frustum::EntitiesDrawing,
     start,
     ui::ui_context::EguiContext,
     voxels::{VoxelTransform, biome::BiomeRegistry, chunk::Chunk},

@@ -50,6 +50,7 @@ pub fn build_terrain_mesh(
     // Pre-compute per-grid-position data
     let mut grid_positions: Vec<[f32; 3]> = Vec::with_capacity(side * side);
     let mut grid_normals: Vec<[f32; 3]> = Vec::with_capacity(side * side);
+    let mut grid_tangents: Vec<[f32; 4]> = Vec::with_capacity(side * side);
 
     for z in 0..side {
         for x in 0..side {
@@ -57,10 +58,15 @@ pub fn build_terrain_mesh(
             let wx = origin_x + x as f32 * step;
             let wz = origin_z + z as f32 * step;
 
-            let normal = compute_normal(chunk, x, z, step, neighbors);
+            let (dh_dx, _dh_dz) = height_derivatives(chunk, x, z, step, neighbors);
+            let normal = compute_normal(dh_dx, _dh_dz);
+
+            let t = Vector3::new(1.0, dh_dx, 0.0);
+            let tl = (t.x * t.x + t.y * t.y + t.z * t.z).sqrt().max(1e-6);
 
             grid_positions.push([wx, h, wz]);
             grid_normals.push([normal.x, normal.y, normal.z]);
+            grid_tangents.push([t.x / tl, t.y / tl, t.z / tl, -1.0]);
         }
     }
 
@@ -98,6 +104,7 @@ pub fn build_terrain_mesh(
                     tex_coord: [0.0; 2],
                     weights: get_weights(gi),
                     color: get_color(gi),
+                    tangent: grid_tangents[gi],
                 });
             }
 
@@ -109,6 +116,7 @@ pub fn build_terrain_mesh(
                     tex_coord: [0.0; 2],
                     weights: get_weights(gi),
                     color: get_color(gi),
+                    tangent: grid_tangents[gi],
                 });
             }
         }
@@ -129,14 +137,26 @@ pub fn build_terrain_mesh(
     })
 }
 
-/// Smooth vertex normal using central differences, sampling into neighbor chunks at borders.
-fn compute_normal(
+/// Smooth vertex normal from the height field's slope along X and Z.
+fn compute_normal(dh_dx: f32, dh_dz: f32) -> Vector3<f32> {
+    let n = Vector3::new(-dh_dx, 1.0, -dh_dz);
+    let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+    if len > 0.0 {
+        Vector3::new(n.x / len, n.y / len, n.z / len)
+    } else {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+}
+
+/// Central-difference height slopes (dh/dx, dh/dz), sampling into neighbor
+/// chunks at borders for seamless normals/tangents.
+fn height_derivatives(
     chunk: &TerrainChunk,
     x: usize,
     z: usize,
     step: f32,
     neighbors: &NeighborBorders,
-) -> Vector3<f32> {
+) -> (f32, f32) {
     let r = chunk.resolution as usize;
 
     let hx_pos = if x < r {
@@ -171,17 +191,10 @@ fn compute_normal(
         chunk.height_at(x, z)
     };
 
-    let n = Vector3::new(
-        -(hx_pos - hx_neg) / (step * 2.0),
-        1.0,
-        -(hz_pos - hz_neg) / (step * 2.0),
-    );
-    let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
-    if len > 0.0 {
-        Vector3::new(n.x / len, n.y / len, n.z / len)
-    } else {
-        Vector3::new(0.0, 1.0, 0.0)
-    }
+    (
+        (hx_pos - hx_neg) / (step * 2.0),
+        (hz_pos - hz_neg) / (step * 2.0),
+    )
 }
 
 pub fn build_terrain_collider(chunk: &TerrainChunk) -> Vec<[Vector3<f32>; 3]> {

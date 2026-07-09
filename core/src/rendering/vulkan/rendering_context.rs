@@ -85,7 +85,7 @@ use winit::raw_window_handle::HasDisplayHandle;
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::Window;
 
-use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
+use crate::rendering::shared::anti_aliasing::AntiAliasingAmount;
 use crate::rendering::shared::rendering_settings::PipelineOptions;
 use crate::rendering::shared::rendering_settings::RenderingSettings;
 use crate::rendering::shared::vertex::VertexDefinition;
@@ -645,6 +645,55 @@ impl VulkanRenderingContext {
         }
     }
 
+    /// Creates a per-material descriptor set binding albedo (0) and normal (1).
+    pub fn create_material_descriptor_set(
+        &self,
+        descriptor_pool: vk::DescriptorPool,
+        descriptor_set_layout: vk::DescriptorSetLayout,
+        albedo_view: vk::ImageView,
+        albedo_sampler: vk::Sampler,
+        normal_view: vk::ImageView,
+        normal_sampler: vk::Sampler,
+    ) -> vk::DescriptorSet {
+        unsafe {
+            let set = self
+                .device
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(descriptor_pool)
+                        .set_layouts(&[descriptor_set_layout]),
+                )
+                .unwrap()[0];
+
+            let albedo_info = vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(albedo_view)
+                .sampler(albedo_sampler);
+            let normal_info = vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(normal_view)
+                .sampler(normal_sampler);
+
+            self.device.update_descriptor_sets(
+                &[
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(set)
+                        .dst_binding(0)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(&[albedo_info]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(set)
+                        .dst_binding(1)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(&[normal_info]),
+                ],
+                &[],
+            );
+
+            set
+        }
+    }
+
     /// Creates a texture descriptor set
     pub fn create_texture_descriptor_set(
         &self,
@@ -838,7 +887,10 @@ impl VulkanRenderingContext {
     pub fn write_host_buffer<T>(&self, memory: DeviceMemory, data: &[T]) -> Result<()> {
         let size = (std::mem::size_of::<T>() * data.len()) as DeviceSize;
         unsafe {
-            let ptr = self.device.map_memory(memory, 0, size, MemoryMapFlags::empty())? as *mut T;
+            let ptr = self
+                .device
+                .map_memory(memory, 0, size, MemoryMapFlags::empty())?
+                as *mut T;
             ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
             self.device.unmap_memory(memory);
         }

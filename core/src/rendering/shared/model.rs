@@ -5,7 +5,10 @@ use cgmath::{InnerSpace, Vector3, Zero};
 
 use crate::{
     physics::collider::{DEBUG_VISUAL_SIZE_OFFSET, triangle_aabb},
-    rendering::{shared::material::GpuMaterial, shared::vertex::Vertex, vulkan::rendering_context::VulkanRenderingContext},
+    rendering::{
+        shared::material::GpuMaterial, shared::vertex::Vertex,
+        vulkan::rendering_context::VulkanRenderingContext,
+    },
 };
 
 /// Builds a one-off wireframe-only `GpuModel` from raw collision triangles. Used to
@@ -30,6 +33,8 @@ pub fn build_collider_debug_model(
                 tex_coord: [0.0, 0.0],
                 weights: [0.0; 32],
                 color: [1.0, 1.0, 1.0],
+
+                tangent: [1.0, 0.0, 0.0, 1.0],
             });
             indices.push(idx);
         }
@@ -37,7 +42,8 @@ pub fn build_collider_debug_model(
 
     let (vertex_buffer, vertex_buffer_memory) =
         context.create_vertex_buffer(&vertices, command_pool)?;
-    let (index_buffer, index_buffer_memory) = context.create_index_buffer(&indices, command_pool)?;
+    let (index_buffer, index_buffer_memory) =
+        context.create_index_buffer(&indices, command_pool)?;
 
     Ok(GpuModel {
         name: "collider_debug_mesh".to_string(),

@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 
 use crate::assets::shader_registry::ShaderRegistry;
-use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
+use crate::rendering::shared::anti_aliasing::AntiAliasingAmount;
 use crate::rendering::shared::rendering_settings::{PipelineOptions, RenderingSettings};
 use crate::rendering::shared::vertex::{Vertex, VertexDefinition};
 use crate::rendering::vulkan::rendering_context::VulkanRenderingContext;

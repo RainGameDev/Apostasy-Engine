@@ -3,8 +3,14 @@
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
+layout(location = 3) in vec3 fragTangent;
+layout(location = 4) in vec3 fragBitangent;
+
+layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
+layout(set = 0, binding = 2) uniform samplerCubeShadow pointShadowMap;
 
 layout(set = 1, binding = 0) uniform sampler2D albedoMap;
+layout(set = 1, binding = 1) uniform sampler2D normalMap;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -46,8 +52,6 @@ layout(set = 0, binding = 0, std430) readonly buffer LightBuffer {
     GpuLight lights[];
 } light_buf;
 
-layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadowMap;
-layout(set = 0, binding = 2) uniform samplerCubeShadow pointShadowMap;
 
 layout(location = 0) out vec4 outColor;
 
@@ -131,8 +135,10 @@ vec3 compute_lighting(vec3 N) {
 }
 
 void main() {
-    vec3 N      = normalize(fragNormal);
-    vec3 light  = compute_lighting(N);
-    vec4 albedo = texture(albedoMap, fragTexCoord) * pc.colorModifier;
-    outColor    = vec4(albedo.rgb * light, albedo.a);
+    mat3 TBN     = mat3(normalize(fragTangent), normalize(fragBitangent), normalize(fragNormal));
+    vec3 texN    = texture(normalMap, fragTexCoord).rgb * 2.0 - 1.0;
+    vec3 N       = normalize(TBN * texN);
+    vec3 light   = compute_lighting(N);
+    vec4 albedo  = texture(albedoMap, fragTexCoord) * pc.colorModifier;
+    outColor     = vec4(albedo.rgb * light, albedo.a);
 }

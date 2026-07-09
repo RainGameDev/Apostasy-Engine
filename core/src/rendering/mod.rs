@@ -8,7 +8,7 @@ use winit::event::WindowEvent;
 use winit::{event_loop::ActiveEventLoop, window::Window};
 
 use crate::rendering::lighting::gpu_light::{GpuLight, PointShadowData, ShadowData};
-use crate::rendering::shared::anti_alisaing::AntiAliasingAmount;
+use crate::rendering::shared::anti_aliasing::AntiAliasingAmount;
 use crate::rendering::shared::model::GpuMesh;
 use crate::rendering::shared::push_constants::{
     ModelPushConstants, PushConstants, ShadowModelPushConstants, ShadowPointModelPushConstants,

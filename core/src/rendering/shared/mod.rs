@@ -1,8 +1,8 @@
 use apostasy_macros::Resource;
 
-pub mod anti_alisaing;
+pub mod anti_aliasing;
 pub mod culling;
-pub mod frustrum;
+pub mod frustum;
 pub mod material;
 pub mod model;
 pub mod push_constants;

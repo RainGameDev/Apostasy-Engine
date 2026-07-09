@@ -17,6 +17,7 @@ pub struct Vertex {
     /// Per-vertex RGB tint color. Multiplied over albedo in the terrain shader.
     /// Defaults to white [1,1,1] (no tint).
     pub color: [f32; 3],
+    pub tangent: [f32; 4],
 }
 
 impl VertexDefinition for Vertex {
@@ -94,6 +95,12 @@ impl VertexDefinition for Vertex {
                 .location(11)
                 .format(vk::Format::R32G32B32_SFLOAT)
                 .offset(160),
+            // Tangent noraml map   location 12, offset 172
+            vk::VertexInputAttributeDescription::default()
+                .binding(0)
+                .location(12)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(172),
         ]
     }
 }

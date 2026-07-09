@@ -1,7 +1,7 @@
 use anyhow::Result;
 use apostasy_core::{
     ecs::world::World,
-    rendering::shared::{UpdateRenderer, anti_alisaing::AntiAliasing, shadow_settings::ShadowDistance},
+    rendering::shared::{UpdateRenderer, anti_aliasing::AntiAliasing, shadow_settings::ShadowDistance},
     start,
     ui::{FontRegistry, ui_context::ViewportSize},
 };

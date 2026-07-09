@@ -187,14 +187,12 @@ void main() {
         float w = weights[i];
         if (w <= 0.001) continue;
 
-        // Unpack layer ID: 4 u8 IDs per uint, little-endian.
         uint layerId = (pc.activeLayerIdsPacked[i / 4u] >> ((i % 4u) * 8u)) & 0xFFu;
 
         albedo += texture(terrainTex, vec3(uv, float(layerId))).rgb * w;
         weightSum += w;
     }
 
-    // Normalize to guard against floating-point drift.
     vec4 baseColor = vec4(albedo / max(weightSum, 0.0001), 1.0);
 
     vec3 ambient = vec3(0.05);

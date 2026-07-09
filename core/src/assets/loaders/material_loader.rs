@@ -1,8 +1,5 @@
 use parking_lot::RwLock;
-use std::{
-    any::Any,
-    sync::Arc,
-};
+use std::{any::Any, sync::Arc};
 
 use anyhow::Result;
 use apostasy_macros::Resource;
@@ -15,8 +12,10 @@ use crate::assets::loader::YamlAssetLoader;
 pub struct Material {
     pub name: String,
     pub namespace: String,
-    /// Path relative to res/ for the albedo texture, e.g. "textures/brick.png"
+    /// Path relative to res/ for the albedo texture, e.g. "textures/a_brick.png"
     pub albedo_path: Option<String>,
+    /// Path relative to res/ for the normal texture, e.g. "textures/n_brick.png"
+    pub normal_path: Option<String>,
     /// RGBA base color multiplier (default white)
     pub color: [f32; 4],
     /// Path relative to res/ for the custom shader, e.g. "shaders/brick"
@@ -58,6 +57,8 @@ impl YamlAssetLoader for MaterialLoader {
 
         let albedo_path = raw["albedo"].as_str().map(|s| s.to_string());
 
+        let normal_path = raw["normal"].as_str().map(|s| s.to_string());
+
         let color = if let Some(seq) = raw["color"].as_sequence() {
             let vals: Vec<f32> = seq
                 .iter()
@@ -80,6 +81,7 @@ impl YamlAssetLoader for MaterialLoader {
             name: name.clone(),
             namespace,
             albedo_path,
+            normal_path,
             color,
             shader_path: shader,
         };

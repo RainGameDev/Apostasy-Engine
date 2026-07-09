@@ -9,7 +9,7 @@ use apostasy_core::{
     egui,
     rendering::shared::{
         UpdateRenderer,
-        anti_alisaing::{AntiAliasing, AntiAliasingAmount},
+        anti_aliasing::{AntiAliasing, AntiAliasingAmount},
         shadow_settings::ShadowDistance,
     },
     ui::{

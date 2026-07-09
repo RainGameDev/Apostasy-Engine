@@ -253,6 +253,7 @@ pub(crate) fn upload_skybox_layer(
         rgba.width().max(1),
         rgba.height().max(1),
         path,
+        ash::vk::Format::R8G8B8A8_SRGB,
         context,
         command_pool,
         descriptor_pool,
@@ -309,6 +310,7 @@ pub fn build_skybox_sphere_mesh(
                 tex_coord: [u, v],
                 weights: [0.0; 32],
                 color: [1.0, 1.0, 1.0],
+                tangent: [1.0, 0.0, 0.0, 1.0],
             });
         }
     }

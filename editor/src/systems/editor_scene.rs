@@ -74,9 +74,6 @@ pub fn editor_data_loader_setup(world: &mut World) -> Result<()> {
             registry: Arc::clone(&structure_registry),
         });
 
-        // Worldspace + Material loaders and the project data are registered/loaded
-        // by Packages::Project. Load the project dir again here so the voxel/biome/
-        // structure loaders registered above pick up their definitions.
         let project = apostasy_core::project_dir();
         if project.is_dir() {
             let _ = asset_manager.load_directory(&project);

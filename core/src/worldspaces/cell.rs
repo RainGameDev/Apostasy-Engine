@@ -1,5 +1,5 @@
-use std::any::TypeId;
 use std::collections::HashSet;
+use std::{any::TypeId, fmt::Debug};
 
 use anyhow::{Result, anyhow};
 use apostasy_macros::Resource;
@@ -25,7 +25,7 @@ pub type CellCoord = Vector3<i32>;
 
 /// A stable handle to an entity within a specific cell.
 /// Moving an entity across a cell boundary changes its ID.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EntityId {
     pub cell: CellCoord,
     pub entity: Entity,
@@ -40,6 +40,14 @@ impl Default for EntityId {
                 generation: 0,
             },
         }
+    }
+}
+
+impl Debug for EntityId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entity")
+            .field("id", &self.entity.index)
+            .finish()
     }
 }
 

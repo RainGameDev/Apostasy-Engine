@@ -26,6 +26,7 @@ use winit::{
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::gltf::ModelLoader;
 use crate::assets::gltf::ModelRegistry;
+use crate::assets::loaders::material_loader::MaterialLoader;
 use crate::ecs::component::InspectorRegistry;
 use crate::ecs::components::transform::Transform;
 use crate::ecs::resources::cursor_manager::CursorManager;
@@ -56,9 +57,9 @@ use crate::rendering::lighting::gpu_light::{
     compute_point_shadow_matrices,
 };
 use crate::rendering::shared::UpdateRenderer;
-use crate::rendering::shared::anti_alisaing::AntiAliasing;
-use crate::rendering::shared::frustrum::EntitiesDrawing;
-use crate::rendering::shared::frustrum::Frustum;
+use crate::rendering::shared::anti_aliasing::AntiAliasing;
+use crate::rendering::shared::frustum::EntitiesDrawing;
+use crate::rendering::shared::frustum::Frustum;
 use crate::rendering::shared::material::GpuMaterial;
 use crate::rendering::shared::model::build_collider_debug_model;
 use crate::rendering::shared::push_constants::ModelPushConstants;
@@ -1066,9 +1067,7 @@ impl Core {
                         for mesh in &model.meshes {
                             let effective_mat: Option<&GpuMaterial> =
                                 override_gpu_mat.or(mesh.material.as_ref());
-                            let albedo_ds = effective_mat
-                                .and_then(|m| m.albedo.as_ref())
-                                .map(|t| t.descriptor_set);
+                            let albedo_ds = effective_mat.map(|m| m.descriptor_set);
                             let shader_override: Option<&str> =
                                 effective_mat.and_then(|m| m.shader.as_deref()).or_else(|| {
                                     model_renderer
@@ -1493,22 +1492,37 @@ impl ApplicationHandler for Core {
             let asset_manager = world.get_resource_mut::<AssetManager>().unwrap();
             asset_manager.model_loader = model_loader;
 
-            if asset_manager
-                .get_loader::<crate::assets::loaders::material_loader::MaterialLoader>()
-                .is_none()
-            {
-                asset_manager.register_loader(
-                    crate::assets::loaders::material_loader::MaterialLoader::new(),
-                );
-                let _ = asset_manager.load_directory(Path::new(&format!(
-                    "{}/{}",
-                    env!("CARGO_MANIFEST_DIR"),
-                    "res/"
-                )));
+            if asset_manager.get_loader::<MaterialLoader>().is_none() {
+                asset_manager.register_loader(MaterialLoader::new());
+
+                let project = project_dir();
+                if project.is_dir()
+                    && let Err(e) = asset_manager.load_directory(&project)
+                {
+                    log_warn!("Failed to load project dir {:?}: {}", project, e);
+                }
+                let core_res = Path::new(env!("CARGO_MANIFEST_DIR")).join("res");
+                if core_res.is_dir()
+                    && let Err(e) = asset_manager.load_directory(&core_res)
+                {
+                    log_warn!("Failed to load core res {:?}: {}", core_res, e);
+                }
+
                 if Path::new("res/").is_dir() {
                     let _ = asset_manager.load_directory(Path::new("res/"));
                 }
             }
+
+            let project = project_dir();
+            asset_manager
+                .load_models(
+                    &project,
+                    Arc::new(context.clone()),
+                    command_pool,
+                    descriptor_pool,
+                    descriptor_set_layout,
+                )
+                .unwrap();
 
             asset_manager
                 .load_models(

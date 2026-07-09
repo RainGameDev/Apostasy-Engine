@@ -1,0 +1,11 @@
+albedo: textures/a_brick.jpg
+normal: textures/n_brick.jpg
+shader: ""
+color:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+name: brick
+namespace: game
+class: Material
